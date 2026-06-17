@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In — Zimonza Stock Update</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="css/custom.css">
+  <link rel="stylesheet" href="css/animations.css">
+  <style>
+    body { background: #0F172A; }
+    .bg-mesh {
+      background-image:
+        radial-gradient(at 40% 20%, rgba(16,185,129,0.12) 0px, transparent 50%),
+        radial-gradient(at 80% 0%, rgba(59,130,246,0.08) 0px, transparent 50%),
+        radial-gradient(at 0% 50%, rgba(139,92,246,0.07) 0px, transparent 50%);
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-mesh flex items-center justify-center p-4">
+
+  <!-- Decorative orbs -->
+  <div class="fixed inset-0 overflow-hidden pointer-events-none">
+    <div class="absolute -top-40 -right-40 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl"></div>
+    <div class="absolute -bottom-40 -left-40 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl"></div>
+  </div>
+
+  <div class="w-full max-w-md animate-scale-in">
+
+    <!-- Card -->
+    <div class="bg-slate-800/60 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl">
+
+      <!-- Logo + Title -->
+      <div class="flex flex-col items-center mb-8">
+        <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-xl shadow-emerald-500/25 mb-4">
+          <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10"/>
+          </svg>
+        </div>
+        <h1 class="text-2xl font-bold text-white">ZIMONZA</h1>
+        <p class="text-slate-400 text-sm mt-1">Daily Stock Update — Admin Portal</p>
+      </div>
+
+      <!-- Login Form -->
+      <form id="login-form" class="space-y-4">
+        <!-- Error alert -->
+        <div id="error-alert" class="hidden flex items-center gap-2 px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">
+          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+          <span id="error-msg">Invalid credentials.</span>
+        </div>
+
+        <!-- Email -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Email Address</label>
+          <input type="email" id="email-input" required autocomplete="email"
+            class="zm-input" placeholder="admin@zimonza.com">
+        </div>
+
+        <!-- Password -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Password</label>
+          <div class="relative">
+            <input type="password" id="pass-input" required autocomplete="current-password"
+              class="zm-input pr-10" placeholder="Enter your password">
+            <button type="button" id="toggle-pass"
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition">
+              <svg id="eye-icon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Forgot Password -->
+        <div class="flex justify-end">
+          <button type="button" id="forgot-btn" class="text-xs text-emerald-400 hover:text-emerald-300 transition font-medium">
+            Forgot password?
+          </button>
+        </div>
+
+        <!-- Submit -->
+        <button type="submit" id="login-btn" class="btn-primary w-full justify-center py-3 text-base mt-2">
+          <span id="btn-text">Sign In</span>
+          <div id="btn-spinner" class="hidden spinner"></div>
+        </button>
+      </form>
+
+      <!-- Footer note -->
+      <p class="text-center text-slate-600 text-xs mt-6">
+        Authorized access only · Zimonza Inventory System v1.0
+      </p>
+    </div>
+  </div>
+
+  <!-- Forgot Password Modal -->
+  <div id="forgot-modal" class="hidden modal-overlay">
+    <div class="modal-box animate-scale-in max-w-sm">
+      <h3 class="text-lg font-bold text-white mb-1">Reset Password</h3>
+      <p class="text-slate-400 text-sm mb-5">Enter your email address and we'll send you a reset link.</p>
+
+      <input type="email" id="reset-email" class="zm-input mb-4" placeholder="your@email.com">
+
+      <div id="reset-alert" class="hidden mb-4 px-4 py-3 rounded-xl text-sm"></div>
+
+      <div class="flex gap-3">
+        <button id="cancel-reset" class="btn-secondary flex-1 justify-center">Cancel</button>
+        <button id="send-reset" class="btn-primary flex-1 justify-center">Send Link</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { redirectIfAuth, signIn, resetPassword } from './js/auth.js';
+
+    // Redirect if already logged in
+    redirectIfAuth('dashboard.html');
+
+    const form = document.getElementById('login-form');
+    const emailIn = document.getElementById('email-input');
+    const passIn = document.getElementById('pass-input');
+    const errorAlert = document.getElementById('error-alert');
+    const errorMsg = document.getElementById('error-msg');
+    const loginBtn = document.getElementById('login-btn');
+    const btnText = document.getElementById('btn-text');
+    const btnSpinner = document.getElementById('btn-spinner');
+
+    // Password toggle
+    document.getElementById('toggle-pass').addEventListener('click', () => {
+      const isPass = passIn.type === 'password';
+      passIn.type = isPass ? 'text' : 'password';
+    });
+
+    // Login
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorAlert.classList.add('hidden');
+      loginBtn.disabled = true;
+      btnText.textContent = 'Signing in...';
+      btnSpinner.classList.remove('hidden');
+
+      try {
+        await signIn(emailIn.value.trim(), passIn.value);
+        window.location.replace('dashboard.html');
+      } catch (err) {
+        let msg = 'Sign in failed. Please try again.';
+        if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+          msg = 'Invalid email or password.';
+        } else if (err.code === 'auth/too-many-requests') {
+          msg = 'Too many attempts. Please wait a moment.';
+        } else if (err.code === 'auth/network-request-failed') {
+          msg = 'Network error. Check your connection.';
+        }
+        errorMsg.textContent = msg;
+        errorAlert.classList.remove('hidden');
+        loginBtn.disabled = false;
+        btnText.textContent = 'Sign In';
+        btnSpinner.classList.add('hidden');
+      }
+    });
+
+    // Forgot password modal
+    const forgotModal = document.getElementById('forgot-modal');
+    document.getElementById('forgot-btn').addEventListener('click', () => forgotModal.classList.remove('hidden'));
+    document.getElementById('cancel-reset').addEventListener('click', () => forgotModal.classList.add('hidden'));
+
+    document.getElementById('send-reset').addEventListener('click', async () => {
+      const email = document.getElementById('reset-email').value.trim();
+      const alertEl = document.getElementById('reset-alert');
+      if (!email) return;
+      try {
+        await resetPassword(email);
+        alertEl.className = 'mb-4 px-4 py-3 rounded-xl text-sm bg-emerald-500/10 border border-emerald-500/30 text-emerald-400';
+        alertEl.textContent = 'Reset link sent! Check your inbox.';
+        alertEl.classList.remove('hidden');
+      } catch (e) {
+        alertEl.className = 'mb-4 px-4 py-3 rounded-xl text-sm bg-red-500/10 border border-red-500/30 text-red-400';
+        alertEl.textContent = 'Failed to send reset email.';
+        alertEl.classList.remove('hidden');
+      }
+    });
+
+    // Close modal on overlay click
+    forgotModal.addEventListener('click', (e) => {
+      if (e.target === forgotModal) forgotModal.classList.add('hidden');
+    });
+  </script>
+</body>
+</html>

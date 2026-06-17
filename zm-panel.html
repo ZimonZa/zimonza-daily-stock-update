@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZM Panel — Zimonza</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="css/custom.css">
+  <link rel="stylesheet" href="css/animations.css">
+  <link rel="stylesheet" href="css/theme.css">
+</head>
+<body class="bg-slate-950 min-h-screen">
+<div id="page-content" class="ml-64 pt-16 transition-all duration-300">
+ <div class="p-7 space-y-6 animate-fade-in">
+
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-white">ZM Panel</h1>
+      <p class="text-slate-400 text-sm mt-0.5">Website upload status management</p>
+    </div>
+  </div>
+
+  <!-- ── Manage ZM Mapping ── -->
+  <div class="glass-card overflow-hidden">
+    <div class="flex items-center gap-3 px-6 py-4 border-b border-white/5">
+      <div class="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center flex-shrink-0">
+        <i data-lucide="tag" class="w-5 h-5 text-amber-400"></i>
+      </div>
+      <div class="flex-1 min-w-0">
+        <h3 class="text-white font-semibold text-sm">Manage ZM Mapping</h3>
+        <p class="text-slate-400 text-xs">Upload file or add entries manually</p>
+      </div>
+      <button onclick="exportZMMappings()"
+        class="btn-secondary text-xs py-2 px-3 flex items-center gap-1.5">
+        <i data-lucide="download" class="w-3.5 h-3.5"></i> Export CSV
+      </button>
+      <button id="toggle-zm-manager" onclick="toggleZMManager()"
+        class="btn-secondary text-xs py-2 px-3 flex items-center gap-1.5">
+        <i data-lucide="chevron-down" class="w-3.5 h-3.5 transition-transform duration-200" id="zm-chevron"></i>
+        <span id="zm-toggle-label">Expand</span>
+      </button>
+    </div>
+
+    <div id="zm-manager-body" class="hidden">
+      <div class="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-white/5">
+
+        <!-- LEFT: File Upload -->
+        <div class="p-6 space-y-4">
+          <h4 class="text-slate-400 text-xs font-semibold uppercase tracking-wide">Upload ZM File</h4>
+          <div id="zm-panel-drop" class="drop-zone p-5 text-center cursor-pointer"
+            onclick="document.getElementById('zm-panel-file').click()">
+            <i data-lucide="upload-cloud" class="w-7 h-7 text-slate-600 mx-auto mb-2"></i>
+            <p class="text-slate-400 text-sm font-medium">Drop file here or click</p>
+            <p class="text-slate-600 text-xs mt-1">Zimonza-Kuntal product code .xlsx</p>
+          </div>
+          <input type="file" id="zm-panel-file" accept=".xlsx,.xls" class="hidden">
+        </div>
+
+        <!-- RIGHT: Manual Entry -->
+        <div class="p-6 space-y-4">
+          <h4 class="text-slate-400 text-xs font-semibold uppercase tracking-wide">Manual Entry</h4>
+          <div class="space-y-3">
+            <div>
+              <label class="text-slate-500 text-xs mb-1.5 block">ZM Code <span class="text-slate-600">(Zimonza product code)</span></label>
+              <input id="manual-zm-code" type="text" placeholder="e.g. ZM-1234"
+                class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm placeholder-slate-600 focus:outline-none focus:border-amber-500/40">
+            </div>
+            <div>
+              <label class="text-slate-500 text-xs mb-1.5 block">Kuntal Code <span class="text-slate-600">(supplier code)</span></label>
+              <input id="manual-kuntal-code" type="text" placeholder="e.g. KT-5678"
+                class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm placeholder-slate-600 focus:outline-none focus:border-amber-500/40">
+            </div>
+            <button id="manual-add-btn" onclick="addManualMapping()"
+              class="btn-primary w-full text-sm py-2.5 justify-center">
+              <i data-lucide="plus" class="w-4 h-4"></i> Add Mapping
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary Cards -->
+  <div id="zm-summary" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+    <div class="animate-pulse bg-white/5 rounded-2xl h-24 border border-white/5"></div>
+    <div class="animate-pulse bg-white/5 rounded-2xl h-24 border border-white/5"></div>
+    <div class="animate-pulse bg-white/5 rounded-2xl h-24 border border-white/5"></div>
+    <div class="animate-pulse bg-white/5 rounded-2xl h-24 border border-white/5"></div>
+    <div class="animate-pulse bg-white/5 rounded-2xl h-24 border border-white/5"></div>
+  </div>
+
+  <!-- Filters -->
+  <div class="glass-card p-4 flex flex-wrap gap-3 items-center">
+    <input id="zm-search" type="text" placeholder="Search SKU, ZM code, name…" class="zm-input w-52">
+    <select id="zm-status-filter" class="zm-input w-40">
+      <option value="all">All Statuses</option>
+      <option value="uploaded">Uploaded</option>
+      <option value="not_uploaded">Not Uploaded</option>
+      <option value="pending">Pending</option>
+      <option value="skipped">Skipped</option>
+    </select>
+    <select id="zm-level-filter" class="zm-input w-36">
+      <option value="all">All Levels</option>
+      <option value="high">High</option>
+      <option value="medium">Medium</option>
+      <option value="low">Low</option>
+      <option value="sold_out">Sold Out</option>
+    </select>
+    <button id="zm-apply" class="btn-primary text-sm py-2 px-4">
+      <i data-lucide="filter" class="w-4 h-4"></i> Filter
+    </button>
+    <span id="zm-count" class="text-slate-500 text-xs ml-auto"></span>
+  </div>
+
+  <!-- ZM Products Table -->
+  <div class="glass-card overflow-hidden">
+    <div id="zm-table-container">
+      <div class="p-8 flex justify-center"><div class="spinner"></div></div>
+    </div>
+  </div>
+
+ </div>
+</div>
+
+<!-- Notes Modal -->
+<div id="notes-modal" class="hidden modal-overlay">
+  <div class="modal-box">
+    <h3 class="text-white font-bold mb-1">Update Status</h3>
+    <p class="text-slate-400 text-sm mb-4">SKU: <span id="modal-sku" class="text-emerald-400 font-mono"></span></p>
+    <select id="modal-status" class="zm-input mb-3">
+      <option value="uploaded">✅ Uploaded to Website</option>
+      <option value="not_uploaded">❌ Not Uploaded</option>
+      <option value="pending">⏳ Pending</option>
+      <option value="skipped">⏭ Skipped</option>
+    </select>
+    <textarea id="modal-notes" rows="3" class="zm-input mb-4 resize-none" placeholder="Notes (optional)…"></textarea>
+    <div class="flex gap-3">
+      <button id="modal-cancel" class="btn-secondary flex-1 justify-center">Cancel</button>
+      <button id="modal-save" class="btn-primary flex-1 justify-center">Save</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './js/auth.js';
+import { renderShell } from './js/ui-components.js';
+import notify from './js/notifications.js';
+import { loadZMPanelData, setUploadStatus } from './js/zm-mapper.js';
+import { skipProduct } from './js/skip-manager.js';
+import { debounce, toCSV, downloadFile } from './js/utils.js';
+import { readExcelFile, parseZMFile, validateZMFile } from './js/excel-parser.js';
+import { saveZMMapping, getAllZMMappings } from './js/firestore-service.js';
+
+await requireAuth();
+renderShell('zm-panel');
+if (window.lucide) lucide.createIcons();
+
+let products = [], activeSku = null;
+
+// ── ZM Manager: Toggle ────────────────────────────────────────
+window.toggleZMManager = function() {
+  const body    = document.getElementById('zm-manager-body');
+  const chevron = document.getElementById('zm-chevron');
+  const label   = document.getElementById('zm-toggle-label');
+  const hidden  = body.classList.toggle('hidden');
+  chevron.style.transform = hidden ? '' : 'rotate(180deg)';
+  label.textContent = hidden ? 'Expand' : 'Collapse';
+};
+
+// ── ZM Manager: File Upload ───────────────────────────────────
+const zmPanelDrop = document.getElementById('zm-panel-drop');
+const zmPanelFile = document.getElementById('zm-panel-file');
+
+zmPanelDrop.addEventListener('dragover', e => { e.preventDefault(); zmPanelDrop.classList.add('drag-over'); });
+zmPanelDrop.addEventListener('dragleave', () => zmPanelDrop.classList.remove('drag-over'));
+zmPanelDrop.addEventListener('drop', e => {
+  e.preventDefault(); zmPanelDrop.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) handleZMPanelFile(e.dataTransfer.files[0]);
+});
+zmPanelFile.addEventListener('change', () => {
+  if (zmPanelFile.files[0]) handleZMPanelFile(zmPanelFile.files[0]);
+  zmPanelFile.value = '';
+});
+
+async function handleZMPanelFile(file) {
+  zmPanelDrop.innerHTML = `<div class="flex flex-col items-center gap-2 py-2"><div class="spinner"></div><p class="text-slate-400 text-xs">Parsing ${file.name}…</p></div>`;
+  try {
+    const rows = await readExcelFile(file);
+    const validation = validateZMFile(rows);
+    if (!validation.valid) { notify.error(validation.error); resetZMDrop(); return; }
+    const mappings = parseZMFile(rows);
+    await saveZMMapping(mappings);
+    zmPanelDrop.innerHTML = `<div class="flex flex-col items-center gap-2 py-2 text-center">
+      <i data-lucide="check-circle" class="w-7 h-7 text-emerald-400 mx-auto"></i>
+      <p class="text-emerald-400 text-sm font-semibold">${file.name}</p>
+      <p class="text-slate-400 text-xs">${mappings.length} mappings saved</p>
+      <button onclick="resetZMDropGlobal()" class="text-xs text-slate-500 hover:text-slate-300 mt-1">Upload another</button>
+    </div>`;
+    if (window.lucide) lucide.createIcons();
+    notify.success(`${mappings.length} ZM mappings saved successfully`);
+    await load();
+  } catch(err) {
+    notify.error('Failed: ' + err.message);
+    resetZMDrop();
+  }
+}
+
+function resetZMDrop() {
+  zmPanelDrop.innerHTML = `<i data-lucide="upload-cloud" class="w-7 h-7 text-slate-600 mx-auto mb-2"></i>
+    <p class="text-slate-400 text-sm font-medium">Drop file here or click</p>
+    <p class="text-slate-600 text-xs mt-1">Zimonza-Kuntal product code .xlsx</p>`;
+  if (window.lucide) lucide.createIcons();
+}
+window.resetZMDropGlobal = resetZMDrop;
+
+// ── ZM Manager: Manual Entry ──────────────────────────────────
+window.addManualMapping = async function() {
+  const zmCode     = document.getElementById('manual-zm-code').value.trim();
+  const kuntalCode = document.getElementById('manual-kuntal-code').value.trim();
+  if (!zmCode || !kuntalCode) { notify.error('Both ZM Code and Kuntal Code are required'); return; }
+  const btn = document.getElementById('manual-add-btn');
+  btn.disabled = true;
+  try {
+    await saveZMMapping([{ zmCode, kuntalCode }]);
+    document.getElementById('manual-zm-code').value    = '';
+    document.getElementById('manual-kuntal-code').value = '';
+    notify.success(`Mapping saved: ${zmCode} → ${kuntalCode}`);
+    await load();
+  } catch(err) {
+    notify.error('Failed: ' + err.message);
+  } finally { btn.disabled = false; }
+};
+
+// Enter key shortcut for manual entry
+document.getElementById('manual-kuntal-code').addEventListener('keydown', e => {
+  if (e.key === 'Enter') window.addManualMapping();
+});
+
+// ── ZM Manager: Export CSV ────────────────────────────────────
+window.exportZMMappings = async function() {
+  try {
+    const mappings = await getAllZMMappings();
+    if (!mappings.length) { notify.warning('No mappings to export'); return; }
+    const csv = toCSV(mappings, [
+      { key: 'zmCode',     label: 'ZM Code' },
+      { key: 'kuntalCode', label: 'Kuntal Code' }
+    ]);
+    downloadFile(csv, `zm-mappings-${new Date().toISOString().slice(0,10)}.csv`, 'text/csv');
+    notify.success(`Exported ${mappings.length} mappings`);
+  } catch(err) {
+    notify.error('Export failed: ' + err.message);
+  }
+};
+
+async function load() {
+  try {
+    const data = await loadZMPanelData();
+    products = data.products;
+    renderSummary(data.summary);
+    renderTable(products);
+  } catch(e) {
+    notify.error('Failed to load ZM panel.');
+    console.error(e);
+  }
+}
+
+function renderSummary(s) {
+  document.getElementById('zm-summary').innerHTML = [
+    { label:'Total Mapped', value: s.total, icon:'tag', color:'from-blue-500/10 border-blue-500/20' },
+    { label:'Uploaded', value: s.uploaded, icon:'check-circle', color:'from-emerald-500/10 border-emerald-500/20' },
+    { label:'Pending', value: s.pending, icon:'clock', color:'from-amber-500/10 border-amber-500/20' },
+    { label:'Skipped', value: s.skipped, icon:'skip-forward', color:'from-slate-500/10 border-slate-500/20' },
+    { label:'Low Stock', value: s.lowStock, icon:'alert-triangle', color:'from-red-500/10 border-red-500/20' },
+  ].map(c=>`
+    <div class="bg-gradient-to-br ${c.color} border rounded-2xl p-4 flex flex-col gap-2">
+      <i data-lucide="${c.icon}" class="w-4 h-4 text-slate-400"></i>
+      <span class="text-2xl font-bold text-white">${c.value}</span>
+      <span class="text-slate-500 text-xs">${c.label}</span>
+    </div>`).join('');
+  if (window.lucide) lucide.createIcons();
+}
+
+function getFilters() {
+  return {
+    search: document.getElementById('zm-search').value.toLowerCase(),
+    status: document.getElementById('zm-status-filter').value,
+    level: document.getElementById('zm-level-filter').value
+  };
+}
+
+function renderTable(data) {
+  const f = getFilters();
+  let filtered = data;
+  if (f.search) filtered = filtered.filter(p =>
+    p.zmCode?.toLowerCase().includes(f.search) ||
+    String(p.kuntalCode).includes(f.search) ||
+    p.name?.toLowerCase().includes(f.search)
+  );
+  if (f.status !== 'all') filtered = filtered.filter(p => p.uploadStatus === f.status);
+  if (f.level !== 'all') filtered = filtered.filter(p => p.stockLevel === f.level);
+
+  document.getElementById('zm-count').textContent = `${filtered.length} products`;
+
+  if (!filtered.length) {
+    document.getElementById('zm-table-container').innerHTML =
+      `<p class="text-center py-12 text-slate-500 text-sm">No products match.</p>`;
+    return;
+  }
+
+  const statusChip = s => ({
+    uploaded:     `<span class="status-chip status-uploaded">✅ Uploaded</span>`,
+    not_uploaded: `<span class="status-chip status-not_uploaded">❌ Not Uploaded</span>`,
+    pending:      `<span class="status-chip status-pending">⏳ Pending</span>`,
+    skipped:      `<span class="status-chip status-skipped">⏭ Skipped</span>`,
+  }[s] || `<span class="status-chip status-pending">⏳ Pending</span>`);
+
+  const lvlChip = l => ({
+    high:'<span class="level-high">High</span>',
+    medium:'<span class="level-medium">Medium</span>',
+    low:'<span class="level-low">Low</span>',
+    sold_out:'<span class="level-sold_out">Sold Out</span>',
+  }[l]||'—');
+
+  const rows = filtered.map(p => {
+    const colors = (p.colors||[]).slice(0,3).map(c=>`<span class="color-badge">${c.name}×${c.qty}</span>`).join(' ');
+    return `<tr class="border-t border-white/5 hover:bg-white/3 transition">
+      <td class="px-4 py-3 text-xs font-mono text-purple-400">${p.zmCode||'—'}</td>
+      <td class="px-4 py-3 text-xs font-mono text-emerald-400">${p.kuntalCode}</td>
+      <td class="px-4 py-3 text-slate-200 text-sm truncate max-w-[150px]">${p.name}</td>
+      <td class="px-4 py-3">${lvlChip(p.stockLevel)}</td>
+      <td class="px-4 py-3 text-white font-semibold">${p.totalQty}</td>
+      <td class="px-4 py-3"><div class="flex flex-wrap gap-1">${colors}</div></td>
+      <td class="px-4 py-3">${statusChip(p.uploadStatus)}</td>
+      <td class="px-4 py-3">
+        <button class="edit-btn text-xs text-slate-400 hover:text-emerald-400 transition mr-2" data-sku="${p.kuntalCode}" data-status="${p.uploadStatus}" data-notes="${p.notes||''}">
+          <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('zm-table-container').innerHTML = `
+    <div class="overflow-x-auto">
+      <table class="w-full zm-table">
+        <thead><tr>
+          <th>ZM Code</th><th>Kuntal Code</th><th>Item Name</th>
+          <th>Level</th><th>Qty</th><th>Colors</th><th>Status</th><th></th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+
+  document.querySelectorAll('.edit-btn').forEach(btn => {
+    btn.addEventListener('click', () => openModal(btn.dataset.sku, btn.dataset.status, btn.dataset.notes));
+  });
+  if (window.lucide) lucide.createIcons();
+}
+
+function openModal(sku, status, notes) {
+  activeSku = sku;
+  document.getElementById('modal-sku').textContent = sku;
+  document.getElementById('modal-status').value = status || 'pending';
+  document.getElementById('modal-notes').value = notes || '';
+  document.getElementById('notes-modal').classList.remove('hidden');
+}
+
+document.getElementById('modal-cancel').addEventListener('click', () => {
+  document.getElementById('notes-modal').classList.add('hidden');
+});
+
+document.getElementById('modal-save').addEventListener('click', async () => {
+  const status = document.getElementById('modal-status').value;
+  const notes  = document.getElementById('modal-notes').value;
+  try {
+    await setUploadStatus(activeSku, status, notes);
+    if (status === 'skipped') await skipProduct(activeSku, notes);
+    notify.success('Status updated!');
+    document.getElementById('notes-modal').classList.add('hidden');
+    // Update local state
+    const p = products.find(p=>String(p.kuntalCode)===String(activeSku));
+    if (p) { p.uploadStatus = status; p.notes = notes; }
+    renderTable(products);
+  } catch(e) { notify.error('Failed to update.'); }
+});
+
+document.getElementById('zm-apply').addEventListener('click', () => renderTable(products));
+document.getElementById('zm-search').addEventListener('input', debounce(() => renderTable(products)));
+document.getElementById('zm-status-filter').addEventListener('change', () => renderTable(products));
+document.getElementById('zm-level-filter').addEventListener('change', () => renderTable(products));
+
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,285 @@
+// ═══════════════════════════════════════════════════════════════
+// ZIMONZA — Excel Parser (SheetJS-based)
+// Parses Lehnga/Saree stock files and ZM mapping file
+// ═══════════════════════════════════════════════════════════════
+
+import { VALID_LOCATIONS, SAREE_COLS, LEHNGA_COLS, ZM_COLS, CATEGORIES } from './constants.js';
+import { parseColors, getStockLevel, findColourSuggestion, getEffectiveColours } from './utils.js';
+
+/**
+ * Read an Excel File object and return raw worksheet data as array of arrays
+ */
+export function readExcelFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const ws = workbook.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+        resolve(rows);
+      } catch (err) {
+        reject(new Error('Failed to parse Excel file: ' + err.message));
+      }
+    };
+    reader.onerror = () => reject(new Error('File read error'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+/**
+ * Find the header row index by looking for 'ITEM NO'
+ */
+function findHeaderRow(rows) {
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    const row = rows[i];
+    if (row && row.some(cell => String(cell || '').trim().toUpperCase() === 'ITEM NO')) {
+      return i;
+    }
+  }
+  return 2;
+}
+
+/**
+ * Build a column-name → column-index map by scanning the actual header row.
+ * Falls back gracefully — any key not found returns undefined.
+ */
+function buildColMap(headerRow) {
+  const aliases = {
+    ITEM_NO:      ['ITEM NO', 'ITEM NUMBER', 'ITEMNO', 'SKU'],
+    ITEM_NAME:    ['ITEM NAME', 'PRODUCT NAME', 'DESCRIPTION', 'ITEM DESC'],
+    SUB_LOCATION: ['SUB LOCATION', 'SUB LOC', 'SUBLOCATION', 'LOCATION'],
+    COLOR:        ['COLOR', 'COLOUR', 'COLOUR STOCK', 'COLORS'],
+    BAL_PCS:      ['BAL PCS', 'BAL. PCS', 'BAL PCS.', 'BALANCE PCS', 'BALANCE'],
+  };
+  const map = {};
+  (headerRow || []).forEach((cell, idx) => {
+    if (!cell) return;
+    const val = String(cell).trim().toUpperCase();
+    for (const [key, names] of Object.entries(aliases)) {
+      if (map[key] == null && names.some(n => val.includes(n) || n.includes(val))) {
+        map[key] = idx;
+      }
+    }
+  });
+  return map;
+}
+
+/**
+ * Parse SAREE or LEHNGA stock file.
+ * Returns { items, validationStats } where:
+ *   items — array of normalized stock items
+ *   validationStats — { totalRows, mismatchRows } for BAL_PCS validation
+ */
+export function parseStockFile(rows, category) {
+  const staticCols = category === CATEGORIES.SAREE ? SAREE_COLS : LEHNGA_COLS;
+  const headerRowIdx = findHeaderRow(rows);
+  const headerRow = rows[headerRowIdx] || [];
+
+  // Detect column indices from actual header; fall back to hardcoded constants
+  const detected = buildColMap(headerRow);
+  const cols = {
+    ITEM_NO:      detected.ITEM_NO      ?? staticCols.ITEM_NO,
+    ITEM_NAME:    detected.ITEM_NAME    ?? staticCols.ITEM_NAME,
+    SUB_LOCATION: detected.SUB_LOCATION ?? staticCols.SUB_LOCATION,
+    COLOR:        detected.COLOR        ?? staticCols.COLOR,
+    BAL_PCS:      detected.BAL_PCS      ?? staticCols.BAL_PCS,
+  };
+
+  const dataRows = rows.slice(headerRowIdx + 1);
+
+  // Map: sku → { sku, name, colors: Map<colorName, qty> }
+  const skuMap = new Map();
+
+  // Validation counters (per data row, not per SKU)
+  let totalRows = 0;
+  let mismatchRows = 0;
+
+  // Error tracking
+  const colourErrorMap = new Map(); // lowerName → { found, suggestion, distance, skus: Set, category }
+  const balPcsMismatches = [];      // { sku, name, rowBalPcs, parsedTotal, diff, category }
+
+  for (const row of dataRows) {
+    if (!row || row.length === 0) continue;
+
+    const itemNo = row[cols.ITEM_NO];
+    const itemName = row[cols.ITEM_NAME];
+    const subLoc = String(row[cols.SUB_LOCATION] || '').trim().toUpperCase();
+    const colorStr = row[cols.COLOR];
+
+    // Skip if no SKU
+    if (!itemNo) continue;
+
+    const sku = String(itemNo).trim();
+
+    // Skip header-like rows
+    if (sku.toUpperCase() === 'ITEM NO' || sku.toUpperCase() === 'SUB LOCATION') continue;
+
+    // Filter by valid sub location
+    const isValidLoc = VALID_LOCATIONS.some(loc => subLoc.includes(loc) || loc.includes(subLoc));
+    if (!isValidLoc) continue;
+
+    // Parse colours from colour cell: "(Red * 8)(Blue * 4)" format
+    const parsedColors = parseColors(colorStr);
+
+    // BAL_PCS validation: sum of colour qtys should equal the BAL_PCS column value
+    if (parsedColors.length > 0) {
+      const rowBalPcs = Number(row[cols.BAL_PCS] || 0);
+      const parsedTotal = parsedColors.reduce((s, c) => s + c.qty, 0);
+      totalRows++;
+      if (rowBalPcs > 0 && parsedTotal !== rowBalPcs) {
+        mismatchRows++;
+        balPcsMismatches.push({ sku, name: String(itemName || sku).trim(), rowBalPcs, parsedTotal, diff: parsedTotal - rowBalPcs, category });
+      }
+    }
+
+    // Colour spelling check: flag names within edit distance ≤ 2 of a known colour
+    for (const { name: colourName } of parsedColors) {
+      const key = colourName.toLowerCase().trim();
+      if (colourErrorMap.has(key)) {
+        colourErrorMap.get(key).skus.add(sku);
+      } else {
+        const match = findColourSuggestion(colourName, getEffectiveColours());
+        if (match) {
+          colourErrorMap.set(key, { found: colourName, suggestion: match.suggestion, distance: match.distance, skus: new Set([sku]), category });
+        }
+      }
+    }
+
+    if (!skuMap.has(sku)) {
+      skuMap.set(sku, {
+        sku,
+        name: String(itemName || sku).trim(),
+        category,
+        colorMap: new Map(),
+        locationMap: {}
+      });
+    }
+
+    const entry = skuMap.get(sku);
+
+    // Keep first non-empty name found
+    if (!entry.name || entry.name === sku) {
+      entry.name = String(itemName || sku).trim();
+    }
+
+    // Merge colours across sub-locations (Main Godown + Sales Studio + Warehouse → combined)
+    for (const { name, qty } of parsedColors) {
+      const key = name.toLowerCase().trim();
+      const existing = entry.colorMap.get(key) || { name, qty: 0 };
+      entry.colorMap.set(key, { name: existing.name || name, qty: existing.qty + qty });
+    }
+
+    // Track per-location color quantities
+    const locKey = subLoc; // already uppercased at line 109
+    if (!entry.locationMap[locKey]) entry.locationMap[locKey] = new Map();
+    for (const { name, qty } of parsedColors) {
+      const key = name.toLowerCase().trim();
+      const existing = entry.locationMap[locKey].get(key) || { name, qty: 0 };
+      entry.locationMap[locKey].set(key, { name: existing.name || name, qty: existing.qty + qty });
+    }
+  }
+
+  // Convert to final format
+  const items = [];
+  for (const [sku, entry] of skuMap) {
+    const colors = Array.from(entry.colorMap.values());
+    const totalQty = colors.reduce((sum, c) => sum + c.qty, 0);
+    const stockLevel = getStockLevel(totalQty);
+
+    items.push({
+      sku,
+      name: entry.name,
+      category: entry.category,
+      colors,
+      totalQty,
+      stockLevel,
+      locations: Object.fromEntries(
+        Object.entries(entry.locationMap).map(([loc, cm]) => [loc, Array.from(cm.values())])
+      )
+    });
+  }
+
+  const colourErrors = Array.from(colourErrorMap.values()).map(e => ({ ...e, skus: Array.from(e.skus) }));
+  const sorted = items.sort((a, b) => String(a.sku).localeCompare(String(b.sku), undefined, { numeric: true }));
+  return { items: sorted, validationStats: { totalRows, mismatchRows, colourErrors, balPcsMismatches } };
+}
+
+/**
+ * Parse ZM Product Code file
+ * Returns array of { zmCode, kuntalCode }
+ */
+export function parseZMFile(rows) {
+  // Skip header row (row 0)
+  const dataRows = rows.slice(1);
+  const mappings = [];
+
+  for (const row of dataRows) {
+    if (!row) continue;
+    const zmCode = String(row[ZM_COLS.ZM_CODE] || '').trim();
+    const kuntalCode = String(row[ZM_COLS.KUNTAL_CODE] || '').trim();
+    if (zmCode && kuntalCode && zmCode !== 'Zimonza Product Code') {
+      mappings.push({ zmCode, kuntalCode });
+    }
+  }
+
+  return mappings;
+}
+
+/**
+ * Validate that uploaded file has expected structure
+ */
+export function validateStockFile(rows, category) {
+  const headerRowIdx = findHeaderRow(rows);
+  if (headerRowIdx < 0) return { valid: false, error: 'Could not find header row (ITEM NO)' };
+
+  const header = rows[headerRowIdx];
+  const detected = buildColMap(header);
+  const staticCols = category === CATEGORIES.SAREE ? SAREE_COLS : LEHNGA_COLS;
+
+  const required = ['ITEM NO', 'ITEM NAME', 'SUB LOCATION', 'COLOR', 'BAL PCS'];
+  const found = (header || []).filter(c => c).map(c => String(c).trim().toUpperCase());
+  const missing = required.filter(r => !found.some(f => f.includes(r) || r.includes(f)));
+
+  if (missing.length > 0) {
+    return { valid: false, error: `Missing columns: ${missing.join(', ')}` };
+  }
+
+  const itemNoCol = detected.ITEM_NO ?? staticCols.ITEM_NO;
+  const dataCount = rows.slice(headerRowIdx + 1).filter(r => r && r[itemNoCol]).length;
+  return { valid: true, dataCount };
+}
+
+/**
+ * Validate ZM file
+ */
+export function validateZMFile(rows) {
+  if (!rows || rows.length < 2) return { valid: false, error: 'File appears empty' };
+  const header = rows[0];
+  if (!header || !String(header[0] || '').toLowerCase().includes('zimonza')) {
+    return { valid: false, error: 'Invalid ZM file: expected "Zimonza Product Code" column' };
+  }
+  return { valid: true, dataCount: rows.length - 1 };
+}
+
+/**
+ * Get file summary after parsing
+ */
+export function getFileSummary(items, validationStats = {}) {
+  const totalSKUs = items.length;
+  const totalPcs = items.reduce((s, i) => s + (i.totalQty || 0), 0);
+  const lowStock = items.filter(i => i.stockLevel === 'low').length;
+  const soldOut = items.filter(i => i.stockLevel === 'sold_out').length;
+  const uniqueColors = new Set(items.flatMap(i => (i.colors || []).map(c => c.name.toLowerCase()))).size;
+  const totalRows = validationStats.totalRows || 0;
+  const mismatchRows = validationStats.mismatchRows || 0;
+
+  return {
+    totalSKUs, totalPcs, lowStock, soldOut, uniqueColors,
+    totalRows, mismatchRows, validatedRows: totalRows - mismatchRows,
+    colourErrors: validationStats.colourErrors || [],
+    balPcsMismatches: validationStats.balPcsMismatches || []
+  };
+}

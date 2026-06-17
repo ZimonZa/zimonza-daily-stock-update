@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock Analysis — Zimonza</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <link rel="stylesheet" href="css/custom.css">
+  <link rel="stylesheet" href="css/animations.css">
+  <link rel="stylesheet" href="css/theme.css">
+</head>
+<body class="bg-slate-950 min-h-screen">
+<div id="page-content" class="ml-64 pt-16 transition-all duration-300">
+ <div class="p-7 space-y-6 animate-fade-in">
+
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-white">Stock Analysis</h1>
+      <p class="text-slate-400 text-sm mt-0.5">Full inventory — <span id="data-date-label" class="text-emerald-400 font-medium">—</span></p>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <select id="date-picker" class="zm-input text-sm w-44">
+        <option value="">Loading dates…</option>
+      </select>
+      <button id="export-csv-btn" class="btn-secondary text-sm py-2 px-4">
+        <i data-lucide="download" class="w-4 h-4"></i> Export CSV
+      </button>
+    </div>
+  </div>
+
+  <!-- Quick Stats Bar -->
+  <div id="stats-bar" class="hidden grid-cols-2 sm:grid-cols-4 gap-3">
+    <div class="glass-card p-4 text-center">
+      <p class="text-white font-bold text-xl" id="stat-total-skus">—</p>
+      <p class="text-slate-500 text-xs mt-0.5">Total SKUs</p>
+    </div>
+    <div class="glass-card p-4 text-center">
+      <p class="text-white font-bold text-xl" id="stat-total-pcs">—</p>
+      <p class="text-slate-500 text-xs mt-0.5">Total Pieces</p>
+    </div>
+    <div class="glass-card p-4 text-center">
+      <p class="text-amber-400 font-bold text-xl" id="stat-low">—</p>
+      <p class="text-slate-500 text-xs mt-0.5">Low Stock</p>
+    </div>
+    <div class="glass-card p-4 text-center">
+      <p class="text-red-400 font-bold text-xl" id="stat-soldout">—</p>
+      <p class="text-slate-500 text-xs mt-0.5">Sold Out</p>
+    </div>
+  </div>
+
+  <!-- Filters Bar -->
+  <div class="glass-card p-4 flex flex-wrap gap-3 items-center">
+    <input id="search-input" type="text" placeholder="Search SKU or name…" class="zm-input w-48">
+    <select id="cat-filter" class="zm-input w-36">
+      <option value="all">All Categories</option>
+      <option value="lehnga">Lehnga</option>
+      <option value="saree">Saree</option>
+    </select>
+    <select id="level-filter" class="zm-input w-36">
+      <option value="all">All Levels</option>
+      <option value="high">High (6+)</option>
+      <option value="medium">Medium (3–5)</option>
+      <option value="low">Low (1–2)</option>
+      <option value="sold_out">Sold Out</option>
+    </select>
+    <button id="apply-filter" class="btn-primary text-sm py-2 px-4">
+      <i data-lucide="filter" class="w-4 h-4"></i> Filter
+    </button>
+    <div class="ml-auto flex items-center gap-2">
+      <span class="text-slate-500 text-xs" id="result-count"></span>
+      <div class="flex items-center gap-1 ml-2">
+        <button id="view-grid-btn" title="Card view"
+          class="btn-secondary text-xs py-1.5 px-3 active-view-btn">
+          <i data-lucide="layout-grid" class="w-3.5 h-3.5"></i>
+        </button>
+        <button id="view-table-btn" title="Table view"
+          class="btn-secondary text-xs py-1.5 px-3">
+          <i data-lucide="list" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Card Grid View (default) -->
+  <div id="card-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+    <div class="col-span-full p-12 flex justify-center">
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <!-- Table View (hidden by default) -->
+  <div id="table-container" class="glass-card overflow-hidden hidden"></div>
+
+  <!-- Pagination -->
+  <div id="pagination-container" class="flex justify-center mt-2"></div>
+
+ </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './js/auth.js';
+import { renderShell } from './js/ui-components.js';
+import notify from './js/notifications.js';
+import { getStockData, getAllUploadDates } from './js/firestore-service.js';
+import { CATEGORIES } from './js/constants.js';
+import { filterItems, paginate } from './js/filters.js';
+import { exportCSV } from './js/report-generator.js';
+import { formatNumber, debounce, formatDateDisplay, getStockLevel } from './js/utils.js';
+
+await requireAuth();
+renderShell('stock-analysis');
+if (window.lucide) lucide.createIcons();
+
+let allItems = [], page = 1, viewMode = 'grid';
+const PER_PAGE = 48;
+
+async function load() {
+  try {
+    const dates = await getAllUploadDates();
+    if (!dates.length) {
+      document.getElementById('card-container').innerHTML = noDataHTML();
+      if (window.lucide) lucide.createIcons();
+      return;
+    }
+    const date = dates[0];
+    document.getElementById('data-date-label').textContent = formatDateDisplay(date);
+
+    // Populate date selector
+    const dateSel = document.getElementById('date-picker');
+    dateSel.innerHTML = dates.map(d =>
+      `<option value="${d}" ${d === date ? 'selected' : ''}>${formatDateDisplay(d)}</option>`
+    ).join('');
+    dateSel.addEventListener('change', async () => {
+      const selected = dateSel.value;
+      if (!selected) return;
+      document.getElementById('card-container').innerHTML =
+        `<div class="col-span-full p-12 flex justify-center"><div class="spinner"></div></div>`;
+      try {
+        const [l2, s2] = await Promise.all([
+          getStockData(selected, CATEGORIES.LEHNGA),
+          getStockData(selected, CATEGORIES.SAREE)
+        ]);
+        allItems = [...l2, ...s2].map(item => ({
+          ...item,
+          stockLevel: item.stockLevel || getStockLevel(item.totalQty || 0)
+        }));
+        document.getElementById('data-date-label').textContent = formatDateDisplay(selected);
+        page = 1;
+        renderStatsBar(allItems);
+        safeRenderView();
+      } catch(e) {
+        notify.error('Failed to load data for selected date.');
+        console.error(e);
+      }
+    });
+
+    const [l, s] = await Promise.all([
+      getStockData(date, CATEGORIES.LEHNGA),
+      getStockData(date, CATEGORIES.SAREE)
+    ]);
+    // Recompute stockLevel defensively in case Firestore docs are missing the field
+    allItems = [...l, ...s].map(item => ({
+      ...item,
+      stockLevel: item.stockLevel || getStockLevel(item.totalQty || 0)
+    }));
+    renderStatsBar(allItems);
+    renderView();
+  } catch(e) {
+    notify.error('Failed to load stock data.');
+    console.error(e);
+  }
+}
+
+function renderStatsBar(items) {
+  const bar = document.getElementById('stats-bar');
+  bar.classList.remove('hidden');
+  bar.classList.add('grid');
+  document.getElementById('stat-total-skus').textContent = formatNumber(items.length);
+  document.getElementById('stat-total-pcs').textContent  = formatNumber(items.reduce((s,i)=>s+(i.totalQty||0),0));
+  document.getElementById('stat-low').textContent        = formatNumber(items.filter(i=>i.stockLevel==='low').length);
+  document.getElementById('stat-soldout').textContent    = formatNumber(items.filter(i=>i.stockLevel==='sold_out').length);
+}
+
+function getFilters() {
+  return {
+    search: document.getElementById('search-input').value,
+    category: document.getElementById('cat-filter').value,
+    stockLevel: document.getElementById('level-filter').value
+  };
+}
+
+function renderView() {
+  const filtered = filterItems(allItems, getFilters());
+  const { items, total, totalPages } = paginate(filtered, page, PER_PAGE);
+  document.getElementById('result-count').textContent = `${total} items`;
+
+  if (viewMode === 'grid') {
+    document.getElementById('card-container').classList.remove('hidden');
+    document.getElementById('table-container').classList.add('hidden');
+    renderCardGrid(items, total);
+  } else {
+    document.getElementById('card-container').classList.add('hidden');
+    document.getElementById('table-container').classList.remove('hidden');
+    renderTable(items);
+  }
+
+  renderPagination(totalPages);
+}
+
+function renderCardGrid(items) {
+  const container = document.getElementById('card-container');
+  if (!items.length) {
+    container.innerHTML = `<div class="col-span-full text-center py-16 text-slate-500">
+      <i data-lucide="search-x" class="w-10 h-10 mx-auto mb-3 text-slate-700"></i>
+      <p class="font-medium">No items match your filters.</p>
+    </div>`;
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+
+  const lvlClass = { high:'level-high', medium:'level-medium', low:'level-low', sold_out:'level-sold_out' };
+  const catStyle = {
+    lehnga: 'background:rgba(139,92,246,0.12);color:#c4b5fd;border:1px solid rgba(139,92,246,0.25)',
+    saree:  'background:rgba(20,184,166,0.12);color:#5eead4;border:1px solid rgba(20,184,166,0.25)'
+  };
+
+  container.innerHTML = items.map((item, idx) => {
+    const lvl = lvlClass[item.stockLevel] || 'level-sold_out';
+    const cat = catStyle[item.category] || catStyle.saree;
+    const colorPills = (item.colors || []).map(c =>
+      `<span class="color-pill"><span class="text-slate-200">${c.name}</span><span class="text-slate-500 ml-1">×${c.qty}</span></span>`
+    ).join('');
+
+    const totalQtyColor = item.stockLevel === 'sold_out' ? 'text-slate-400'
+      : item.stockLevel === 'low' ? 'text-red-400'
+      : item.stockLevel === 'medium' ? 'text-amber-400'
+      : 'text-white';
+
+    return `
+    <div class="analysis-card group" id="card-${idx}">
+      <!-- Top row: SKU + Qty -->
+      <div class="flex items-start justify-between gap-2 mb-3">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2 mb-1.5 flex-wrap">
+            <span class="font-mono font-bold text-sm text-emerald-400">${item.sku}</span>
+            <span class="text-xs px-2 py-0.5 rounded-full font-semibold capitalize" style="${cat}">${item.category}</span>
+          </div>
+          <p class="text-slate-200 text-sm font-medium line-clamp-2 leading-snug">${item.name}</p>
+        </div>
+        <div class="text-right flex-shrink-0 ml-2">
+          <p class="${totalQtyColor} font-bold text-2xl leading-none">${formatNumber(item.totalQty)}</p>
+          <p class="text-slate-600 text-xs mt-0.5">pcs</p>
+        </div>
+      </div>
+
+      <!-- Stock level + colour count -->
+      <div class="flex items-center gap-2 mb-3">
+        <span class="${lvl} text-xs">${(item.stockLevel || 'sold_out').replace('_',' ')}</span>
+        <span class="text-slate-600 text-xs">
+          ${(item.colors||[]).length} colour${(item.colors||[]).length !== 1 ? 's' : ''}
+        </span>
+      </div>
+
+      <!-- Colour pills -->
+      <div class="flex flex-wrap gap-1.5">
+        ${colorPills || '<span class="text-slate-600 text-xs italic">No colour data</span>'}
+      </div>
+    </div>`;
+  }).join('');
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function renderTable(items) {
+  if (!items.length) {
+    document.getElementById('table-container').innerHTML = `<p class="text-slate-500 text-sm text-center py-12">No items match your filters.</p>`;
+    return;
+  }
+
+  const rows = items.map(i => {
+    const colorBadges = (i.colors||[]).slice(0,4).map(c=>
+      `<span class="color-badge">${c.name} ×${c.qty}</span>`).join(' ');
+    const extra = (i.colors||[]).length > 4 ? `<span class="text-slate-500 text-xs">+${(i.colors||[]).length-4} more</span>` : '';
+    const lvlCls = { high:'level-high', medium:'level-medium', low:'level-low', sold_out:'level-sold_out' }[i.stockLevel]||'level-sold_out';
+    return `<tr class="border-t border-white/5 hover:bg-white/3 transition">
+      <td class="px-4 py-3"><span class="text-emerald-400 font-mono font-medium text-sm">${i.sku}</span></td>
+      <td class="px-4 py-3 text-slate-200 text-sm" style="max-width:220px">${i.name}</td>
+      <td class="px-4 py-3"><span class="badge badge-info capitalize">${i.category}</span></td>
+      <td class="px-4 py-3 text-white font-semibold">${formatNumber(i.totalQty)}</td>
+      <td class="px-4 py-3"><span class="${lvlCls}">${(i.stockLevel || 'sold_out').replace('_',' ')}</span></td>
+      <td class="px-4 py-3"><div class="flex flex-wrap gap-1">${colorBadges}${extra}</div></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('table-container').innerHTML = `
+    <div class="overflow-x-auto">
+      <table class="w-full zm-table">
+        <thead><tr>
+          <th>SKU</th><th>Item Name</th><th>Category</th>
+          <th>Qty</th><th>Level</th><th>Colors</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+function renderPagination(totalPages) {
+  const container = document.getElementById('pagination-container');
+  if (totalPages <= 1) { container.innerHTML = ''; return; }
+  const maxBtns = 10;
+  const btns = Array.from({length: Math.min(totalPages, maxBtns)}, (_,i) => `
+    <button class="page-btn w-9 h-9 text-xs rounded-xl transition ${i+1===page
+      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-semibold'
+      : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5'}"
+      data-p="${i+1}">${i+1}</button>`).join('');
+  container.innerHTML = `<div class="flex gap-1.5">${btns}</div>`;
+  container.querySelectorAll('.page-btn').forEach(b => b.addEventListener('click', () => {
+    page = +b.dataset.p; renderView();
+    document.getElementById('card-container').scrollIntoView({ behavior:'smooth', block:'start' });
+  }));
+}
+
+// View toggle
+document.getElementById('view-grid-btn').addEventListener('click', () => {
+  viewMode = 'grid';
+  document.getElementById('view-grid-btn').classList.add('active-view-btn');
+  document.getElementById('view-table-btn').classList.remove('active-view-btn');
+  renderView();
+});
+document.getElementById('view-table-btn').addEventListener('click', () => {
+  viewMode = 'table';
+  document.getElementById('view-table-btn').classList.add('active-view-btn');
+  document.getElementById('view-grid-btn').classList.remove('active-view-btn');
+  renderView();
+});
+
+// Safe wrapper — prevents silent crashes in filter handlers
+function safeRenderView() {
+  try { renderView(); }
+  catch(e) { console.error(e); notify.error('Render error: ' + e.message); }
+}
+
+// Filters
+document.getElementById('apply-filter').addEventListener('click', () => { page=1; safeRenderView(); });
+document.getElementById('search-input').addEventListener('input', debounce(() => { page=1; safeRenderView(); }));
+document.getElementById('cat-filter').addEventListener('change', () => { page=1; safeRenderView(); });
+document.getElementById('level-filter').addEventListener('change', () => { page=1; safeRenderView(); });
+
+// Export
+document.getElementById('export-csv-btn').addEventListener('click', () => {
+  const filtered = filterItems(allItems, getFilters());
+  exportCSV(filtered, 'zimonza-stock.csv');
+  notify.success('CSV exported!');
+});
+
+function noDataHTML() {
+  return `<div class="col-span-full text-center py-16">
+    <i data-lucide="database" class="w-12 h-12 text-slate-700 mx-auto mb-3"></i>
+    <p class="text-slate-400 font-semibold">No stock data found</p>
+    <p class="text-slate-500 text-sm mt-1">Upload stock files first.</p>
+    <a href="upload.html" class="btn-primary inline-flex mt-4">Upload Now</a>
+  </div>`;
+}
+
+load();
+</script>
+</body>
+</html>

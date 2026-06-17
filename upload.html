@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Upload Center — Zimonza Stock Update</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <link rel="stylesheet" href="css/custom.css">
+  <link rel="stylesheet" href="css/animations.css">
+  <link rel="stylesheet" href="css/theme.css">
+</head>
+<body class="bg-slate-950 min-h-screen">
+
+<div id="page-content" class="ml-64 pt-16 transition-all duration-300">
+ <div class="p-7 space-y-7 animate-fade-in">
+
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-white">Upload Center</h1>
+      <p class="text-slate-400 text-sm mt-0.5">Choose a date and upload stock files</p>
+    </div>
+    <div class="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 cursor-pointer" onclick="document.getElementById('upload-date-picker')._flatpickr?.open()">
+      <i data-lucide="calendar" class="w-4 h-4 text-emerald-400 flex-shrink-0"></i>
+      <input id="upload-date-picker" type="text" readonly
+        class="bg-transparent text-emerald-400 text-sm font-medium outline-none w-36 cursor-pointer"
+        placeholder="Select date…">
+    </div>
+  </div>
+
+  <!-- Overwrite warning (shown when selected date already has data) -->
+  <div id="date-exists-warning" class="hidden items-center gap-3 px-4 py-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-400 text-sm">
+    <i data-lucide="alert-triangle" class="w-4 h-4 flex-shrink-0"></i>
+    <span>Data already uploaded for this date — processing will <strong>overwrite</strong> existing data.</span>
+  </div>
+
+  <!-- 2 Drop Zones -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+    <!-- Lehnga Drop Zone -->
+    <div class="glass-card p-6 flex flex-col gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
+          <i data-lucide="file-spreadsheet" class="w-5 h-5 text-purple-400"></i>
+        </div>
+        <div>
+          <h3 class="text-white font-semibold text-sm">Lehnga Stock File</h3>
+          <p class="text-slate-500 text-xs">.xlsx / .xls</p>
+        </div>
+      </div>
+      <div id="lehnga-drop" class="drop-zone p-6 text-center cursor-pointer" onclick="document.getElementById('lehnga-file').click()">
+        <i data-lucide="upload-cloud" class="w-8 h-8 text-slate-600 mx-auto mb-2"></i>
+        <p class="text-slate-400 text-sm font-medium">Drop file here or click</p>
+        <p class="text-slate-600 text-xs mt-1">LEHNGA STOCK .xlsx</p>
+      </div>
+      <input type="file" id="lehnga-file" accept=".xlsx,.xls" class="hidden">
+      <div id="lehnga-status" class="hidden"></div>
+    </div>
+
+    <!-- Saree Drop Zone -->
+    <div class="glass-card p-6 flex flex-col gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center">
+          <i data-lucide="file-spreadsheet" class="w-5 h-5 text-teal-400"></i>
+        </div>
+        <div>
+          <h3 class="text-white font-semibold text-sm">Saree Stock File</h3>
+          <p class="text-slate-500 text-xs">.xlsx / .xls</p>
+        </div>
+      </div>
+      <div id="saree-drop" class="drop-zone p-6 text-center cursor-pointer" onclick="document.getElementById('saree-file').click()">
+        <i data-lucide="upload-cloud" class="w-8 h-8 text-slate-600 mx-auto mb-2"></i>
+        <p class="text-slate-400 text-sm font-medium">Drop file here or click</p>
+        <p class="text-slate-600 text-xs mt-1">SAREE STOCK .xlsx</p>
+      </div>
+      <input type="file" id="saree-file" accept=".xlsx,.xls" class="hidden">
+      <div id="saree-status" class="hidden"></div>
+    </div>
+  </div>
+
+  <!-- Preview Summary Cards (hidden until files loaded) -->
+  <div id="preview-section" class="hidden space-y-5">
+    <div class="flex items-center gap-3">
+      <div class="h-px flex-1 bg-white/5"></div>
+      <span class="text-slate-500 text-xs font-semibold uppercase tracking-wider">File Preview</span>
+      <div class="h-px flex-1 bg-white/5"></div>
+    </div>
+    <div id="preview-cards" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4"></div>
+  </div>
+
+  <!-- Error Panel (hidden until files with errors are parsed) -->
+  <div id="error-panel" class="hidden space-y-5">
+    <div class="flex items-center gap-3">
+      <div class="h-px flex-1 bg-white/5"></div>
+      <span class="text-slate-500 text-xs font-semibold uppercase tracking-wider">Data Quality Report</span>
+      <div class="h-px flex-1 bg-white/5"></div>
+    </div>
+    <div class="glass-card overflow-hidden" style="border-color:rgba(245,158,11,0.2)">
+      <!-- Panel header -->
+      <div class="flex items-center justify-between px-6 py-4 border-b border-white/5" style="background:rgba(245,158,11,0.05)">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.2)">
+            <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-400"></i>
+          </div>
+          <div>
+            <h3 class="text-white font-semibold text-sm">Data Quality Issues Found</h3>
+            <p id="error-panel-summary" class="text-slate-400 text-xs mt-0.5"></p>
+          </div>
+        </div>
+        <button id="dismiss-error-panel" class="text-slate-500 hover:text-slate-300 p-1.5 rounded-lg hover:bg-white/5 transition">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+      <!-- Tabs -->
+      <div class="flex border-b border-white/5">
+        <button id="tab-colour-btn" onclick="switchErrorTab('colour')"
+          class="flex items-center gap-2 px-5 py-3 text-sm font-medium text-amber-400 border-b-2 border-amber-400 transition">
+          <i data-lucide="palette" class="w-3.5 h-3.5"></i>
+          Colour Warnings
+          <span id="colour-error-badge" class="px-1.5 py-0.5 rounded-full text-xs" style="background:rgba(245,158,11,0.2);color:#fbbf24"></span>
+        </button>
+        <button id="tab-balPcs-btn" onclick="switchErrorTab('balPcs')"
+          class="flex items-center gap-2 px-5 py-3 text-sm font-medium text-slate-400 border-b-2 border-transparent hover:text-slate-300 transition">
+          <i data-lucide="scale" class="w-3.5 h-3.5"></i>
+          Bal Pcs Mismatches
+          <span id="balPcs-error-badge" class="px-1.5 py-0.5 rounded-full text-xs" style="background:rgba(239,68,68,0.2);color:#f87171"></span>
+        </button>
+      </div>
+      <!-- Colour Errors Tab -->
+      <div id="tab-colour-content" class="p-5">
+        <p class="text-slate-500 text-xs mb-4">Colour names within 1–2 character edits of a known colour — likely typos in the Excel file.</p>
+        <div class="overflow-x-auto rounded-xl border border-white/5">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-white/5" style="background:rgba(255,255,255,0.03)">
+                <th class="text-left px-4 py-3 text-slate-400 font-medium text-xs uppercase tracking-wide">Found in File</th>
+                <th class="text-left px-4 py-3 text-slate-400 font-medium text-xs uppercase tracking-wide">Suggested Correction</th>
+                <th class="text-left px-4 py-3 text-slate-400 font-medium text-xs uppercase tracking-wide">Affected SKUs</th>
+                <th class="text-left px-4 py-3 text-slate-400 font-medium text-xs uppercase tracking-wide">Category</th>
+              </tr>
+            </thead>
+            <tbody id="colour-errors-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <!-- Bal Pcs Mismatches Tab -->
+      <div id="tab-balPcs-content" class="p-5 hidden">
+        <p class="text-slate-500 text-xs mb-4">Rows where the sum of parsed colour quantities does not match the BAL PCS column value.</p>
+        <div class="overflow-x-auto rounded-xl border border-white/5">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-white/5" style="background:rgba(255,255,255,0.03)">
+                <th class="text-left px-4 py-3 text-slate-400 font-medium text-xs uppercase tracking-wide">SKU</th>
+                <th class="text-left px-4 py-3 text-slate-400 font-medium text-xs uppercase tracking-wide">Item Name</th>
+                <th class="text-left px-4 py-3 text-slate-400 font-medium text-xs uppercase tracking-wide">Category</th>
+                <th class="text-right px-4 py-3 text-slate-400 font-medium text-xs uppercase tracking-wide">Colour Total</th>
+                <th class="text-right px-4 py-3 text-slate-400 font-medium text-xs uppercase tracking-wide">Bal Pcs</th>
+                <th class="text-right px-4 py-3 text-slate-400 font-medium text-xs uppercase tracking-wide">Difference</th>
+              </tr>
+            </thead>
+            <tbody id="balPcs-errors-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Process Button + Steps -->
+  <div id="process-section" class="glass-card p-6 space-y-5">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div>
+        <h3 class="text-white font-semibold">Process &amp; Save</h3>
+        <p class="text-slate-400 text-sm mt-0.5">Upload stock to Firestore after preview</p>
+      </div>
+      <button id="process-btn" disabled
+        class="btn-primary opacity-40 cursor-not-allowed"
+        onclick="startProcessing()">
+        <i data-lucide="zap" class="w-4 h-4"></i>
+        Process Stock
+      </button>
+    </div>
+
+    <!-- Processing Steps -->
+    <div id="steps-list" class="space-y-1 hidden">
+      <div class="step" id="step-parse">
+        <div class="step-icon pending">1</div>
+        <div><p class="text-slate-300 text-sm font-medium">Parse Excel Files</p><p class="text-slate-500 text-xs">Extract and normalize stock data</p></div>
+      </div>
+      <div class="step" id="step-compare">
+        <div class="step-icon pending">2</div>
+        <div><p class="text-slate-300 text-sm font-medium">Compare with Previous</p><p class="text-slate-500 text-xs">Detect sold, restocked, new arrivals</p></div>
+      </div>
+      <div class="step" id="step-save">
+        <div class="step-icon pending">3</div>
+        <div><p class="text-slate-300 text-sm font-medium">Save to Firestore</p><p class="text-slate-500 text-xs">Write daily_stock/{date}/...</p></div>
+      </div>
+      <div class="step" id="step-done">
+        <div class="step-icon pending">4</div>
+        <div><p class="text-slate-300 text-sm font-medium">Finalize &amp; Report</p><p class="text-slate-500 text-xs">Save history and generate summary</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Review Panel (shown after compare step, before save) -->
+  <div id="review-panel" class="hidden space-y-5">
+    <div class="flex items-center gap-3">
+      <div class="h-px flex-1 bg-white/5"></div>
+      <span class="text-slate-500 text-xs font-semibold uppercase tracking-wider">Review Changes Before Upload</span>
+      <div class="h-px flex-1 bg-white/5"></div>
+    </div>
+    <div id="review-summary" class="flex flex-wrap gap-3"></div>
+    <div id="review-new-arrivals" class="space-y-2"></div>
+    <div id="review-sold"         class="space-y-2"></div>
+    <div id="review-restocked"    class="space-y-2"></div>
+    <div id="review-soldout"      class="space-y-2"></div>
+    <div class="flex items-center gap-3 pt-2 flex-wrap">
+      <button id="approve-btn" class="btn-primary text-sm py-2.5 px-6 flex items-center gap-2">
+        <i data-lucide="check-circle" class="w-4 h-4"></i> Approve &amp; Upload
+      </button>
+      <button id="cancel-review-btn" class="btn-secondary text-sm py-2 px-4 flex items-center gap-2">
+        <i data-lucide="x" class="w-4 h-4"></i> Cancel
+      </button>
+      <span class="text-slate-500 text-xs ml-2">Unchanged items upload automatically.</span>
+    </div>
+  </div>
+
+  <!-- Result Report (shown after processing) -->
+  <div id="result-report" class="hidden glass-card p-6 border-emerald-500/20">
+    <div class="flex items-center gap-3 mb-5">
+      <div class="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center">
+        <i data-lucide="check-circle" class="w-6 h-6 text-emerald-400"></i>
+      </div>
+      <div>
+        <h3 class="text-white font-bold">Processing Complete!</h3>
+        <p class="text-slate-400 text-sm" id="result-date-label"></p>
+      </div>
+    </div>
+    <div id="result-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3"></div>
+    <div class="flex gap-3 mt-5 flex-wrap">
+      <a href="dashboard.html" class="btn-primary text-sm py-2 px-4">
+        <i data-lucide="layout-dashboard" class="w-4 h-4"></i> View Dashboard
+      </a>
+      <a href="sold-items.html" class="btn-secondary text-sm py-2 px-4">
+        <i data-lucide="trending-down" class="w-4 h-4"></i> View Sold Items
+      </a>
+      <a href="new-arrivals.html" class="btn-secondary text-sm py-2 px-4">
+        <i data-lucide="sparkles" class="w-4 h-4"></i> New Arrivals
+      </a>
+    </div>
+  </div>
+
+ </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './js/auth.js';
+import { renderShell } from './js/ui-components.js';
+import notify from './js/notifications.js';
+import { readExcelFile, parseStockFile, validateStockFile, getFileSummary } from './js/excel-parser.js';
+import { analyzeStockChanges } from './js/stock-analyzer.js';
+import { saveStockData, saveDailySummary, getStockData, getAllUploadDates, saveUploadHistory } from './js/firestore-service.js';
+import { CATEGORIES } from './js/constants.js';
+import { today, formatDate, formatDateDisplay, formatNumber, getStockLevel } from './js/utils.js';
+
+await requireAuth();
+renderShell('upload');
+if (window.lucide) lucide.createIcons();
+
+// Date picker — defaults to today, no future dates allowed
+let selectedDate = today();
+const existingDates = await getAllUploadDates();
+
+const warningEl = document.getElementById('date-exists-warning');
+function updateDateWarning(date) {
+  if (existingDates.includes(date)) {
+    warningEl.classList.remove('hidden');
+    warningEl.style.display = 'flex';
+  } else {
+    warningEl.style.display = 'none';
+  }
+}
+
+const fp = flatpickr('#upload-date-picker', {
+  dateFormat: 'Y-m-d',
+  altInput: true,
+  altFormat: 'J M Y',
+  defaultDate: today(),
+  maxDate: today(),
+  onChange([date]) {
+    selectedDate = formatDate(date);
+    updateDateWarning(selectedDate);
+  }
+});
+
+// Pre-fill date from ?date= URL param (e.g. from History re-upload link)
+const urlDate = new URLSearchParams(location.search).get('date');
+if (urlDate && /^\d{4}-\d{2}-\d{2}$/.test(urlDate)) {
+  fp.setDate(urlDate, true);
+  selectedDate = urlDate;
+}
+
+// Check if today/selected date already has data on load
+updateDateWarning(selectedDate);
+
+const state = { lehnga: null, saree: null };
+
+// Review panel state
+let pendingUploadDate = null;
+let pendingAnalysis   = null;
+let approvedItems     = [];
+
+function setupDrop(zoneId, fileId, category) {
+  const zone = document.getElementById(zoneId);
+  const input = document.getElementById(fileId);
+
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file, category, zone, fileId);
+  });
+  input.addEventListener('change', () => {
+    if (input.files[0]) handleFile(input.files[0], category, zone, fileId);
+  });
+}
+
+setupDrop('lehnga-drop','lehnga-file','lehnga');
+setupDrop('saree-drop','saree-file','saree');
+
+async function handleFile(file, category, zone, fileId) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!['xlsx','xls'].includes(ext)) {
+    notify.error(`Invalid file type. Please upload .xlsx or .xls`);
+    return;
+  }
+
+  // Show loading state
+  zone.innerHTML = `<div class="flex flex-col items-center gap-2 py-2">
+    <div class="spinner"></div>
+    <p class="text-slate-400 text-xs">Parsing ${file.name}…</p>
+  </div>`;
+
+  try {
+    const rows = await readExcelFile(file);
+    const cat = category === 'lehnga' ? CATEGORIES.LEHNGA : CATEGORIES.SAREE;
+    const validation = validateStockFile(rows, cat);
+    if (!validation.valid) { notify.error(validation.error); resetZone(zone); return; }
+    const { items, validationStats } = parseStockFile(rows, cat);
+    const summary = getFileSummary(items, validationStats);
+    state[category] = { items, file, summary };
+    const mismatchNote = summary.mismatchRows > 0 ? ` · ⚠ ${summary.mismatchRows} mismatches` : '';
+    zone.innerHTML = fileSuccessHTML(file.name, `${summary.totalSKUs} SKUs · ${summary.totalPcs} pcs${mismatchNote}`);
+    zone.classList.add('has-file');
+    updatePreview();
+    updateProcessBtn();
+    if (window.lucide) lucide.createIcons();
+  } catch(err) {
+    notify.error('Failed to parse file: ' + err.message);
+    resetZone(zone);
+  }
+}
+
+function fileSuccessHTML(name, detail) {
+  return `<div class="flex flex-col items-center gap-2 py-2 text-center">
+    <i data-lucide="file-check" class="w-8 h-8 text-emerald-400 mx-auto"></i>
+    <p class="text-emerald-400 text-sm font-semibold">${name}</p>
+    <p class="text-slate-400 text-xs">${detail}</p>
+    <button class="text-xs text-slate-500 hover:text-red-400 transition mt-1" onclick="location.reload()">Remove</button>
+  </div>`;
+}
+
+function resetZone(zone) {
+  zone.innerHTML = `<i data-lucide="upload-cloud" class="w-8 h-8 text-slate-600 mx-auto mb-2"></i>
+    <p class="text-slate-400 text-sm font-medium">Drop file here or click</p>`;
+  zone.classList.remove('has-file');
+}
+
+function updatePreview() {
+  const section = document.getElementById('preview-section');
+  const cards = document.getElementById('preview-cards');
+  if (!state.lehnga && !state.saree) { section.classList.add('hidden'); return; }
+  section.classList.remove('hidden');
+
+  const totalSKUs   = (state.lehnga?.summary?.totalSKUs||0) + (state.saree?.summary?.totalSKUs||0);
+  const totalPcs    = (state.lehnga?.summary?.totalPcs||0) + (state.saree?.summary?.totalPcs||0);
+  const lowStock    = (state.lehnga?.summary?.lowStock||0) + (state.saree?.summary?.lowStock||0);
+  const soldOut     = (state.lehnga?.summary?.soldOut||0) + (state.saree?.summary?.soldOut||0);
+  const mismatch    = (state.lehnga?.summary?.mismatchRows||0) + (state.saree?.summary?.mismatchRows||0);
+  const validatedRows = (state.lehnga?.summary?.validatedRows||0) + (state.saree?.summary?.validatedRows||0);
+
+  cards.innerHTML = [
+    { label:'Total SKUs',    value: formatNumber(totalSKUs), icon:'package',        color:'from-blue-500/10 border-blue-500/20' },
+    { label:'Total Pieces',  value: formatNumber(totalPcs),  icon:'layers',         color:'from-emerald-500/10 border-emerald-500/20' },
+    { label:'Lehnga SKUs',   value: formatNumber(state.lehnga?.summary?.totalSKUs||0), icon:'file-spreadsheet', color:'from-purple-500/10 border-purple-500/20' },
+    { label:'Saree SKUs',    value: formatNumber(state.saree?.summary?.totalSKUs||0),  icon:'file-spreadsheet', color:'from-teal-500/10 border-teal-500/20' },
+    { label:'Low Stock',     value: formatNumber(lowStock),  icon:'alert-triangle', color:'from-amber-500/10 border-amber-500/20' },
+    { label:'Sold Out',      value: formatNumber(soldOut),   icon:'x-circle',       color:'from-red-500/10 border-red-500/20' },
+    mismatch > 0
+      ? { label:`⚠ ${mismatch} Bal Pcs Mismatches`, value: mismatch, icon:'alert-triangle', color:'from-amber-500/10 border-amber-500/20' }
+      : { label:'✓ Bal Pcs Validated',  value: formatNumber(validatedRows), icon:'shield-check', color:'from-emerald-500/10 border-emerald-500/20' },
+  ].map(c=>`
+    <div class="bg-gradient-to-br ${c.color} border rounded-xl p-4 text-center">
+      <i data-lucide="${c.icon}" class="w-5 h-5 text-slate-400 mx-auto mb-2"></i>
+      <p class="text-white font-bold text-xl">${c.value}</p>
+      <p class="text-slate-500 text-xs mt-0.5">${c.label}</p>
+    </div>`).join('');
+  updateErrorPanel();
+  if (window.lucide) lucide.createIcons();
+}
+
+function mergeColourErrors(a = [], b = []) {
+  const map = new Map();
+  for (const e of [...a, ...b]) {
+    const key = e.found.toLowerCase();
+    if (map.has(key)) {
+      const ex = map.get(key);
+      ex.skus = [...new Set([...ex.skus, ...e.skus])];
+      if (ex.category !== e.category) ex.category = 'both';
+    } else {
+      map.set(key, { ...e, skus: [...e.skus] });
+    }
+  }
+  return Array.from(map.values());
+}
+
+function updateErrorPanel() {
+  const colourErrors  = mergeColourErrors(state.lehnga?.summary?.colourErrors, state.saree?.summary?.colourErrors);
+  const balMismatches = [...(state.lehnga?.summary?.balPcsMismatches || []), ...(state.saree?.summary?.balPcsMismatches || [])];
+  const panel = document.getElementById('error-panel');
+
+  if (colourErrors.length === 0 && balMismatches.length === 0) {
+    panel.classList.add('hidden');
+    return;
+  }
+  panel.classList.remove('hidden');
+
+  document.getElementById('error-panel-summary').textContent =
+    `${colourErrors.length} colour warning${colourErrors.length !== 1 ? 's' : ''} · ${balMismatches.length} bal pcs mismatch${balMismatches.length !== 1 ? 'es' : ''}`;
+  document.getElementById('colour-error-badge').textContent = colourErrors.length;
+  document.getElementById('balPcs-error-badge').textContent = balMismatches.length;
+
+  document.getElementById('colour-errors-tbody').innerHTML = colourErrors.length === 0
+    ? `<tr><td colspan="4" class="px-4 py-6 text-center text-slate-500 text-xs">No colour spelling issues detected</td></tr>`
+    : colourErrors.map(e => `
+        <tr class="border-b border-white/5 hover:bg-white/3 transition">
+          <td class="px-4 py-3">
+            <span class="px-2 py-0.5 rounded-lg font-mono text-xs" style="background:rgba(245,158,11,0.1);color:#fcd34d;border:1px solid rgba(245,158,11,0.2)">${e.found}</span>
+          </td>
+          <td class="px-4 py-3">
+            <div class="flex items-center gap-2">
+              <i data-lucide="arrow-right" class="w-3 h-3 text-slate-600 flex-shrink-0"></i>
+              <span class="px-2 py-0.5 rounded-lg font-mono text-xs" style="background:rgba(16,185,129,0.1);color:#6ee7b7;border:1px solid rgba(16,185,129,0.2)">${e.suggestion}</span>
+              <span class="text-slate-600 text-xs">(${e.distance} edit${e.distance > 1 ? 's' : ''})</span>
+            </div>
+          </td>
+          <td class="px-4 py-3 text-slate-400 text-xs">${e.skus.length} SKU${e.skus.length !== 1 ? 's' : ''}</td>
+          <td class="px-4 py-3">
+            ${e.category === 'both'
+              ? `<span class="px-2 py-0.5 rounded-full text-xs bg-purple-500/10 text-purple-400">lehnga</span> <span class="px-2 py-0.5 rounded-full text-xs bg-teal-500/10 text-teal-400">saree</span>`
+              : `<span class="px-2 py-0.5 rounded-full text-xs ${e.category === 'lehnga' ? 'bg-purple-500/10 text-purple-400' : 'bg-teal-500/10 text-teal-400'}">${e.category}</span>`}
+          </td>
+        </tr>`).join('');
+
+  document.getElementById('balPcs-errors-tbody').innerHTML = balMismatches.length === 0
+    ? `<tr><td colspan="6" class="px-4 py-6 text-center text-slate-500 text-xs">No balance piece mismatches detected</td></tr>`
+    : balMismatches.map(m => `
+        <tr class="border-b border-white/5 hover:bg-white/3 transition">
+          <td class="px-4 py-3 font-mono text-xs text-slate-300">${m.sku}</td>
+          <td class="px-4 py-3 text-slate-400 text-xs" style="max-width:10rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${m.name}">${m.name}</td>
+          <td class="px-4 py-3">
+            <span class="px-2 py-0.5 rounded-full text-xs ${m.category === 'lehnga' ? 'bg-purple-500/10 text-purple-400' : 'bg-teal-500/10 text-teal-400'}">${m.category}</span>
+          </td>
+          <td class="px-4 py-3 text-right text-slate-300 text-xs font-mono">${m.parsedTotal}</td>
+          <td class="px-4 py-3 text-right text-slate-300 text-xs font-mono">${m.rowBalPcs}</td>
+          <td class="px-4 py-3 text-right">
+            <span class="font-mono text-xs font-bold ${m.diff > 0 ? 'text-amber-400' : 'text-red-400'}">${m.diff > 0 ? '+' : ''}${m.diff}</span>
+          </td>
+        </tr>`).join('');
+
+  if (window.lucide) lucide.createIcons();
+}
+
+window.switchErrorTab = function(tab) {
+  document.getElementById('tab-colour-content').classList.toggle('hidden', tab !== 'colour');
+  document.getElementById('tab-balPcs-content').classList.toggle('hidden', tab !== 'balPcs');
+  document.getElementById('tab-colour-btn').className = tab === 'colour'
+    ? 'flex items-center gap-2 px-5 py-3 text-sm font-medium text-amber-400 border-b-2 border-amber-400 transition'
+    : 'flex items-center gap-2 px-5 py-3 text-sm font-medium text-slate-400 border-b-2 border-transparent hover:text-slate-300 transition';
+  document.getElementById('tab-balPcs-btn').className = tab === 'balPcs'
+    ? 'flex items-center gap-2 px-5 py-3 text-sm font-medium text-red-400 border-b-2 border-red-400 transition'
+    : 'flex items-center gap-2 px-5 py-3 text-sm font-medium text-slate-400 border-b-2 border-transparent hover:text-slate-300 transition';
+};
+
+document.getElementById('dismiss-error-panel').addEventListener('click', () => {
+  document.getElementById('error-panel').classList.add('hidden');
+});
+
+function updateProcessBtn() {
+  const btn = document.getElementById('process-btn');
+  const ready = state.lehnga || state.saree;
+  btn.disabled = !ready;
+  btn.classList.toggle('opacity-40', !ready);
+  btn.classList.toggle('cursor-not-allowed', !ready);
+}
+
+window.startProcessing = async function() {
+  const btn = document.getElementById('process-btn');
+  btn.disabled = true;
+  document.getElementById('steps-list').classList.remove('hidden');
+  document.getElementById('result-report').classList.add('hidden');
+  document.getElementById('review-panel').classList.add('hidden');
+
+  const uploadDate = selectedDate;
+
+  try {
+    // Step 1: Parse
+    setStep('step-parse','active');
+    await delay(400);
+    const lehngaItems = state.lehnga?.items || [];
+    const sareeItems  = state.saree?.items  || [];
+    const allCurrent  = [...lehngaItems, ...sareeItems];
+    setStep('step-parse','done');
+
+    // Step 2: Compare
+    setStep('step-compare','active');
+    const allDates = await getAllUploadDates();
+    const prevDate  = allDates.find(d => d < uploadDate);
+    let prevItems = [];
+    if (prevDate) {
+      const [pl, ps] = await Promise.all([
+        getStockData(prevDate, CATEGORIES.LEHNGA),
+        getStockData(prevDate, CATEGORIES.SAREE)
+      ]);
+      prevItems = [...pl, ...ps];
+    }
+    const analysis = analyzeStockChanges(allCurrent, prevItems);
+    setStep('step-compare','done');
+
+    // Pause — show review panel for user approval before saving
+    pendingUploadDate = uploadDate;
+    pendingAnalysis   = analysis;
+    approvedItems     = allCurrent.map(i => ({ ...i, colors: i.colors.map(c => ({ ...c })) }));
+
+    renderReviewPanel(analysis);
+    document.getElementById('review-panel').classList.remove('hidden');
+    document.getElementById('review-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Execution stops here — user must click Approve & Upload
+  } catch(err) {
+    notify.error('Processing failed: ' + err.message);
+    console.error(err);
+    document.getElementById('process-btn').disabled = false;
+  }
+};
+
+// Called when user clicks "Approve & Upload"
+async function approveAndSave(items, uploadDate) {
+  try {
+    const lehngaItems = items.filter(i => i.category === CATEGORIES.LEHNGA);
+    const sareeItems  = items.filter(i => i.category === CATEGORIES.SAREE);
+
+    // Step 3: Save to Firestore
+    setStep('step-save','active');
+    const saves = [];
+    if (lehngaItems.length) saves.push(saveStockData(uploadDate, CATEGORIES.LEHNGA, lehngaItems));
+    if (sareeItems.length)  saves.push(saveStockData(uploadDate, CATEGORIES.SAREE, sareeItems));
+    await Promise.all(saves);
+
+    // Re-analyze approved (possibly edited) items for accurate summary
+    const allDates = await getAllUploadDates();
+    const prevDate  = allDates.find(d => d < uploadDate);
+    let prevItems = [];
+    if (prevDate) {
+      const [pl, ps] = await Promise.all([
+        getStockData(prevDate, CATEGORIES.LEHNGA),
+        getStockData(prevDate, CATEGORIES.SAREE)
+      ]);
+      prevItems = [...pl, ...ps];
+    }
+    const finalAnalysis = analyzeStockChanges(items, prevItems);
+    await saveDailySummary(uploadDate, { ...finalAnalysis.summary, uploadDate });
+    setStep('step-save','done');
+
+    // Step 4: History
+    setStep('step-done','active');
+    await saveUploadHistory(uploadDate, {
+      lehngaCount:    lehngaItems.length,
+      sareeCount:     sareeItems.length,
+      totalSKUs:      items.length,
+      totalPcs:       items.reduce((s,i) => s + (i.totalQty||0), 0),
+      newArrivals:    finalAnalysis.summary.newArrivalsCount,
+      soldCount:      finalAnalysis.summary.soldCount,
+      restockedCount: finalAnalysis.summary.restockedCount,
+      soldOutCount:   finalAnalysis.summary.soldOutCount
+    });
+    setStep('step-done','done');
+
+    showResult(uploadDate, finalAnalysis, items);
+    notify.success('Stock data approved and saved!');
+  } catch(err) {
+    notify.error('Save failed: ' + err.message);
+    console.error(err);
+    document.getElementById('process-btn').disabled = false;
+  }
+}
+
+// Review panel renderers
+function renderReviewPanel(analysis) {
+  const counts = [
+    { label: 'New Arrivals', n: analysis.newArrivals.length,   cls: 'review-pill-blue' },
+    { label: 'Sold',         n: analysis.soldItems.length,      cls: 'review-pill-red' },
+    { label: 'Restocked',    n: analysis.restockedItems.length, cls: 'review-pill-amber' },
+    { label: 'Sold Out',     n: analysis.soldOutItems.length,   cls: 'review-pill-slate' },
+    { label: 'Unchanged',    n: analysis.unchangedItems.length, cls: 'review-pill-emerald' },
+  ];
+  document.getElementById('review-summary').innerHTML =
+    counts.map(c => `<span class="review-summary-pill ${c.cls}">${c.n} ${c.label}</span>`).join('');
+
+  renderChangeSection('review-new-arrivals', 'New Arrivals', analysis.newArrivals,    'new');
+  renderChangeSection('review-sold',         'Sold Items',   analysis.soldItems,      'sold');
+  renderChangeSection('review-restocked',    'Restocked',    analysis.restockedItems, 'restocked');
+  renderChangeSection('review-soldout',      'Sold Out',     analysis.soldOutItems,   'soldout');
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function renderChangeSection(containerId, title, items, type) {
+  const el = document.getElementById(containerId);
+  if (!items.length) { el.innerHTML = ''; return; }
+
+  const badges = {
+    new:       { label: 'NEW',      cls: 'review-badge-new' },
+    sold:      { label: 'SOLD',     cls: 'review-badge-sold' },
+    restocked: { label: 'RESTOCK',  cls: 'review-badge-restocked' },
+    soldout:   { label: 'SOLD OUT', cls: 'review-badge-soldout' },
+  };
+  const b = badges[type];
+
+  el.innerHTML = `
+    <div class="glass-card overflow-hidden">
+      <div class="px-5 py-3 border-b border-white/5 flex items-center gap-2">
+        <span class="${b.cls}">${b.label}</span>
+        <span class="text-white font-semibold text-sm">${title}</span>
+        <span class="text-slate-500 text-xs ml-1">(${items.length})</span>
+      </div>
+      <div class="divide-y divide-white/5">
+        ${items.map(item => renderReviewItem(item, type)).join('')}
+      </div>
+    </div>`;
+}
+
+function renderReviewItem(item, type) {
+  const delta = item.totalChange || 0;
+  const deltaStr = delta > 0
+    ? `<span class="text-emerald-400 text-xs">+${delta} pcs</span>`
+    : delta < 0
+      ? `<span class="text-red-400 text-xs">${delta} pcs</span>`
+      : '';
+
+  const locs = item.locations || {};
+  const locChips = Object.entries(locs)
+    .map(([loc, colors]) => {
+      const total = colors.reduce((s, c) => s + c.qty, 0);
+      return total > 0 ? `<span class="review-loc-chip">${loc}: ${total}</span>` : '';
+    }).filter(Boolean).join('');
+
+  const colorInputs = (item.colors || []).map(c => `
+    <div class="flex items-center gap-3 py-1.5">
+      <span class="text-slate-300 text-sm w-32 truncate">${c.name}</span>
+      <input type="number" min="0" value="${c.qty}" class="review-qty-input"
+        oninput="updateApprovedQty('${item.sku}','${c.name.replace(/'/g,"\\'")}',this.value)">
+      <span class="text-slate-500 text-xs">pcs</span>
+    </div>`).join('');
+
+  const prevQ = item.prevQty ?? 0;
+  const currQ = item.currQty ?? item.totalQty;
+
+  return `
+    <div class="review-item px-5 py-4" id="review-item-${item.sku}">
+      <div class="flex items-start gap-3 flex-wrap">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 mb-1 flex-wrap">
+            <span class="font-mono text-emerald-400 font-bold text-sm">${item.sku}</span>
+            <span class="text-slate-500 text-xs capitalize">${item.category}</span>
+          </div>
+          <p class="text-slate-200 text-sm font-medium">${item.name}</p>
+          <div class="flex flex-wrap gap-1.5 mt-1.5">${locChips}</div>
+        </div>
+        <div class="text-right flex-shrink-0">
+          <p class="text-white font-bold">${prevQ} → ${currQ} pcs</p>
+          <div>${deltaStr}</div>
+        </div>
+        <button onclick="toggleReviewEdit('${item.sku}')"
+          class="btn-secondary text-xs py-1.5 px-3 flex-shrink-0 flex items-center gap-1.5">
+          <i data-lucide="edit-2" class="w-3 h-3"></i> Edit
+        </button>
+      </div>
+      <div id="edit-panel-${item.sku}" class="hidden mt-4 pt-4 border-t border-white/5">
+        <p class="text-slate-500 text-xs mb-3">Adjust quantities per color:</p>
+        ${colorInputs}
+        <p class="text-slate-400 text-xs mt-3">
+          New Total: <span id="edit-total-${item.sku}" class="text-white font-semibold">${item.totalQty}</span> pcs
+        </p>
+      </div>
+    </div>`;
+}
+
+window.toggleReviewEdit = function(sku) {
+  document.getElementById(`edit-panel-${sku}`).classList.toggle('hidden');
+  if (window.lucide) lucide.createIcons();
+};
+
+window.updateApprovedQty = function(sku, colorName, val) {
+  const qty = Math.max(0, parseInt(val, 10) || 0);
+  const item = approvedItems.find(i => i.sku === sku);
+  if (!item) return;
+  const c = item.colors.find(c => c.name.toLowerCase() === colorName.toLowerCase());
+  if (c) c.qty = qty;
+  item.totalQty   = item.colors.reduce((s, c) => s + c.qty, 0);
+  item.stockLevel = getStockLevel(item.totalQty);
+  const el = document.getElementById(`edit-total-${sku}`);
+  if (el) el.textContent = item.totalQty;
+};
+
+document.getElementById('approve-btn').addEventListener('click', async () => {
+  document.getElementById('review-panel').classList.add('hidden');
+  await approveAndSave(approvedItems, pendingUploadDate);
+});
+
+document.getElementById('cancel-review-btn').addEventListener('click', () => {
+  document.getElementById('review-panel').classList.add('hidden');
+  document.getElementById('steps-list').classList.add('hidden');
+  document.getElementById('process-btn').disabled = false;
+  pendingUploadDate = null;
+  pendingAnalysis   = null;
+  approvedItems     = [];
+  notify.info('Upload cancelled.');
+});
+
+function setStep(id, state) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const icon = el.querySelector('.step-icon');
+  icon.className = `step-icon ${state}`;
+  if (state==='done') icon.innerHTML = `<i data-lucide="check" class="w-3 h-3"></i>`;
+  else if (state==='active') icon.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px"></div>`;
+  if (window.lucide) lucide.createIcons();
+}
+
+function showResult(date, analysis, items) {
+  const el = document.getElementById('result-report');
+  document.getElementById('result-date-label').textContent = `Processed for ${formatDateDisplay(date)}`;
+  const { summary } = analysis;
+  document.getElementById('result-grid').innerHTML = [
+    { label:'Total SKUs', value: formatNumber(items.length), color:'text-white' },
+    { label:'Total Pieces', value: formatNumber(items.reduce((s,i)=>s+(i.totalQty||0),0)), color:'text-white' },
+    { label:'New Arrivals', value: formatNumber(summary.newArrivalsCount||0), color:'text-blue-400' },
+    { label:'Sold Items', value: formatNumber(summary.soldCount||0), color:'text-red-400' },
+    { label:'Restocked', value: formatNumber(summary.restockedCount||0), color:'text-amber-400' },
+    { label:'Sold Out', value: formatNumber(summary.soldOutCount||0), color:'text-slate-400' },
+  ].map(c=>`
+    <div class="glass-card p-4 text-center">
+      <p class="text-2xl font-bold ${c.color}">${c.value}</p>
+      <p class="text-slate-500 text-xs mt-1">${c.label}</p>
+    </div>`).join('');
+  el.classList.remove('hidden');
+  el.scrollIntoView({ behavior:'smooth', block:'nearest' });
+  if (window.lucide) lucide.createIcons();
+}
+
+const delay = ms => new Promise(r => setTimeout(r, ms));
+</script>
+</body>
+</html>

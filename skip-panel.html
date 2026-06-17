@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Skip Panel — Zimonza</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <link rel="stylesheet" href="css/custom.css">
+  <link rel="stylesheet" href="css/animations.css">
+  <link rel="stylesheet" href="css/theme.css">
+</head>
+<body class="bg-slate-950 min-h-screen">
+<div id="page-content" class="ml-64 pt-16 transition-all duration-300">
+ <div class="p-7 space-y-6 animate-fade-in">
+
+  <div class="flex items-center justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-white">Skip Panel</h1>
+      <p class="text-slate-400 text-sm mt-0.5">Products excluded from the upload workflow</p>
+    </div>
+  </div>
+
+  <div class="flex items-center gap-3 px-5 py-4 rounded-xl bg-blue-500/8 border border-blue-500/20">
+    <i data-lucide="info" class="w-5 h-5 text-blue-400 flex-shrink-0"></i>
+    <p class="text-blue-300/80 text-sm">Skipped products are hidden from ZM Panel upload workflow but remain updated internally with stock changes.</p>
+  </div>
+
+  <!-- Summary + Search -->
+  <div class="flex flex-col sm:flex-row gap-4">
+    <div id="skip-count-card" class="glass-card p-4 flex items-center gap-4 flex-shrink-0">
+      <div class="w-10 h-10 rounded-xl bg-slate-500/10 flex items-center justify-center">
+        <i data-lucide="skip-forward" class="w-5 h-5 text-slate-400"></i>
+      </div>
+      <div>
+        <p class="text-white font-bold text-xl" id="skip-count">—</p>
+        <p class="text-slate-500 text-xs">Skipped Products</p>
+      </div>
+    </div>
+    <div class="glass-card p-4 flex-1 flex gap-3 items-center">
+      <input id="search-input" type="text" placeholder="Search SKU or name…" class="zm-input flex-1 max-w-xs">
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="glass-card overflow-hidden">
+    <div id="table-container">
+      <div class="p-8 flex justify-center"><div class="spinner"></div></div>
+    </div>
+  </div>
+ </div>
+</div>
+
+<!-- Confirm Unskip Modal -->
+<div id="unskip-modal" class="hidden modal-overlay">
+  <div class="modal-box max-w-sm">
+    <h3 class="text-white font-bold mb-2">Remove from Skip List?</h3>
+    <p class="text-slate-400 text-sm mb-5">SKU <span id="unskip-sku" class="text-emerald-400 font-mono"></span> will be visible again in the ZM Panel upload workflow.</p>
+    <div class="flex gap-3">
+      <button id="unskip-cancel" class="btn-secondary flex-1 justify-center">Cancel</button>
+      <button id="unskip-confirm" class="btn-primary flex-1 justify-center">Remove from Skip</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './js/auth.js';
+import { renderShell } from './js/ui-components.js';
+import notify from './js/notifications.js';
+import { loadSkipPanelData, unskipProduct } from './js/skip-manager.js';
+import { debounce } from './js/utils.js';
+
+await requireAuth();
+renderShell('skip-panel');
+if (window.lucide) lucide.createIcons();
+
+let items = [], activeSku = null;
+
+async function load() {
+  try {
+    items = await loadSkipPanelData();
+    document.getElementById('skip-count').textContent = items.length;
+    renderTable(items);
+  } catch(e) { notify.error('Failed to load skip panel.'); console.error(e); }
+}
+
+function renderTable(data) {
+  const q = document.getElementById('search-input').value.toLowerCase();
+  let f = q ? data.filter(i=>String(i.sku).toLowerCase().includes(q)||i.name?.toLowerCase().includes(q)) : data;
+
+  if (!f.length) {
+    document.getElementById('table-container').innerHTML = `
+      <div class="text-center py-16">
+        <i data-lucide="check-circle" class="w-12 h-12 text-emerald-600 mx-auto mb-3"></i>
+        <p class="text-slate-400 font-semibold">No skipped products</p>
+        <p class="text-slate-500 text-sm mt-1">Skip products from the ZM Panel to hide them from the upload workflow.</p>
+      </div>`;
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+
+  const lvlChip = l => ({
+    high:'<span class="level-high">High</span>',
+    medium:'<span class="level-medium">Medium</span>',
+    low:'<span class="level-low">Low</span>',
+    sold_out:'<span class="level-sold_out">Sold Out</span>',
+  }[l]||'—');
+
+  const rows = f.map(i => {
+    const colors = (i.colors||[]).slice(0,3).map(c=>`<span class="color-badge">${c.name}×${c.qty}</span>`).join(' ');
+    const skippedAt = i.skippedAt?.toDate ? i.skippedAt.toDate().toLocaleDateString('en-IN') : '—';
+    return `<tr class="border-t border-white/5 hover:bg-white/3 transition">
+      <td class="px-4 py-3 text-emerald-400 font-mono text-sm">${i.sku}</td>
+      <td class="px-4 py-3 text-slate-200 text-sm">${i.name}</td>
+      <td class="px-4 py-3"><span class="badge badge-info capitalize">${i.category||'—'}</span></td>
+      <td class="px-4 py-3">${lvlChip(i.stockLevel)}</td>
+      <td class="px-4 py-3 text-white font-semibold">${i.totalQty}</td>
+      <td class="px-4 py-3"><div class="flex flex-wrap gap-1">${colors}</div></td>
+      <td class="px-4 py-3 text-slate-500 text-xs">${i.notes||'—'}</td>
+      <td class="px-4 py-3 text-slate-500 text-xs">${skippedAt}</td>
+      <td class="px-4 py-3">
+        <button class="unskip-btn text-xs text-amber-400 hover:text-amber-300 font-medium transition border border-amber-500/20 px-3 py-1 rounded-lg hover:bg-amber-500/10"
+          data-sku="${i.sku}">
+          Remove Skip
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('table-container').innerHTML = `
+    <div class="overflow-x-auto">
+      <table class="w-full zm-table">
+        <thead><tr>
+          <th>SKU</th><th>Name</th><th>Category</th><th>Level</th>
+          <th>Qty</th><th>Colors</th><th>Notes</th><th>Skipped On</th><th></th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+
+  document.querySelectorAll('.unskip-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeSku = btn.dataset.sku;
+      document.getElementById('unskip-sku').textContent = activeSku;
+      document.getElementById('unskip-modal').classList.remove('hidden');
+    });
+  });
+  if (window.lucide) lucide.createIcons();
+}
+
+document.getElementById('unskip-cancel').addEventListener('click', () =>
+  document.getElementById('unskip-modal').classList.add('hidden'));
+
+document.getElementById('unskip-confirm').addEventListener('click', async () => {
+  try {
+    await unskipProduct(activeSku);
+    notify.success(`${activeSku} removed from skip list.`);
+    document.getElementById('unskip-modal').classList.add('hidden');
+    await load();
+  } catch(e) { notify.error('Failed to unskip.'); }
+});
+
+document.getElementById('search-input').addEventListener('input', debounce(()=>renderTable(items)));
+
+load();
+</script>
+</body>
+</html>

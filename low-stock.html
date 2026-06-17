@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Low Stock — Zimonza</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <link rel="stylesheet" href="css/custom.css">
+  <link rel="stylesheet" href="css/animations.css">
+  <link rel="stylesheet" href="css/theme.css">
+</head>
+<body class="bg-slate-950 min-h-screen">
+<div id="page-content" class="ml-64 pt-16 transition-all duration-300">
+ <div class="p-7 space-y-6 animate-fade-in">
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-white">Low Stock</h1>
+      <p class="text-slate-400 text-sm mt-0.5">Products with 1–2 pieces remaining</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <select id="date-select" class="zm-input w-44"></select>
+      <select id="cat-filter" class="zm-input w-36">
+        <option value="all">All Categories</option>
+        <option value="lehnga">Lehnga</option>
+        <option value="saree">Saree</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div id="stats-strip" class="grid grid-cols-2 sm:grid-cols-4 gap-4"></div>
+
+  <!-- Warning banner -->
+  <div class="flex items-center gap-3 px-5 py-4 rounded-xl bg-amber-500/8 border border-amber-500/20">
+    <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-400 flex-shrink-0"></i>
+    <div>
+      <p class="text-amber-300 text-sm font-semibold">Low Stock Alert</p>
+      <p class="text-amber-500/70 text-xs mt-0.5">These items need restocking soon. Consider uploading to website before they sell out.</p>
+    </div>
+  </div>
+
+  <!-- Search -->
+  <div class="glass-card p-4 flex gap-3 items-center">
+    <input id="search-input" type="text" placeholder="Search SKU or name…" class="zm-input flex-1 max-w-xs">
+    <span id="item-count" class="text-slate-500 text-xs ml-auto"></span>
+  </div>
+
+  <!-- Cards Grid view -->
+  <div id="cards-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
+ </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './js/auth.js';
+import { renderShell } from './js/ui-components.js';
+import notify from './js/notifications.js';
+import { getStockData, getAllUploadDates } from './js/firestore-service.js';
+import { CATEGORIES } from './js/constants.js';
+import { formatDateDisplay, debounce } from './js/utils.js';
+
+await requireAuth();
+renderShell('low-stock');
+if (window.lucide) lucide.createIcons();
+
+let items = [];
+
+async function load(date) {
+  document.getElementById('cards-grid').innerHTML = Array(8).fill(0).map(()=>
+    `<div class="animate-pulse bg-white/5 rounded-2xl h-40 border border-white/5"></div>`).join('');
+  try {
+    const [l, s] = await Promise.all([
+      getStockData(date, CATEGORIES.LEHNGA),
+      getStockData(date, CATEGORIES.SAREE)
+    ]);
+    items = [...l, ...s].filter(i => (i.totalQty||0) >= 1 && (i.totalQty||0) <= 2);
+    renderStats(items);
+    renderCards(items);
+  } catch(e) { notify.error('Failed to load.'); }
+}
+
+async function init() {
+  const dates = await getAllUploadDates();
+  const sel = document.getElementById('date-select');
+  sel.innerHTML = dates.map(d=>`<option value="${d}">${formatDateDisplay(d)}</option>`).join('');
+  sel.addEventListener('change', () => load(sel.value));
+  document.getElementById('cat-filter').addEventListener('change', () => renderCards(items));
+  document.getElementById('search-input').addEventListener('input', debounce(()=>renderCards(items)));
+  if (dates.length) load(dates[0]);
+}
+
+function renderStats(data) {
+  const lCount = data.filter(i=>i.category===CATEGORIES.LEHNGA).length;
+  const sCount = data.filter(i=>i.category===CATEGORIES.SAREE).length;
+  const one = data.filter(i=>i.totalQty===1).length;
+  const two = data.filter(i=>i.totalQty===2).length;
+  document.getElementById('stats-strip').innerHTML = [
+    { label:'Total Low Stock', value: data.length, color:'from-amber-500/10 border-amber-500/20' },
+    { label:'1 Pc Remaining', value: one, color:'from-red-500/10 border-red-500/20' },
+    { label:'2 Pcs Remaining', value: two, color:'from-orange-500/10 border-orange-500/20' },
+    { label:'Lehnga / Saree', value: lCount+' / '+sCount, color:'from-blue-500/10 border-blue-500/20' },
+  ].map(c=>`<div class="bg-gradient-to-br ${c.color} border rounded-2xl p-4 text-center">
+    <p class="text-2xl font-bold text-white">${c.value}</p>
+    <p class="text-slate-500 text-xs mt-1">${c.label}</p>
+  </div>`).join('');
+}
+
+function renderCards(data) {
+  const cat = document.getElementById('cat-filter').value;
+  const q = document.getElementById('search-input').value.toLowerCase();
+  let f = data;
+  if (cat !== 'all') f = f.filter(i=>i.category===cat);
+  if (q) f = f.filter(i=>String(i.sku).toLowerCase().includes(q)||i.name?.toLowerCase().includes(q));
+  document.getElementById('item-count').textContent = f.length + ' items';
+  if (!f.length) {
+    document.getElementById('cards-grid').innerHTML = `<div class="col-span-full text-center py-12 text-slate-500">No items found.</div>`;
+    return;
+  }
+  document.getElementById('cards-grid').innerHTML = f.map(i => {
+    const urgency = i.totalQty === 1 ? 'border-red-500/30 from-red-500/8' : 'border-amber-500/30 from-amber-500/8';
+    const badge = i.totalQty === 1
+      ? '<span class="level-low">Critical — 1 pc</span>'
+      : '<span class="level-low">Low — 2 pcs</span>';
+    const colors = (i.colors||[]).map(c=>`<span class="color-badge text-xs">${c.name}×${c.qty}</span>`).join(' ');
+    return `<div class="bg-gradient-to-br ${urgency} border rounded-2xl p-5 flex flex-col gap-3 glass-card-hover">
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0">
+          <p class="text-white font-semibold text-sm truncate">${i.name}</p>
+          <p class="text-slate-500 text-xs mt-0.5">${i.sku} · ${i.category}</p>
+        </div>
+        ${badge}
+      </div>
+      <div class="flex flex-wrap gap-1">${colors}</div>
+      <a href="zm-panel.html" class="text-xs text-emerald-400 hover:text-emerald-300 mt-auto transition font-medium">Mark for upload →</a>
+    </div>`;
+  }).join('');
+}
+
+init();
+</script>
+</body>
+</html>

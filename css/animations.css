@@ -1,0 +1,101 @@
+/* ═══════════════════════════════════════════════════════════════
+   ZIMONZA — Animations
+   ═══════════════════════════════════════════════════════════════ */
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInLeft {
+  from { opacity: 0; transform: translateX(-16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.93); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes spinSlow {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes ping {
+  75%, 100% { transform: scale(2); opacity: 0; }
+}
+
+@keyframes gradientShift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+@keyframes numberCount {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Utility animation classes */
+.animate-fade-in    { animation: fadeIn 0.4s ease both; }
+.animate-fade-left  { animation: fadeInLeft 0.35s ease both; }
+.animate-slide-up   { animation: slideUp 0.4s ease both; }
+.animate-scale-in   { animation: scaleIn 0.3s ease both; }
+.animate-spin-slow  { animation: spinSlow 2s linear infinite; }
+
+/* Stagger children */
+.stagger-children > * { opacity: 0; animation: fadeIn 0.4s ease both; }
+.stagger-children > *:nth-child(1) { animation-delay: 0.05s; }
+.stagger-children > *:nth-child(2) { animation-delay: 0.10s; }
+.stagger-children > *:nth-child(3) { animation-delay: 0.15s; }
+.stagger-children > *:nth-child(4) { animation-delay: 0.20s; }
+.stagger-children > *:nth-child(5) { animation-delay: 0.25s; }
+.stagger-children > *:nth-child(6) { animation-delay: 0.30s; }
+.stagger-children > *:nth-child(7) { animation-delay: 0.35s; }
+.stagger-children > *:nth-child(8) { animation-delay: 0.40s; }
+
+/* Gradient animated background */
+.gradient-animated {
+  background: linear-gradient(270deg, #10B981, #3B82F6, #8B5CF6, #10B981);
+  background-size: 400% 400%;
+  animation: gradientShift 8s ease infinite;
+}
+
+/* Floating glow effect */
+.glow-emerald { box-shadow: 0 0 30px rgba(16, 185, 129, 0.2); }
+.glow-amber   { box-shadow: 0 0 30px rgba(245, 158, 11, 0.2); }
+.glow-red     { box-shadow: 0 0 30px rgba(239, 68, 68, 0.2); }
+
+/* Ping dot */
+.ping-dot {
+  position: relative;
+  display: inline-flex;
+}
+.ping-dot::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.4;
+  animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* Loading spinner */
+.spinner {
+  width: 20px; height: 20px;
+  border: 2px solid rgba(16, 185, 129, 0.2);
+  border-top-color: #10B981;
+  border-radius: 50%;
+  animation: spinSlow 0.7s linear infinite;
+}
+
+/* Number count animation on load */
+.count-up { animation: numberCount 0.5s ease both; }
+
+/* Sidebar nav item hover */
+.nav-item { transition: background 0.15s, color 0.15s, border-color 0.15s; }

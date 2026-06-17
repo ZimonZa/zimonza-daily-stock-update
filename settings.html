@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings — Zimonza</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="css/custom.css">
+  <link rel="stylesheet" href="css/animations.css">
+  <link rel="stylesheet" href="css/theme.css">
+</head>
+<body class="bg-slate-950 min-h-screen">
+<div id="page-content" class="ml-64 pt-16 transition-all duration-300">
+ <div class="p-7 space-y-6 animate-fade-in max-w-3xl">
+
+  <!-- Header -->
+  <div>
+    <h1 class="text-2xl font-bold text-white">Settings</h1>
+    <p class="text-slate-400 text-sm mt-0.5">Configure application preferences</p>
+  </div>
+
+  <!-- ─── Stock Thresholds ─── -->
+  <div class="glass-card p-6 space-y-5">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+        <i data-lucide="sliders" class="w-4 h-4 text-emerald-400"></i>
+      </div>
+      <div>
+        <h3 class="text-white font-semibold">Stock Thresholds</h3>
+        <p class="text-slate-500 text-xs">Customize when items are flagged as low / medium / high</p>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Low Stock (max pcs)</label>
+        <input type="number" id="low-threshold" min="1" max="10" value="2" class="zm-input">
+        <p class="text-slate-600 text-xs mt-1">1 – this value = Low</p>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Medium Stock (max pcs)</label>
+        <input type="number" id="medium-threshold" min="2" max="20" value="5" class="zm-input">
+        <p class="text-slate-600 text-xs mt-1">Low+1 – this value = Medium</p>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">High Stock (min pcs)</label>
+        <input type="number" id="high-threshold" class="zm-input opacity-50 cursor-not-allowed" disabled>
+        <p class="text-slate-600 text-xs mt-1">Auto-computed</p>
+      </div>
+    </div>
+
+    <!-- Live preview -->
+    <div class="rounded-xl bg-white/3 border border-white/5 p-4">
+      <p class="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-3">Live Preview</p>
+      <div class="flex flex-wrap gap-3" id="threshold-preview"></div>
+    </div>
+  </div>
+
+  <!-- ─── Appearance ─── -->
+  <div class="glass-card p-6 space-y-4">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-purple-500/10 flex items-center justify-center">
+        <i data-lucide="palette" class="w-4 h-4 text-purple-400"></i>
+      </div>
+      <div>
+        <h3 class="text-white font-semibold">Appearance</h3>
+        <p class="text-slate-500 text-xs">Theme and display preferences</p>
+      </div>
+    </div>
+    <div class="flex items-center justify-between py-1">
+      <div>
+        <p class="text-slate-200 text-sm font-medium">Dark Mode</p>
+        <p class="text-slate-500 text-xs">Toggle between dark and light interface</p>
+      </div>
+      <button id="theme-toggle" class="relative w-12 h-6 rounded-full transition-colors duration-200 bg-emerald-500 flex-shrink-0" role="switch" aria-checked="true">
+        <span id="theme-knob" class="absolute left-1 top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 translate-x-6"></span>
+      </button>
+    </div>
+    <div class="h-px bg-white/5"></div>
+    <div class="flex items-center justify-between py-1">
+      <div>
+        <p class="text-slate-200 text-sm font-medium">Sidebar Collapsed by Default</p>
+        <p class="text-slate-500 text-xs">Start with sidebar in compact mode</p>
+      </div>
+      <button id="sidebar-default-toggle" class="relative w-12 h-6 rounded-full transition-colors duration-200 bg-slate-600 flex-shrink-0" role="switch" aria-checked="false">
+        <span class="absolute left-1 top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200"></span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ─── Notifications ─── -->
+  <div class="glass-card p-6 space-y-4">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-blue-500/10 flex items-center justify-center">
+        <i data-lucide="bell" class="w-4 h-4 text-blue-400"></i>
+      </div>
+      <div>
+        <h3 class="text-white font-semibold">Notifications</h3>
+        <p class="text-slate-500 text-xs">Control in-app toast alerts</p>
+      </div>
+    </div>
+    <div class="flex items-center justify-between py-1">
+      <div>
+        <p class="text-slate-200 text-sm font-medium">Enable Toast Notifications</p>
+        <p class="text-slate-500 text-xs">Show alerts for uploads, saves, and errors</p>
+      </div>
+      <button id="notif-toggle" class="relative w-12 h-6 rounded-full transition-colors duration-200 bg-emerald-500 flex-shrink-0" role="switch" aria-checked="true">
+        <span class="absolute left-1 top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 translate-x-6"></span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ─── Account ─── -->
+  <div class="glass-card p-6 space-y-4">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-indigo-500/10 flex items-center justify-center">
+        <i data-lucide="user-circle" class="w-4 h-4 text-indigo-400"></i>
+      </div>
+      <div>
+        <h3 class="text-white font-semibold">Account</h3>
+        <p class="text-slate-500 text-xs">Manage your login and security</p>
+      </div>
+    </div>
+
+    <!-- User info card -->
+    <div class="flex items-center gap-4 p-4 rounded-xl bg-white/3 border border-white/5">
+      <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center flex-shrink-0">
+        <span class="text-white font-bold text-lg" id="account-initials">ZM</span>
+      </div>
+      <div class="min-w-0">
+        <p class="text-white font-semibold text-sm truncate" id="account-name">Admin</p>
+        <p class="text-slate-400 text-xs truncate" id="account-email"></p>
+        <p class="text-slate-600 text-xs mt-0.5" id="account-last-login"></p>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <button id="reset-password-btn" class="btn-secondary text-sm py-2.5 px-4 justify-center">
+        <i data-lucide="key" class="w-4 h-4"></i> Send Password Reset Email
+      </button>
+      <button id="signout-btn" class="btn-danger text-sm py-2.5 px-4 flex items-center justify-center gap-2">
+        <i data-lucide="log-out" class="w-4 h-4"></i> Sign Out
+      </button>
+    </div>
+  </div>
+
+  <!-- ─── Data & Storage ─── -->
+  <div class="glass-card p-6 space-y-4">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-teal-500/10 flex items-center justify-center">
+        <i data-lucide="hard-drive" class="w-4 h-4 text-teal-400"></i>
+      </div>
+      <div>
+        <h3 class="text-white font-semibold">Data & Storage</h3>
+        <p class="text-slate-500 text-xs">App version and offline cache management</p>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <div class="rounded-xl bg-white/3 border border-white/5 p-3 text-center">
+        <p class="text-white font-bold text-lg" id="stat-version">1.0.0</p>
+        <p class="text-slate-500 text-xs mt-0.5">App Version</p>
+      </div>
+      <div class="rounded-xl bg-white/3 border border-white/5 p-3 text-center">
+        <p class="text-white font-bold text-lg" id="stat-uploads">—</p>
+        <p class="text-slate-500 text-xs mt-0.5">Total Uploads</p>
+      </div>
+      <div class="rounded-xl bg-white/3 border border-white/5 p-3 text-center col-span-2 sm:col-span-1">
+        <p class="text-emerald-400 font-bold text-lg" id="stat-status">●&nbsp;Connected</p>
+        <p class="text-slate-500 text-xs mt-0.5">Firestore Status</p>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between p-4 rounded-xl bg-white/3 border border-white/5">
+      <div>
+        <p class="text-slate-200 text-sm font-medium">Clear Offline Cache</p>
+        <p class="text-slate-500 text-xs">Forces fresh data reload from Firestore on next visit</p>
+      </div>
+      <button id="clear-cache-btn" class="btn-secondary text-xs py-2 px-4 flex-shrink-0">
+        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Clear
+      </button>
+    </div>
+  </div>
+
+  <!-- ─── Firebase ─── -->
+  <div class="glass-card p-6 space-y-4">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center">
+        <i data-lucide="database" class="w-4 h-4 text-amber-400"></i>
+      </div>
+      <div>
+        <h3 class="text-white font-semibold">Firebase Configuration</h3>
+        <p class="text-slate-500 text-xs">Edit to connect a different Firebase project</p>
+      </div>
+      <span class="ml-auto text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-full flex-shrink-0">Reload required</span>
+    </div>
+    <div class="space-y-3">
+      <div>
+        <label class="text-slate-500 text-xs block mb-1 font-medium uppercase tracking-wider">API Key</label>
+        <input id="fb-api-key" type="text" class="zm-input font-mono text-xs" placeholder="AIzaSy…">
+      </div>
+      <div>
+        <label class="text-slate-500 text-xs block mb-1 font-medium uppercase tracking-wider">Auth Domain</label>
+        <input id="fb-auth-domain" type="text" class="zm-input font-mono text-xs" placeholder="project.firebaseapp.com">
+      </div>
+      <div>
+        <label class="text-slate-500 text-xs block mb-1 font-medium uppercase tracking-wider">Project ID</label>
+        <input id="fb-project-id" type="text" class="zm-input font-mono text-xs" placeholder="project-id" style="color:#fbbf24">
+      </div>
+      <div>
+        <label class="text-slate-500 text-xs block mb-1 font-medium uppercase tracking-wider">Storage Bucket</label>
+        <input id="fb-storage" type="text" class="zm-input font-mono text-xs" placeholder="project.firebasestorage.app">
+      </div>
+      <div>
+        <label class="text-slate-500 text-xs block mb-1 font-medium uppercase tracking-wider">App ID</label>
+        <input id="fb-app-id" type="text" class="zm-input font-mono text-xs" placeholder="1:…:web:…">
+      </div>
+    </div>
+    <div class="flex gap-3 flex-wrap">
+      <button id="save-firebase-btn" class="btn-primary text-sm py-2 px-4">
+        <i data-lucide="save" class="w-4 h-4"></i> Save &amp; Reload
+      </button>
+      <button id="reset-firebase-btn" class="btn-secondary text-sm py-2 px-4">
+        <i data-lucide="rotate-ccw" class="w-4 h-4"></i> Reset to Default
+      </button>
+    </div>
+    <a href="https://console.firebase.google.com" target="_blank"
+       class="inline-flex items-center gap-2 text-sm text-emerald-400 hover:text-emerald-300 transition font-medium">
+      <i data-lucide="external-link" class="w-4 h-4"></i> Open Firebase Console
+    </a>
+  </div>
+
+  <!-- ─── Custom Colour Names ─── -->
+  <div class="glass-card p-6 space-y-5">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center">
+        <i data-lucide="palette" class="w-4 h-4 text-pink-400"></i>
+      </div>
+      <div class="flex-1 min-w-0">
+        <h3 class="text-white font-semibold">Custom Colour Names</h3>
+        <p class="text-slate-500 text-xs">Upload your colour list to improve spelling-error detection accuracy</p>
+      </div>
+      <span id="colour-count-badge" class="hidden px-3 py-1 rounded-full text-xs bg-pink-500/10 text-pink-400 border border-pink-500/20 flex-shrink-0"></span>
+    </div>
+
+    <!-- Drop zone -->
+    <div id="colour-drop-zone" class="drop-zone p-5 text-center cursor-pointer" onclick="document.getElementById('colour-file-input').click()">
+      <i data-lucide="upload-cloud" class="w-7 h-7 text-slate-600 mx-auto mb-2"></i>
+      <p class="text-slate-400 text-sm font-medium">Drop colour names xlsx here or click</p>
+      <p class="text-slate-600 text-xs mt-1">Column A — one colour name per row (header optional)</p>
+    </div>
+    <input type="file" id="colour-file-input" accept=".xlsx,.xls" class="hidden">
+
+    <!-- Manual add -->
+    <div class="flex gap-2">
+      <input id="colour-manual-input" type="text" placeholder="Type a colour name to add…"
+        class="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm placeholder-slate-600 focus:outline-none focus:border-pink-500/40">
+      <button id="colour-add-btn" class="btn-secondary px-4 py-2.5 text-sm flex items-center gap-2">
+        <i data-lucide="plus" class="w-4 h-4"></i> Add
+      </button>
+    </div>
+
+    <!-- Chip list -->
+    <div id="colour-chip-list" class="hidden flex-wrap gap-2 max-h-44 overflow-y-auto p-3 rounded-xl border border-white/5" style="background:rgba(255,255,255,0.03)"></div>
+
+    <!-- Actions -->
+    <div class="flex gap-3">
+      <button id="save-colours-btn" class="btn-primary text-sm py-2 px-4 hidden">
+        <i data-lucide="save" class="w-4 h-4"></i> Save Colour List
+      </button>
+      <button id="clear-colours-btn" class="btn-secondary text-sm py-2 px-4 hidden">
+        <i data-lucide="trash-2" class="w-4 h-4"></i> Clear &amp; Use Built-in
+      </button>
+    </div>
+  </div>
+
+  <!-- Save Button -->
+  <div class="flex items-center justify-between">
+    <p class="text-slate-500 text-xs">Settings are saved to your account and apply across all sessions.</p>
+    <button id="save-settings-btn" class="btn-primary">
+      <i data-lucide="save" class="w-4 h-4"></i> Save Settings
+    </button>
+  </div>
+
+ </div>
+</div>
+
+<script type="module">
+import { requireAuth, logOut } from './js/auth.js';
+import { resetPassword } from './js/auth.js';
+import { renderShell } from './js/ui-components.js';
+import notify from './js/notifications.js';
+import { saveSettings, getSettings, getAllUploadDates, saveCustomColours, getCustomColours } from './js/firestore-service.js';
+import { storage, formatDateDisplay } from './js/utils.js';
+import { APP_VERSION } from './js/constants.js';
+import { readExcelFile } from './js/excel-parser.js';
+import app from './js/firebase-config.js';
+
+const user = await requireAuth();
+renderShell('settings');
+if (window.lucide) lucide.createIcons();
+
+// ── Account section ──────────────────────────────────────────
+if (user) {
+  const name = user.displayName || 'Admin';
+  const email = user.email || '';
+  const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || email.slice(0, 2).toUpperCase();
+
+  document.getElementById('account-name').textContent = name;
+  document.getElementById('account-email').textContent = email;
+  document.getElementById('account-initials').textContent = initials;
+
+  const lastLogin = user.metadata?.lastSignInTime;
+  if (lastLogin) {
+    const d = new Date(lastLogin);
+    document.getElementById('account-last-login').textContent =
+      'Last login: ' + d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+}
+
+// ── Firebase config (editable) ───────────────────────────────
+const fbOpts = app.options;
+document.getElementById('fb-api-key').value     = fbOpts.apiKey        || '';
+document.getElementById('fb-auth-domain').value = fbOpts.authDomain    || '';
+document.getElementById('fb-project-id').value  = fbOpts.projectId     || '';
+document.getElementById('fb-storage').value     = fbOpts.storageBucket || '';
+document.getElementById('fb-app-id').value      = fbOpts.appId         || '';
+
+document.getElementById('save-firebase-btn').addEventListener('click', () => {
+  const cfg = {
+    apiKey:        document.getElementById('fb-api-key').value.trim(),
+    authDomain:    document.getElementById('fb-auth-domain').value.trim(),
+    projectId:     document.getElementById('fb-project-id').value.trim(),
+    storageBucket: document.getElementById('fb-storage').value.trim(),
+    appId:         document.getElementById('fb-app-id').value.trim(),
+  };
+  if (!cfg.projectId) { notify.error('Project ID is required'); return; }
+  localStorage.setItem('zm_firebase_config', JSON.stringify(cfg));
+  notify.success('Firebase config saved — reloading now…');
+  setTimeout(() => location.reload(), 1200);
+});
+
+document.getElementById('reset-firebase-btn').addEventListener('click', () => {
+  if (!confirm('Reset Firebase config to the built-in default?')) return;
+  localStorage.removeItem('zm_firebase_config');
+  notify.success('Reset to default — reloading…');
+  setTimeout(() => location.reload(), 1200);
+});
+
+// ── App version ──────────────────────────────────────────────
+document.getElementById('stat-version').textContent = APP_VERSION || '1.0.0';
+
+// ── Upload count ─────────────────────────────────────────────
+try {
+  const dates = await getAllUploadDates();
+  document.getElementById('stat-uploads').textContent = dates.length;
+} catch { /* non-critical */ }
+
+// ── Load settings ────────────────────────────────────────────
+let settings = {};
+try { settings = await getSettings(); } catch { /* use defaults */ }
+
+// Prefer localStorage (faster + reflects unsaved changes from previous session)
+const savedLow    = Number(localStorage.getItem('zm_low_threshold'))    || settings.lowStockThreshold    || 2;
+const savedMedium = Number(localStorage.getItem('zm_medium_threshold')) || settings.mediumStockThreshold || 5;
+
+const lowEl    = document.getElementById('low-threshold');
+const mediumEl = document.getElementById('medium-threshold');
+const highEl   = document.getElementById('high-threshold');
+
+lowEl.value    = savedLow;
+mediumEl.value = savedMedium;
+highEl.value   = savedMedium + 1;
+
+// ── Live threshold preview ───────────────────────────────────
+function renderThresholdPreview() {
+  const low    = Math.max(1, +lowEl.value    || 2);
+  const medium = Math.max(low + 1, +mediumEl.value || 5);
+  highEl.value = medium + 1;
+
+  const previewEl = document.getElementById('threshold-preview');
+  previewEl.innerHTML = [
+    { label: 'Sold Out', range: '0 pcs',              cls: 'bg-slate-500/20 text-slate-400 border-slate-500/30' },
+    { label: 'Low',      range: `1 – ${low} pcs`,     cls: 'bg-red-500/20 text-red-400 border-red-500/30' },
+    { label: 'Medium',   range: `${low+1} – ${medium} pcs`, cls: 'bg-amber-500/20 text-amber-400 border-amber-500/30' },
+    { label: 'High',     range: `${medium+1}+ pcs`,   cls: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
+  ].map(b => `
+    <div class="flex items-center gap-2 px-3 py-2 rounded-lg border ${b.cls}">
+      <span class="text-xs font-bold">${b.label}</span>
+      <span class="text-xs opacity-70">${b.range}</span>
+    </div>`).join('');
+}
+
+renderThresholdPreview();
+lowEl.addEventListener('input',    renderThresholdPreview);
+mediumEl.addEventListener('input', renderThresholdPreview);
+
+// ── Theme toggle ─────────────────────────────────────────────
+const themeBtn  = document.getElementById('theme-toggle');
+const themeKnob = document.getElementById('theme-knob');
+
+function updateThemeToggle(isDark) {
+  themeBtn.classList.toggle('bg-emerald-500', isDark);
+  themeBtn.classList.toggle('bg-slate-600',   !isDark);
+  themeKnob.classList.toggle('translate-x-6', isDark);
+  themeBtn.setAttribute('aria-checked', isDark);
+}
+updateThemeToggle(storage.get('theme', 'dark') === 'dark');
+
+themeBtn.addEventListener('click', () => {
+  const next = storage.get('theme', 'dark') === 'dark' ? 'light' : 'dark';
+  storage.set('theme', next);
+  document.documentElement.classList.toggle('dark',       next === 'dark');
+  document.documentElement.classList.toggle('light-mode', next === 'light');
+  updateThemeToggle(next === 'dark');
+  notify.info(`Switched to ${next} mode.`);
+});
+
+// ── Sidebar default toggle ────────────────────────────────────
+let sidebarCollapsed = storage.get('sidebar_collapsed', false);
+const sidebarBtn     = document.getElementById('sidebar-default-toggle');
+const sidebarKnob    = sidebarBtn.querySelector('span');
+
+function updateSidebarToggle(on) {
+  sidebarBtn.classList.toggle('bg-emerald-500', on);
+  sidebarBtn.classList.toggle('bg-slate-600',   !on);
+  sidebarKnob.classList.toggle('translate-x-6', on);
+  sidebarBtn.setAttribute('aria-checked', on);
+}
+updateSidebarToggle(sidebarCollapsed);
+
+sidebarBtn.addEventListener('click', () => {
+  sidebarCollapsed = !sidebarCollapsed;
+  storage.set('sidebar_collapsed', sidebarCollapsed);
+  updateSidebarToggle(sidebarCollapsed);
+  notify.info(`Sidebar will ${sidebarCollapsed ? 'start collapsed' : 'start expanded'} by default.`);
+});
+
+// ── Notification toggle ───────────────────────────────────────
+let notifEnabled = settings.notificationsEnabled !== false;
+const notifBtn   = document.getElementById('notif-toggle');
+const notifKnob  = notifBtn.querySelector('span');
+
+function updateNotifToggle(on) {
+  notifBtn.classList.toggle('bg-emerald-500', on);
+  notifBtn.classList.toggle('bg-slate-600',   !on);
+  notifKnob.classList.toggle('translate-x-6', on);
+  notifBtn.setAttribute('aria-checked', on);
+}
+updateNotifToggle(notifEnabled);
+
+notifBtn.addEventListener('click', () => {
+  notifEnabled = !notifEnabled;
+  updateNotifToggle(notifEnabled);
+  notify.info(notifEnabled ? 'Notifications enabled.' : 'Notifications disabled.');
+});
+
+// ── Save settings ─────────────────────────────────────────────
+document.getElementById('save-settings-btn').addEventListener('click', async () => {
+  const btn    = document.getElementById('save-settings-btn');
+  const low    = Math.max(1, +lowEl.value);
+  const medium = +mediumEl.value;
+
+  if (low >= medium) {
+    notify.error('Medium threshold must be higher than Low threshold.');
+    return;
+  }
+
+  btn.disabled   = true;
+  btn.innerHTML  = '<div class="spinner" style="width:14px;height:14px;border-width:2px"></div> Saving…';
+
+  try {
+    const theme = storage.get('theme', 'dark');
+    await saveSettings({ lowStockThreshold: low, mediumStockThreshold: medium, notificationsEnabled: notifEnabled, theme });
+    // Write to localStorage so getStockLevel() picks them up immediately across all pages
+    localStorage.setItem('zm_low_threshold',    low);
+    localStorage.setItem('zm_medium_threshold', medium);
+    notify.success('Settings saved successfully!');
+    renderThresholdPreview();
+  } catch(e) {
+    notify.error('Failed to save settings: ' + e.message);
+  } finally {
+    btn.disabled  = false;
+    btn.innerHTML = '<i data-lucide="save" class="w-4 h-4"></i> Save Settings';
+    if (window.lucide) lucide.createIcons();
+  }
+});
+
+// ── Reset password ────────────────────────────────────────────
+document.getElementById('reset-password-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('reset-password-btn');
+  if (!user?.email) { notify.error('No email address found.'); return; }
+  btn.disabled = true;
+  try {
+    await resetPassword(user.email);
+    notify.success(`Password reset email sent to ${user.email}`);
+  } catch(e) {
+    notify.error('Failed to send reset email: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ── Clear cache ───────────────────────────────────────────────
+document.getElementById('clear-cache-btn').addEventListener('click', () => {
+  notify.info('Clearing offline cache and reloading…');
+  setTimeout(() => {
+    // Clear all Firestore-related IndexedDB keys by reloading without cache
+    if ('caches' in window) {
+      caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
+    }
+    window.location.reload(true);
+  }, 800);
+});
+
+// ── Sign out ──────────────────────────────────────────────────
+document.getElementById('signout-btn').addEventListener('click', logOut);
+
+// ── Custom Colour Names ───────────────────────────────────────
+let customColours = [];
+
+function renderColourChips(colours) {
+  const list    = document.getElementById('colour-chip-list');
+  const badge   = document.getElementById('colour-count-badge');
+  const saveBtn = document.getElementById('save-colours-btn');
+  const clrBtn  = document.getElementById('clear-colours-btn');
+  badge.textContent = colours.length + ' colours';
+  badge.classList.toggle('hidden', colours.length === 0);
+  list.classList.toggle('hidden', colours.length === 0);
+  list.classList.toggle('flex', colours.length > 0);
+  saveBtn.classList.toggle('hidden', colours.length === 0);
+  clrBtn.classList.toggle('hidden', colours.length === 0);
+  list.innerHTML = colours.map((c, i) => `
+    <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border flex-shrink-0"
+      style="background:rgba(236,72,153,0.1);color:#f9a8d4;border-color:rgba(236,72,153,0.2)">
+      ${c}
+      <button onclick="window.removeColour(${i})" style="color:rgba(236,72,153,0.6)" class="hover:opacity-100 ml-0.5 leading-none text-sm">×</button>
+    </span>`).join('');
+}
+
+window.removeColour = (i) => {
+  customColours.splice(i, 1);
+  renderColourChips(customColours);
+};
+
+// Load existing custom colours from Firestore on init
+try {
+  customColours = await getCustomColours();
+  if (customColours.length > 0) {
+    localStorage.setItem('zm_custom_colours', JSON.stringify(customColours));
+  }
+  renderColourChips(customColours);
+} catch { /* non-critical */ }
+
+// File drop zone for colour xlsx
+const colourDropZone = document.getElementById('colour-drop-zone');
+const colourFileInput = document.getElementById('colour-file-input');
+
+colourDropZone.addEventListener('dragover', e => { e.preventDefault(); colourDropZone.classList.add('drag-over'); });
+colourDropZone.addEventListener('dragleave', () => colourDropZone.classList.remove('drag-over'));
+colourDropZone.addEventListener('drop', e => {
+  e.preventDefault(); colourDropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) handleColourFile(e.dataTransfer.files[0]);
+});
+colourFileInput.addEventListener('change', () => {
+  if (colourFileInput.files[0]) handleColourFile(colourFileInput.files[0]);
+  colourFileInput.value = '';
+});
+
+async function handleColourFile(file) {
+  colourDropZone.innerHTML = `<div class="flex flex-col items-center gap-2 py-1"><div class="spinner"></div><p class="text-slate-400 text-xs">Parsing…</p></div>`;
+  try {
+    const rows = await readExcelFile(file);
+    const names = rows
+      .map(r => String(r?.[0] || '').trim())
+      .filter((n, i) => n && !(i === 0 && /colou?r|name/i.test(n)));
+    if (names.length === 0) {
+      notify.error('No colour names found in file (expected names in Column A)');
+      resetColourDrop();
+      return;
+    }
+    // Merge + deduplicate (case-insensitive)
+    const existing = new Set(customColours.map(c => c.toLowerCase()));
+    const newOnes  = names.filter(n => !existing.has(n.toLowerCase()));
+    customColours  = [...customColours, ...newOnes];
+    renderColourChips(customColours);
+    notify.success(`${newOnes.length} new colours loaded (${names.length - newOnes.length} duplicates skipped)`);
+    colourDropZone.innerHTML = `<div class="flex flex-col items-center gap-2 py-1 text-center">
+      <i data-lucide="check-circle" class="w-6 h-6 text-emerald-400 mx-auto"></i>
+      <p class="text-emerald-400 text-sm font-semibold">${file.name}</p>
+      <p class="text-slate-400 text-xs">${newOnes.length} colours added</p>
+    </div>`;
+    if (window.lucide) lucide.createIcons();
+  } catch(err) {
+    notify.error('Failed to parse file: ' + err.message);
+    resetColourDrop();
+  }
+}
+
+function resetColourDrop() {
+  colourDropZone.innerHTML = `<i data-lucide="upload-cloud" class="w-7 h-7 text-slate-600 mx-auto mb-2"></i>
+    <p class="text-slate-400 text-sm font-medium">Drop colour names xlsx here or click</p>
+    <p class="text-slate-600 text-xs mt-1">Column A — one colour name per row (header optional)</p>`;
+  if (window.lucide) lucide.createIcons();
+}
+
+// Manual add
+document.getElementById('colour-add-btn').addEventListener('click', () => {
+  const val = document.getElementById('colour-manual-input').value.trim();
+  if (!val) return;
+  if (customColours.some(c => c.toLowerCase() === val.toLowerCase())) {
+    notify.warning('Colour already in list');
+    return;
+  }
+  customColours.push(val);
+  document.getElementById('colour-manual-input').value = '';
+  renderColourChips(customColours);
+});
+
+// Save colour list
+document.getElementById('save-colours-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('save-colours-btn');
+  btn.disabled = true;
+  try {
+    await saveCustomColours(customColours);
+    localStorage.setItem('zm_custom_colours', JSON.stringify(customColours));
+    notify.success('Colour list saved! Spelling detection will use your custom list.');
+  } catch(e) {
+    notify.error('Failed to save: ' + e.message);
+  } finally { btn.disabled = false; }
+});
+
+// Clear colour list
+document.getElementById('clear-colours-btn').addEventListener('click', async () => {
+  if (!confirm('Clear your custom colour list and revert to the built-in list?')) return;
+  customColours = [];
+  localStorage.removeItem('zm_custom_colours');
+  try {
+    await saveCustomColours([]);
+    notify.success('Custom colour list cleared. Using built-in colours.');
+  } catch(e) {
+    notify.warning('Cleared locally — Firestore sync failed: ' + e.message);
+  }
+  renderColourChips([]);
+  resetColourDrop();
+});
+
+// Enter key on manual input
+document.getElementById('colour-manual-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('colour-add-btn').click();
+});
+</script>
+</body>
+</html>

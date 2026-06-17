@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>History — Zimonza</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <link rel="stylesheet" href="css/custom.css">
+  <link rel="stylesheet" href="css/animations.css">
+  <link rel="stylesheet" href="css/theme.css">
+</head>
+<body class="bg-slate-950 min-h-screen">
+<div id="page-content" class="ml-64 pt-16 transition-all duration-300">
+ <div class="p-7 space-y-6 animate-fade-in">
+
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-white">Upload History</h1>
+      <p class="text-slate-400 text-sm mt-0.5">Calendar view of all stock uploads</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <button id="prev-month" class="btn-secondary p-2">
+        <i data-lucide="chevron-left" class="w-4 h-4"></i>
+      </button>
+      <span id="month-label" class="text-white font-semibold px-3 min-w-[130px] text-center"></span>
+      <button id="next-month" class="btn-secondary p-2">
+        <i data-lucide="chevron-right" class="w-4 h-4"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <div class="flex items-center gap-5 text-xs text-slate-400 flex-wrap">
+    <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-emerald-500/30 border border-emerald-500/40 inline-block"></span>Uploaded</span>
+    <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-red-500/20 border border-red-500/30 inline-block"></span>Missing</span>
+    <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-white/5 border border-white/10 inline-block"></span>Future</span>
+    <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded border border-emerald-500/60 inline-block"></span>Today</span>
+  </div>
+
+  <!-- Calendar Grid -->
+  <div class="glass-card p-6">
+    <!-- Day headers -->
+    <div class="calendar-grid mb-3">
+      <div class="text-slate-600 text-xs text-center font-semibold">Sun</div>
+      <div class="text-slate-600 text-xs text-center font-semibold">Mon</div>
+      <div class="text-slate-600 text-xs text-center font-semibold">Tue</div>
+      <div class="text-slate-600 text-xs text-center font-semibold">Wed</div>
+      <div class="text-slate-600 text-xs text-center font-semibold">Thu</div>
+      <div class="text-slate-600 text-xs text-center font-semibold">Fri</div>
+      <div class="text-slate-600 text-xs text-center font-semibold">Sat</div>
+    </div>
+    <div id="calendar-grid" class="calendar-grid">
+      <div class="animate-pulse col-span-7 h-48 bg-white/5 rounded-xl"></div>
+    </div>
+  </div>
+
+  <!-- Missing dates list -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div class="glass-card p-5">
+      <h3 class="text-white font-semibold mb-4 flex items-center gap-2">
+        <i data-lucide="alert-circle" class="w-4 h-4 text-red-400"></i> Missing Uploads (Last 30 Days)
+      </h3>
+      <div id="missing-list" class="space-y-2">
+        <div class="animate-pulse h-4 bg-white/5 rounded w-3/4"></div>
+        <div class="animate-pulse h-4 bg-white/5 rounded w-1/2"></div>
+      </div>
+    </div>
+    <div class="glass-card p-5">
+      <h3 class="text-white font-semibold mb-4 flex items-center gap-2">
+        <i data-lucide="calendar-check" class="w-4 h-4 text-emerald-400"></i> Recent Uploads
+      </h3>
+      <div id="recent-list" class="space-y-2"></div>
+    </div>
+  </div>
+
+  <!-- Date Detail Panel -->
+  <div id="date-detail" class="hidden glass-card p-6">
+    <h3 class="text-white font-semibold mb-4 flex items-center gap-2">
+      <i data-lucide="info" class="w-4 h-4 text-blue-400"></i>
+      Upload Details: <span id="detail-date-label" class="text-emerald-400 ml-1"></span>
+    </h3>
+    <div id="detail-content" class="grid grid-cols-2 sm:grid-cols-4 gap-4"></div>
+  </div>
+
+ </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './js/auth.js';
+import { renderShell } from './js/ui-components.js';
+import notify from './js/notifications.js';
+import { loadHistoryCalendar, getDateDetail, getMissingDates } from './js/history-manager.js';
+import { deleteUploadRecord } from './js/firestore-service.js';
+import { formatDateDisplay, today } from './js/utils.js';
+
+await requireAuth();
+renderShell('history');
+if (window.lucide) lucide.createIcons();
+
+let currentYear = new Date().getFullYear();
+let currentMonth = new Date().getMonth();
+
+async function renderCalendar() {
+  document.getElementById('month-label').textContent =
+    new Date(currentYear, currentMonth, 1).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+
+  try {
+    const { days, startWeekday, uploadedDates } = await loadHistoryCalendar(currentYear, currentMonth);
+    const grid = document.getElementById('calendar-grid');
+
+    let html = '';
+    // Empty cells before first day
+    for (let i = 0; i < startWeekday; i++) {
+      html += `<div></div>`;
+    }
+    // Day cells
+    for (const day of days) {
+      let cls = 'calendar-day';
+      if (day.uploaded) cls += ' uploaded';
+      else if (day.missing) cls += ' missing';
+      else if (day.future) cls += ' future';
+      if (day.isToday) cls += ' today';
+
+      html += `<div class="${cls}" data-date="${day.date}" title="${day.date}">${day.day}</div>`;
+    }
+    grid.innerHTML = html;
+
+    // Click day
+    grid.querySelectorAll('.calendar-day[data-date]').forEach(el => {
+      el.addEventListener('click', () => showDateDetail(el.dataset.date));
+    });
+
+    // Render recent uploads
+    const recent = uploadedDates.slice(0, 10);
+    document.getElementById('recent-list').innerHTML = recent.length
+      ? recent.map(d => `
+          <div class="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
+            <div class="flex items-center gap-2">
+              <div class="w-2 h-2 rounded-full bg-emerald-400"></div>
+              <span class="text-slate-300 text-sm">${formatDateDisplay(d)}</span>
+            </div>
+            <button class="text-xs text-emerald-400 hover:text-emerald-300 transition" onclick="showDateDetail('${d}')">Details →</button>
+          </div>`).join('')
+      : `<p class="text-slate-500 text-sm">No uploads yet.</p>`;
+
+    // Missing dates
+    const missing = await getMissingDates(30);
+    document.getElementById('missing-list').innerHTML = missing.length
+      ? missing.slice(0, 10).map(d => `
+          <div class="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
+            <div class="flex items-center gap-2">
+              <div class="w-2 h-2 rounded-full bg-red-400"></div>
+              <span class="text-slate-300 text-sm">${formatDateDisplay(d)}</span>
+            </div>
+            <a href="upload.html" class="text-xs text-red-400 hover:text-red-300 transition font-medium">Upload →</a>
+          </div>`).join('')
+      : `<div class="flex items-center gap-2 text-emerald-400 text-sm py-2">
+           <i data-lucide="check-circle" class="w-4 h-4"></i> All days uploaded!
+         </div>`;
+
+    if (window.lucide) lucide.createIcons();
+  } catch(e) { notify.error('Failed to load calendar.'); console.error(e); }
+}
+
+window.showDateDetail = async function(date) {
+  const panel = document.getElementById('date-detail');
+  const label = document.getElementById('detail-date-label');
+  const content = document.getElementById('detail-content');
+  label.textContent = formatDateDisplay(date);
+  content.innerHTML = '<div class="col-span-4 p-4 flex justify-center"><div class="spinner"></div></div>';
+  panel.classList.remove('hidden');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  try {
+    const { history } = await getDateDetail(date);
+    if (!history) {
+      content.innerHTML = `<div class="col-span-4 text-slate-500 text-sm">No upload data found for this date.</div>`;
+      return;
+    }
+    const cards = [
+      { label:'Total SKUs', value: history.totalSKUs || '—' },
+      { label:'Total Pieces', value: history.totalPcs || '—' },
+      { label:'New Arrivals', value: history.newArrivals ?? '—' },
+      { label:'Sold', value: history.soldCount ?? '—' },
+      { label:'Restocked', value: history.restockedCount ?? '—' },
+      { label:'Sold Out', value: history.soldOutCount ?? '—' },
+      { label:'Lehnga SKUs', value: history.lehngaCount || '—' },
+      { label:'Saree SKUs', value: history.sareeCount || '—' },
+    ];
+    content.innerHTML = cards.map(c=>`
+      <div class="bg-white/5 border border-white/5 rounded-xl p-3 text-center">
+        <p class="text-white font-bold text-xl">${c.value}</p>
+        <p class="text-slate-500 text-xs mt-1">${c.label}</p>
+      </div>`).join('');
+
+    // Action buttons
+    const actions = document.createElement('div');
+    actions.className = 'col-span-2 sm:col-span-4 flex items-center gap-3 mt-2 pt-4 border-t border-white/5 flex-wrap';
+    actions.innerHTML = `
+      <button onclick="window.deleteRecord('${date}')"
+        class="btn-danger text-sm py-2 px-4 flex items-center gap-2">
+        <i data-lucide="trash-2" class="w-4 h-4"></i> Delete Record
+      </button>
+      <a href="upload.html?date=${date}"
+        class="btn-secondary text-sm py-2 px-4 flex items-center gap-2">
+        <i data-lucide="upload-cloud" class="w-4 h-4"></i> Re-upload Data
+      </a>
+      <button onclick="document.getElementById('date-detail').classList.add('hidden')"
+        class="btn-secondary text-sm py-2 px-4 ml-auto flex items-center gap-2">
+        <i data-lucide="x" class="w-4 h-4"></i> Close
+      </button>`;
+    content.appendChild(actions);
+    if (window.lucide) lucide.createIcons();
+  } catch(e) { content.innerHTML = `<div class="col-span-4 text-red-400 text-sm">Failed to load details.</div>`; }
+};
+
+window.deleteRecord = async function(date) {
+  if (!confirm(`Delete all stock data for ${formatDateDisplay(date)}?\n\nThis will permanently remove all Lehnga & Saree items saved for this date. This cannot be undone.`)) return;
+  try {
+    await deleteUploadRecord(date);
+    notify.success(`Record for ${formatDateDisplay(date)} deleted.`);
+    document.getElementById('date-detail').classList.add('hidden');
+    await renderCalendar();
+  } catch(e) {
+    notify.error('Delete failed: ' + e.message);
+    console.error(e);
+  }
+};
+
+document.getElementById('prev-month').addEventListener('click', () => {
+  currentMonth--;
+  if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+  renderCalendar();
+});
+document.getElementById('next-month').addEventListener('click', () => {
+  currentMonth++;
+  if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+  renderCalendar();
+});
+
+renderCalendar();
+</script>
+</body>
+</html>

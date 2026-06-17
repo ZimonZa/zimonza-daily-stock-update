@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reports — Zimonza</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <link rel="stylesheet" href="css/custom.css">
+  <link rel="stylesheet" href="css/animations.css">
+  <link rel="stylesheet" href="css/theme.css">
+</head>
+<body class="bg-slate-950 min-h-screen">
+<div id="page-content" class="ml-64 pt-16 transition-all duration-300">
+ <div class="p-7 space-y-6 animate-fade-in">
+
+  <div>
+    <h1 class="text-2xl font-bold text-white">Reports</h1>
+    <p class="text-slate-400 text-sm mt-0.5">Generate and export stock reports</p>
+  </div>
+
+  <!-- Report type cards -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+
+    <div class="glass-card p-5 flex flex-col gap-3 cursor-pointer hover:border-emerald-500/30 transition" id="daily-card">
+      <div class="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+        <i data-lucide="calendar-days" class="w-5 h-5 text-emerald-400"></i>
+      </div>
+      <div>
+        <h3 class="text-white font-semibold">Daily Report</h3>
+        <p class="text-slate-500 text-xs mt-0.5">Stock snapshot for one date</p>
+      </div>
+      <div>
+        <select id="daily-date-select" class="zm-input text-xs w-full" onclick="event.stopPropagation()"></select>
+      </div>
+      <div class="flex gap-2 mt-auto">
+        <button class="btn-secondary text-xs py-1.5 px-3 flex-1 justify-center" data-report="daily" data-format="csv">CSV</button>
+        <button class="btn-secondary text-xs py-1.5 px-3 flex-1 justify-center" data-report="daily" data-format="excel">Excel</button>
+        <button class="btn-primary text-xs py-1.5 px-3 flex-1 justify-center" data-report="daily" data-format="pdf">PDF</button>
+      </div>
+    </div>
+
+    <div class="glass-card p-5 flex flex-col gap-3">
+      <div class="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
+        <i data-lucide="calendar-range" class="w-5 h-5 text-blue-400"></i>
+      </div>
+      <div>
+        <h3 class="text-white font-semibold">Weekly Report</h3>
+        <p class="text-slate-500 text-xs mt-0.5">Last 7 uploaded days</p>
+      </div>
+      <div class="flex gap-2 mt-auto">
+        <button class="btn-secondary text-xs py-1.5 px-3 flex-1 justify-center" data-report="weekly" data-format="csv">CSV</button>
+        <button class="btn-secondary text-xs py-1.5 px-3 flex-1 justify-center" data-report="weekly" data-format="excel">Excel</button>
+        <button class="btn-primary text-xs py-1.5 px-3 flex-1 justify-center" data-report="weekly" data-format="pdf">PDF</button>
+      </div>
+    </div>
+
+    <div class="glass-card p-5 flex flex-col gap-3">
+      <div class="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
+        <i data-lucide="calendar" class="w-5 h-5 text-purple-400"></i>
+      </div>
+      <div>
+        <h3 class="text-white font-semibold">Monthly Report</h3>
+        <p class="text-slate-500 text-xs mt-0.5">Full month stock data</p>
+      </div>
+      <div>
+        <input id="month-picker" class="zm-input text-xs w-full" placeholder="Pick month…">
+      </div>
+      <div class="flex gap-2 mt-auto">
+        <button class="btn-secondary text-xs py-1.5 px-3 flex-1 justify-center" data-report="monthly" data-format="csv">CSV</button>
+        <button class="btn-primary text-xs py-1.5 px-3 flex-1 justify-center" data-report="monthly" data-format="excel">Excel</button>
+      </div>
+    </div>
+
+    <div class="glass-card p-5 flex flex-col gap-3">
+      <div class="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+        <i data-lucide="sliders-horizontal" class="w-5 h-5 text-amber-400"></i>
+      </div>
+      <div>
+        <h3 class="text-white font-semibold">Custom Report</h3>
+        <p class="text-slate-500 text-xs mt-0.5">Select date range</p>
+      </div>
+      <div>
+        <input id="custom-range" class="zm-input text-xs w-full" placeholder="Select date range…">
+      </div>
+      <div class="flex gap-2 mt-auto">
+        <button class="btn-secondary text-xs py-1.5 px-3 flex-1 justify-center" data-report="custom" data-format="csv">CSV</button>
+        <button class="btn-primary text-xs py-1.5 px-3 flex-1 justify-center" data-report="custom" data-format="excel">Excel</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Analytics Section -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+    <!-- Fast Movers -->
+    <div class="glass-card p-5">
+      <div class="flex items-center gap-2 mb-4">
+        <i data-lucide="zap" class="w-4 h-4 text-amber-400"></i>
+        <h3 class="text-white font-semibold">Fast-Moving Products</h3>
+      </div>
+      <div id="fast-movers-list">
+        <div class="animate-pulse space-y-2">
+          <div class="h-4 bg-white/5 rounded w-full"></div>
+          <div class="h-4 bg-white/5 rounded w-5/6"></div>
+          <div class="h-4 bg-white/5 rounded w-4/6"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Best Colors -->
+    <div class="glass-card p-5">
+      <div class="flex items-center gap-2 mb-4">
+        <i data-lucide="palette" class="w-4 h-4 text-purple-400"></i>
+        <h3 class="text-white font-semibold">Best-Selling Colors</h3>
+      </div>
+      <div id="best-colors-list">
+        <div class="animate-pulse space-y-2">
+          <div class="h-4 bg-white/5 rounded w-full"></div>
+          <div class="h-4 bg-white/5 rounded w-3/4"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Report Preview Area -->
+  <div id="report-preview" class="hidden glass-card p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-white font-semibold" id="preview-title">Report Preview</h3>
+      <button id="close-preview" class="text-slate-500 hover:text-slate-300 transition">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+    </div>
+    <div id="preview-stats" class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4"></div>
+    <div id="preview-table" class="overflow-x-auto max-h-80 overflow-y-auto"></div>
+  </div>
+
+ </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './js/auth.js';
+import { renderShell } from './js/ui-components.js';
+import notify from './js/notifications.js';
+import { generateDailyReport, exportCSV, exportExcel, exportPDF } from './js/report-generator.js';
+import { getStockData, getAllUploadDates } from './js/firestore-service.js';
+import { analyzeStockChanges, findFastMovers, getTopColors } from './js/stock-analyzer.js';
+import { CATEGORIES } from './js/constants.js';
+import { formatDateDisplay } from './js/utils.js';
+
+await requireAuth();
+renderShell('reports');
+if (window.lucide) lucide.createIcons();
+
+let allDates = [], reportItems = [];
+
+async function init() {
+  allDates = await getAllUploadDates();
+  const sel = document.getElementById('daily-date-select');
+  sel.innerHTML = allDates.map(d=>`<option value="${d}">${formatDateDisplay(d)}</option>`).join('');
+
+  flatpickr('#month-picker', { dateFormat: 'Y-m', plugins: [] });
+  flatpickr('#custom-range', { mode: 'range', dateFormat: 'Y-m-d' });
+
+  await loadAnalytics();
+}
+
+async function loadAnalytics() {
+  if (!allDates.length) return;
+  const date = allDates[0];
+  const [l, s] = await Promise.all([
+    getStockData(date, CATEGORIES.LEHNGA),
+    getStockData(date, CATEGORIES.SAREE)
+  ]);
+  const curr = [...l, ...s];
+  const prevDate = allDates[1];
+  let prev = [];
+  if (prevDate) {
+    const [pl, ps] = await Promise.all([
+      getStockData(prevDate, CATEGORIES.LEHNGA),
+      getStockData(prevDate, CATEGORIES.SAREE)
+    ]);
+    prev = [...pl, ...ps];
+  }
+  const analysis = analyzeStockChanges(curr, prev);
+  const fastMovers = findFastMovers(analysis.soldItems, 8);
+  const topColors = getTopColors(analysis.soldItems, 8);
+
+  document.getElementById('fast-movers-list').innerHTML = fastMovers.length
+    ? fastMovers.map((i,idx)=>`
+        <div class="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
+          <div class="flex items-center gap-3">
+            <span class="text-slate-600 text-xs w-4 text-right">${idx+1}</span>
+            <div>
+              <p class="text-slate-200 text-sm font-medium">${i.name}</p>
+              <p class="text-slate-500 text-xs">${i.sku} · ${i.category}</p>
+            </div>
+          </div>
+          <span class="change-sold text-xs">−${i.totalSold} pcs</span>
+        </div>`).join('')
+    : '<p class="text-slate-500 text-sm">No sold data available.</p>';
+
+  document.getElementById('best-colors-list').innerHTML = topColors.length
+    ? topColors.map((c,idx)=>`
+        <div class="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
+          <div class="flex items-center gap-3">
+            <span class="text-slate-600 text-xs w-4 text-right">${idx+1}</span>
+            <span class="color-badge">${c.name}</span>
+          </div>
+          <span class="text-red-400 text-sm font-semibold">−${c.totalSold} pcs</span>
+        </div>`).join('')
+    : '<p class="text-slate-500 text-sm">No color data available.</p>';
+
+  if (window.lucide) lucide.createIcons();
+}
+
+// Export buttons
+document.querySelectorAll('[data-report][data-format]').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const type = btn.dataset.report;
+    const format = btn.dataset.format;
+    btn.disabled = true;
+    btn.textContent = '…';
+    try {
+      const date = type === 'daily'
+        ? document.getElementById('daily-date-select').value
+        : (allDates[0] || null);
+
+      if (!date) { notify.warning('No date selected.'); return; }
+
+      const report = await generateDailyReport(date);
+      const items = report.items;
+      const filename = `zimonza-${type}-${date}`;
+      const title = `${type.charAt(0).toUpperCase()+type.slice(1)} Stock Report — ${formatDateDisplay(date)}`;
+
+      if (format === 'csv') { exportCSV(items, `${filename}.csv`); notify.success('CSV downloaded!'); }
+      else if (format === 'excel') { exportExcel(items, `${filename}.xlsx`); notify.success('Excel downloaded!'); }
+      else if (format === 'pdf') { exportPDF(items, title, formatDateDisplay(date)); notify.success('PDF downloaded!'); }
+
+      showPreview(report, title);
+    } catch(e) {
+      notify.error('Export failed: ' + e.message);
+      console.error(e);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = { csv:'CSV', excel:'Excel', pdf:'PDF' }[format];
+    }
+  });
+});
+
+function showPreview(report, title) {
+  document.getElementById('preview-title').textContent = title;
+  document.getElementById('report-preview').classList.remove('hidden');
+  document.getElementById('preview-stats').innerHTML = [
+    { label:'Total SKUs', value: report.totalSKUs },
+    { label:'Total Pieces', value: report.totalPcs },
+    { label:'Low Stock', value: report.health.low },
+    { label:'Sold Out', value: report.health.soldOut },
+  ].map(c=>`<div class="glass-card p-3 text-center">
+    <p class="text-white font-bold text-xl">${c.value}</p>
+    <p class="text-slate-500 text-xs mt-1">${c.label}</p>
+  </div>`).join('');
+
+  const rows = report.items.slice(0,20).map(i => {
+    const lvlCls = {high:'level-high',medium:'level-medium',low:'level-low',sold_out:'level-sold_out'}[i.stockLevel]||'level-sold_out';
+    return `<tr class="border-t border-white/5">
+      <td class="px-3 py-2 text-emerald-400 font-mono text-xs">${i.sku}</td>
+      <td class="px-3 py-2 text-slate-200 text-xs">${i.name}</td>
+      <td class="px-3 py-2"><span class="badge badge-info text-xs capitalize">${i.category}</span></td>
+      <td class="px-3 py-2 text-white font-semibold text-xs">${i.totalQty}</td>
+      <td class="px-3 py-2"><span class="${lvlCls} text-xs">${i.stockLevel.replace('_',' ')}</span></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('preview-table').innerHTML = `
+    <table class="w-full zm-table text-xs">
+      <thead><tr><th>SKU</th><th>Name</th><th>Category</th><th>Qty</th><th>Level</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    ${report.items.length > 20 ? `<p class="text-slate-500 text-xs text-center py-2">Showing 20 of ${report.items.length} items. Download for full report.</p>` : ''}`;
+  document.getElementById('report-preview').scrollIntoView({ behavior:'smooth', block:'nearest' });
+  if (window.lucide) lucide.createIcons();
+}
+
+document.getElementById('close-preview').addEventListener('click', () =>
+  document.getElementById('report-preview').classList.add('hidden'));
+
+init();
+</script>
+</body>
+</html>
