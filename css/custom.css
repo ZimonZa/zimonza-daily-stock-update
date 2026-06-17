@@ -56,11 +56,46 @@ body {
 }
 
 @media (max-width: 1024px) {
-  #page-content { margin-left: 68px; padding: 20px 16px; }
+  #page-content { margin-left: 0; padding: 20px 16px; }
 }
 
 @media (max-width: 640px) {
   #page-content { margin-left: 0; padding: 16px 12px; }
+}
+
+/* ─── Mobile responsive shell (<1024px) ──────────────
+   Sidebar becomes an off-canvas drawer; topbar + content
+   span full width. Overrides the JS-set left-64/ml-64.
+   1023.98px aligns with Tailwind lg (1024px) used by the
+   `lg:hidden` hamburger button.
+   ─────────────────────────────────────────────────── */
+@media (max-width: 1023.98px) {
+  #app-sidebar {
+    width: 256px !important;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+    box-shadow: 0 0 40px rgba(0,0,0,0.5);
+  }
+  #app-sidebar.sidebar-open { transform: translateX(0); }
+
+  #app-topbar   { left: 0 !important; }
+  #page-content { margin-left: 0 !important; }
+
+  /* Desktop collapse toggle irrelevant on mobile */
+  #sidebar-toggle-btn { display: none !important; }
+
+  /* Backdrop behind the drawer (under sidebar z-40, over topbar z-30) */
+  #sidebar-backdrop {
+    position: fixed; inset: 0; z-index: 35;
+    background: rgba(2,6,23,0.6); backdrop-filter: blur(2px);
+    opacity: 0; visibility: hidden; transition: opacity 0.25s ease;
+  }
+  #sidebar-backdrop.show { opacity: 1; visibility: visible; }
+  body.drawer-open { overflow: hidden; }
+}
+
+@media (min-width: 1024px) {
+  #sidebar-backdrop { display: none !important; }
 }
 
 /* ─── Card Glassmorphism ─────────────────────────── */

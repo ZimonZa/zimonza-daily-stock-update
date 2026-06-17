@@ -24,6 +24,7 @@ export function renderShell(activePageId) {
   }
   setupThemeToggle();
   setupSidebarToggle();
+  setupMobileDrawer();
 }
 
 function applyTheme() {
@@ -238,13 +239,50 @@ function setupSidebarToggle() {
     });
   });
 
-  // Mobile menu
+}
+
+/**
+ * Mobile off-canvas drawer: hamburger opens sidebar over a backdrop.
+ * On <1024px the sidebar is translated off-screen by CSS; toggling
+ * `.sidebar-open` slides it in. Idempotent — safe to call per render.
+ */
+function setupMobileDrawer() {
+  // Backdrop element (create once)
+  let backdrop = document.getElementById('sidebar-backdrop');
+  if (!backdrop) {
+    backdrop = document.createElement('div');
+    backdrop.id = 'sidebar-backdrop';
+    document.body.appendChild(backdrop);
+  }
+
+  const closeDrawer = () => {
+    document.getElementById('app-sidebar')?.classList.remove('sidebar-open');
+    backdrop.classList.remove('show');
+    document.body.classList.remove('drawer-open');
+  };
+  const openDrawer = () => {
+    document.getElementById('app-sidebar')?.classList.add('sidebar-open');
+    backdrop.classList.add('show');
+    document.body.classList.add('drawer-open');
+  };
+
+  // Wire global listeners once
+  if (window.__zmDrawerWired) return;
+  window.__zmDrawerWired = true;
+
   document.addEventListener('click', (e) => {
-    const btn = e.target.closest('#mobile-menu-btn');
-    if (!btn) return;
-    const sidebar = document.getElementById('app-sidebar');
-    if (sidebar) sidebar.classList.toggle('translate-x-0');
+    if (e.target.closest('#mobile-menu-btn')) {
+      const open = document.getElementById('app-sidebar')?.classList.contains('sidebar-open');
+      open ? closeDrawer() : openDrawer();
+      return;
+    }
+    if (e.target.closest('#sidebar-backdrop')) { closeDrawer(); return; }
+    // Tapping a nav link navigates → close immediately for snappy feel
+    if (e.target.closest('#app-sidebar .nav-item')) closeDrawer();
   });
+
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
+  window.addEventListener('resize', () => { if (window.innerWidth >= 1024) closeDrawer(); });
 }
 
 /**
