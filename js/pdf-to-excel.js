@@ -204,47 +204,39 @@ export async function convertPdfToGrid(file, onProgress) {
         }
       }
 
+      // Colour is stacked ABOVE its item's ITEM NO line. Walk top→bottom,
+      // buffer colour-only lines, and flush the whole buffer to the next
+      // ITEM line below them — so a tall colour block can't leak into the
+      // previous/next item.
       const records = [];
-      const colourLines = [];
+      let buffer = [];
       for (const line of dataLines) {
         const cells = assignStockRow(line.items, anchors);
         const itemNo = (cells[C.itemNo] || '').trim();
         const colour = (cells[C.colour] || '').trim();
 
         if (itemNo && itemNo.toUpperCase() !== 'ITEM NO' && !JUNK_RE.test(itemNo)) {
+          const fullColour = [...buffer, colour].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+          buffer = [];
           records.push({
-            y: line.y,
             cells: [
               itemNo,
               (cells[C.name] || '').trim(),
               (cells[C.loc] || '').trim(),
-              colour,                       // colour on the item's own line (if any)
+              fullColour,
               (cells[C.ready] || '').trim(),
               (cells[C.sales] || '').trim(),
               (cells[C.bal] || '').trim(),
             ],
           });
         } else if (colour && isColourText(colour)) {
-          colourLines.push({ y: line.y, text: colour });
+          buffer.push(colour);
         }
       }
-
-      // Attach each colour fragment to the nearest item by vertical distance
-      for (const cl of colourLines) {
-        let best = null, bestDist = Infinity;
-        for (const rec of records) {
-          const d = Math.abs(cl.y - rec.y);
-          if (d < bestDist) { bestDist = d; best = rec; }
-        }
-        if (best) (best.colourParts || (best.colourParts = [])).push(cl);
-      }
-
-      for (const rec of records) {
-        if (rec.colourParts && rec.colourParts.length) {
-          const parts = rec.colourParts.sort((a, b) => b.y - a.y).map(p => p.text); // top → bottom
-          const all = [rec.cells[C.colour], ...parts].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
-          rec.cells[C.colour] = all;
-        }
+      // Any trailing colour (sitting below the final item) → last record
+      if (buffer.length && records.length) {
+        const last = records[records.length - 1];
+        last.cells[C.colour] = [last.cells[C.colour], ...buffer].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
       }
 
       const meta = {
