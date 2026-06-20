@@ -149,73 +149,6 @@ function firstLine(items) {
   return String(top.str).split(/\n|Phone|GSTIN/)[0].trim();
 }
 
-// ─── Table grid-line detection (vector ops) ───────────────────────
-// PDF matrices are [a,b,c,d,e,f]; point: x' = a*x+c*y+e, y' = b*x+d*y+f.
-function composeMatrix(m1, m2) {
-  return [
-    m1[0] * m2[0] + m1[2] * m2[1],
-    m1[1] * m2[0] + m1[3] * m2[1],
-    m1[0] * m2[2] + m1[2] * m2[3],
-    m1[1] * m2[2] + m1[3] * m2[3],
-    m1[0] * m2[4] + m1[2] * m2[5] + m1[4],
-    m1[1] * m2[4] + m1[3] * m2[5] + m1[5],
-  ];
-}
-const tX = (m, x, y) => m[0] * x + m[2] * y + m[4];
-const tY = (m, x, y) => m[1] * x + m[3] * y + m[5];
-
-/**
- * Recover the y-positions of horizontal ruling lines (table row borders)
- * in PDF user space (same space as text item.transform[5]).
- * Returns boundaries sorted top→bottom, or null if too few found.
- */
-async function extractRowBands(page) {
-  let opList;
-  try { opList = await page.getOperatorList(); } catch { return null; }
-  const OPS = pdfjsLib.OPS;
-  let ctm = [1, 0, 0, 1, 0, 0];
-  const stack = [];
-  const ys = [];
-  const consider = (x0, y0, x1, y1) => {
-    const ay0 = tY(ctm, x0, y0), ay1 = tY(ctm, x1, y1);
-    const ax0 = tX(ctm, x0, y0), ax1 = tX(ctm, x1, y1);
-    if (Math.abs(ay0 - ay1) < 1.5 && Math.abs(ax1 - ax0) > 40) ys.push((ay0 + ay1) / 2);
-  };
-  const fns = opList.fnArray, argsArr = opList.argsArray;
-  for (let i = 0; i < fns.length; i++) {
-    const fn = fns[i];
-    if (fn === OPS.save) stack.push(ctm.slice());
-    else if (fn === OPS.restore) { if (stack.length) ctm = stack.pop(); }
-    else if (fn === OPS.transform) { ctm = composeMatrix(ctm, argsArr[i]); }
-    else if (fn === OPS.constructPath) {
-      const a = argsArr[i];
-      const pathOps = a[0], coords = a[1];
-      let ci = 0, cx = 0, cy = 0;
-      for (const pop of pathOps) {
-        if (pop === OPS.moveTo) { cx = coords[ci++]; cy = coords[ci++]; }
-        else if (pop === OPS.lineTo) { const nx = coords[ci++], ny = coords[ci++]; consider(cx, cy, nx, ny); cx = nx; cy = ny; }
-        else if (pop === OPS.curveTo) { ci += 4; cx = coords[ci++]; cy = coords[ci++]; }
-        else if (pop === OPS.curveTo2) { ci += 2; cx = coords[ci++]; cy = coords[ci++]; }
-        else if (pop === OPS.curveTo3) { ci += 2; cx = coords[ci++]; cy = coords[ci++]; }
-        else if (pop === OPS.rectangle) {
-          const rx = coords[ci++], ry = coords[ci++], rw = coords[ci++], rh = coords[ci++];
-          consider(rx, ry, rx + rw, ry);
-          consider(rx, ry + rh, rx + rw, ry + rh);
-          cx = rx; cy = ry;
-        }
-      }
-    }
-  }
-  if (ys.length < 4) return null;
-  ys.sort((a, b) => a - b);
-  const merged = [];
-  for (const y of ys) {
-    if (!merged.length || Math.abs(y - merged[merged.length - 1]) > 2.5) merged.push(y);
-  }
-  merged.sort((a, b) => b - a); // top first
-  return merged.length >= 4 ? merged : null;
-}
-
 /** Reading-order heuristic: flush buffered colour lines to the next item. */
 function buildFlushRecords(dataLines, anchors) {
   const records = [];
@@ -240,28 +173,6 @@ function buildFlushRecords(dataLines, anchors) {
   return records;
 }
 
-/** Bin items into the bands between grid lines → one record per table row. */
-function buildRecordsByBands(dataItems, bands, anchors) {
-  const records = [];
-  for (let k = 0; k < bands.length - 1; k++) {
-    const top = bands[k], bottom = bands[k + 1];
-    const bandItems = dataItems.filter(it => it.y > bottom + 0.5 && it.y <= top + 0.5);
-    if (!bandItems.length) continue;
-    bandItems.sort((a, b) => (b.y - a.y) || (a.x - b.x)); // top→bottom, then left→right
-    const cells = ['', '', '', '', '', '', ''];
-    for (const it of bandItems) {
-      const s = it.str.trim();
-      const idx = (/[()*]/.test(s) && it.x < anchors[4]) ? 3 : colIndexFor(it.x, anchors);
-      cells[idx] = cells[idx] ? `${cells[idx]} ${s}` : s;
-    }
-    const itemNo = cells[0].trim();
-    if (!itemNo || itemNo.toUpperCase() === 'ITEM NO' || JUNK_RE.test(itemNo)) continue;
-    records.push([itemNo, cells[1].trim(), cells[2].trim(), cells[3].replace(/\s+/g, ' ').trim(),
-      cells[4].trim(), cells[5].trim(), cells[6].trim()]);
-  }
-  return records;
-}
-
 /**
  * Convert a PDF File into a structured result.
  * @param {File} file
@@ -272,7 +183,6 @@ export async function convertPdfToGrid(file, onProgress) {
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
 
   const pagesItems = [];
-  const pageBands = [];
   const allX = [];
   const charWs = [];
   for (let p = 1; p <= pdf.numPages; p++) {
@@ -281,7 +191,6 @@ export async function convertPdfToGrid(file, onProgress) {
     const content = await page.getTextContent();
     const items = normalizeItems(content.items);
     pagesItems.push(items);
-    pageBands.push(await extractRowBands(page));
     for (const it of items) {
       allX.push(it.x);
       if (it.w > 0 && it.str.length > 0) charWs.push(it.w / it.str.length);
@@ -292,8 +201,6 @@ export async function convertPdfToGrid(file, onProgress) {
 
   // ── Stock-report mode: one clean row per item ─────────────────
   if (anchors) {
-    const C = { itemNo: 0, name: 1, loc: 2, colour: 3, ready: 4, sales: 5, bal: 6 };
-
     const pages = [];
     let totalRows = 0, dataCount = 0;
 
@@ -319,22 +226,9 @@ export async function convertPdfToGrid(file, onProgress) {
         }
       }
 
-      // Default: reading-order heuristic (colour flushed to the next item).
-      const flushRecords = buildFlushRecords(dataLines, anchors);
-      let rows = flushRecords;
-
-      // Preferred: bin items by the real table grid lines so colour can't
-      // cross a row border. Use it only when it yields a comparable, sane
-      // row count (otherwise the grid detection is unreliable → fall back).
-      const bands = pageBands[i];
-      if (bands && bands.length >= 4) {
-        const dataItems = dataLines.flatMap(l => l.items);
-        const bandRecords = buildRecordsByBands(dataItems, bands, anchors);
-        const lo = flushRecords.length * 0.7, hi = flushRecords.length * 1.3 + 1;
-        if (bandRecords.length >= 3 && bandRecords.length >= lo && bandRecords.length <= hi) {
-          rows = bandRecords;
-        }
-      }
+      // Reading-order heuristic: buffer colour-only lines and flush them to
+      // the next ITEM line so each item gets its full colour string.
+      const rows = buildFlushRecords(dataLines, anchors);
 
       const meta = {
         title: firstLine(items),
