@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDF → Excel — Zimonza</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="css/custom.css">
+  <link rel="stylesheet" href="css/animations.css">
+  <link rel="stylesheet" href="css/theme.css">
+</head>
+<body class="bg-slate-950 min-h-screen">
+<div id="page-content" class="ml-64 pt-16 transition-all duration-300">
+ <div class="p-7 space-y-6 animate-fade-in">
+
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-white">PDF → Excel</h1>
+      <p id="page-subtitle" class="text-slate-400 text-sm mt-0.5">Convert a text-based PDF into an Excel sheet — auto-detects columns by position</p>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <button id="export-xlsx-btn" class="btn-primary text-sm py-2 px-4 hidden">
+        <i data-lucide="file-spreadsheet" class="w-4 h-4 inline-block mr-1"></i> Download Excel
+      </button>
+      <button id="export-csv-btn" class="btn-secondary text-sm py-2 px-4 hidden">
+        <i data-lucide="download" class="w-4 h-4 inline-block mr-1"></i> CSV (page)
+      </button>
+      <button id="reset-btn" class="btn-secondary text-sm py-2 px-4 hidden">
+        <i data-lucide="refresh-cw" class="w-4 h-4 inline-block mr-1"></i> New File
+      </button>
+    </div>
+  </div>
+
+  <!-- Upload Zone -->
+  <div id="upload-section">
+    <div id="drop-zone"
+      class="glass-card border-2 border-dashed border-slate-600 hover:border-emerald-500 transition-colors
+             flex flex-col items-center justify-center gap-4 p-16 cursor-pointer text-center">
+      <div class="w-16 h-16 rounded-2xl bg-slate-800 flex items-center justify-center">
+        <i data-lucide="file-text" class="w-8 h-8 text-emerald-400"></i>
+      </div>
+      <div>
+        <p class="text-white font-semibold text-lg">Drop your PDF here</p>
+        <p class="text-slate-400 text-sm mt-1">Text-based PDFs only (selectable text). Scanned/photo PDFs are not supported.</p>
+      </div>
+      <button class="btn-primary px-6 py-2.5">
+        <i data-lucide="folder-open" class="w-4 h-4 inline-block mr-2"></i>Browse File
+      </button>
+      <input id="file-input" type="file" accept=".pdf,application/pdf" class="hidden">
+    </div>
+
+    <!-- Processing indicator -->
+    <div id="processing-indicator" class="hidden glass-card p-8 flex flex-col items-center gap-4">
+      <div class="spinner"></div>
+      <p id="processing-text" class="text-slate-300">Reading PDF…</p>
+    </div>
+  </div>
+
+  <!-- Scanned/no-text warning -->
+  <div id="warn-banner" class="hidden glass-card border border-amber-500/30 p-4 flex gap-3 items-start">
+    <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-400 shrink-0 mt-0.5"></i>
+    <div>
+      <p class="text-amber-300 font-medium text-sm">No selectable text found</p>
+      <p id="warn-text" class="text-slate-400 text-xs mt-0.5">This looks like a scanned/image PDF. OCR is not supported — only text-based PDFs can be converted.</p>
+    </div>
+  </div>
+
+  <!-- Options + Stats -->
+  <div id="options-bar" class="hidden glass-card p-4 flex flex-wrap gap-4 items-center">
+    <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer select-none">
+      <input id="combine-toggle" type="checkbox" class="accent-emerald-500 w-4 h-4">
+      Combine all pages into one sheet
+    </label>
+    <div class="flex items-center gap-2">
+      <span class="text-slate-500 text-xs">Preview page</span>
+      <select id="page-select" class="zm-input w-28 text-sm"></select>
+    </div>
+    <span class="text-slate-500 text-xs ml-auto" id="stats-text"></span>
+  </div>
+
+  <!-- Preview Table -->
+  <div id="results-section" class="hidden glass-card overflow-hidden">
+    <div class="flex items-center justify-between px-5 py-3 border-b border-slate-700/50 bg-slate-900/50 flex-wrap gap-2">
+      <h3 class="text-slate-200 font-semibold text-sm">Preview</h3>
+      <span id="truncate-note" class="text-slate-500 text-xs"></span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <tbody id="results-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+ </div>
+</div>
+
+<script type="module">
+import { requireAuth } from './js/auth.js';
+import { renderShell } from './js/ui-components.js';
+import notify from './js/notifications.js';
+import { convertPdfToGrid } from './js/pdf-to-excel.js';
+
+await requireAuth();
+renderShell('pdf-to-excel');
+if (window.lucide) lucide.createIcons();
+
+const PREVIEW_ROW_CAP = 200;
+
+// ─── State ───────────────────────────────────────────────────
+let result = null;       // { pages, maxCols, totalRows }
+let activePage = 0;      // index into result.pages
+let fileBaseName = 'converted';
+
+// ─── DOM refs ────────────────────────────────────────────────
+const dropZone      = document.getElementById('drop-zone');
+const fileInput     = document.getElementById('file-input');
+const uploadSection = document.getElementById('upload-section');
+const processingInd = document.getElementById('processing-indicator');
+const processingTxt = document.getElementById('processing-text');
+const warnBanner    = document.getElementById('warn-banner');
+const optionsBar    = document.getElementById('options-bar');
+const combineToggle = document.getElementById('combine-toggle');
+const pageSelect    = document.getElementById('page-select');
+const statsText     = document.getElementById('stats-text');
+const resultsSection= document.getElementById('results-section');
+const resultsBody   = document.getElementById('results-body');
+const truncateNote  = document.getElementById('truncate-note');
+const exportXlsxBtn = document.getElementById('export-xlsx-btn');
+const exportCsvBtn  = document.getElementById('export-csv-btn');
+const resetBtn      = document.getElementById('reset-btn');
+const pageSubtitle  = document.getElementById('page-subtitle');
+
+// ─── Upload handlers ─────────────────────────────────────────
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('border-emerald-400'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('border-emerald-400'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('border-emerald-400');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFile(file);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) handleFile(fileInput.files[0]);
+});
+
+async function handleFile(file) {
+  if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') {
+    notify.error('Please upload a PDF file');
+    return;
+  }
+  fileBaseName = file.name.replace(/\.pdf$/i, '') || 'converted';
+
+  dropZone.classList.add('hidden');
+  warnBanner.classList.add('hidden');
+  processingInd.classList.remove('hidden');
+  processingTxt.textContent = 'Reading PDF…';
+
+  try {
+    result = await convertPdfToGrid(file, (p, total) => {
+      processingTxt.textContent = `Reading page ${p} / ${total}…`;
+    });
+
+    processingInd.classList.add('hidden');
+
+    if (!result.totalRows) {
+      warnBanner.classList.remove('hidden');
+      dropZone.classList.remove('hidden');
+      if (window.lucide) lucide.createIcons();
+      return;
+    }
+
+    activePage = 0;
+    pageSubtitle.textContent =
+      `${file.name} — ${result.pages.length} page${result.pages.length !== 1 ? 's' : ''}, ${result.totalRows} rows`;
+
+    // Page selector
+    pageSelect.innerHTML = result.pages
+      .map((pg, i) => `<option value="${i}">Page ${pg.pageNum} (${pg.rows.length})</option>`).join('');
+
+    statsText.textContent =
+      `${result.pages.length} page${result.pages.length !== 1 ? 's' : ''} · ${result.totalRows} rows · up to ${result.maxCols} columns`;
+
+    optionsBar.classList.remove('hidden');
+    exportXlsxBtn.classList.remove('hidden');
+    exportCsvBtn.classList.remove('hidden');
+    resetBtn.classList.remove('hidden');
+
+    renderPreview();
+    notify.success(`Converted ${result.totalRows} rows across ${result.pages.length} page(s)`);
+
+  } catch (err) {
+    processingInd.classList.add('hidden');
+    dropZone.classList.remove('hidden');
+    notify.error(err.message || 'Failed to read PDF');
+    console.error(err);
+  }
+}
+
+// ─── Preview ──────────────────────────────────────────────────
+function renderPreview() {
+  const rows = result.pages[activePage]?.rows || [];
+  const shown = rows.slice(0, PREVIEW_ROW_CAP);
+
+  truncateNote.textContent = rows.length > PREVIEW_ROW_CAP
+    ? `Showing first ${PREVIEW_ROW_CAP} of ${rows.length} rows — full data is in the download`
+    : `${rows.length} rows`;
+
+  resultsBody.innerHTML = shown.map((r, idx) => {
+    const cells = r.map(c =>
+      `<td class="px-3 py-2 text-slate-300 border-b border-slate-800/40 whitespace-nowrap align-top">${esc(c)}</td>`
+    ).join('');
+    const rowClass = idx % 2 === 0 ? '' : 'bg-slate-900/30';
+    return `<tr class="${rowClass}">${cells}</tr>`;
+  }).join('');
+
+  resultsSection.classList.remove('hidden');
+}
+
+pageSelect.addEventListener('change', () => {
+  activePage = Number(pageSelect.value) || 0;
+  renderPreview();
+});
+
+// ─── Build workbook ───────────────────────────────────────────
+function buildWorkbook() {
+  const wb = XLSX.utils.book_new();
+  if (combineToggle.checked) {
+    const all = [];
+    result.pages.forEach((pg, i) => {
+      if (i > 0) all.push([]); // blank separator row between pages
+      pg.rows.forEach(r => all.push(r));
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(all), 'Sheet1');
+  } else {
+    result.pages.forEach(pg => {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(pg.rows), `Page ${pg.pageNum}`);
+    });
+  }
+  return wb;
+}
+
+exportXlsxBtn.addEventListener('click', () => {
+  if (!result) return;
+  try {
+    XLSX.writeFile(buildWorkbook(), `${fileBaseName}.xlsx`);
+    notify.success('Excel downloaded');
+  } catch (e) {
+    notify.error('Export failed: ' + e.message);
+    console.error(e);
+  }
+});
+
+exportCsvBtn.addEventListener('click', () => {
+  if (!result) return;
+  const rows = result.pages[activePage]?.rows || [];
+  const csv = rows
+    .map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
+    .join('\r\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${fileBaseName}-page${result.pages[activePage]?.pageNum || 1}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  notify.success('CSV downloaded');
+});
+
+// ─── Reset ────────────────────────────────────────────────────
+resetBtn.addEventListener('click', () => {
+  result = null;
+  activePage = 0;
+  fileBaseName = 'converted';
+  fileInput.value = '';
+  pageSubtitle.textContent = 'Convert a text-based PDF into an Excel sheet — auto-detects columns by position';
+  dropZone.classList.remove('hidden');
+  processingInd.classList.add('hidden');
+  warnBanner.classList.add('hidden');
+  optionsBar.classList.add('hidden');
+  resultsSection.classList.add('hidden');
+  exportXlsxBtn.classList.add('hidden');
+  exportCsvBtn.classList.add('hidden');
+  resetBtn.classList.add('hidden');
+  combineToggle.checked = false;
+  pageSelect.innerHTML = '';
+  resultsBody.innerHTML = '';
+  statsText.textContent = '';
+});
+
+// ─── Utility ──────────────────────────────────────────────────
+function esc(str) {
+  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
