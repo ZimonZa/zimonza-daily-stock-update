@@ -18,7 +18,7 @@
   <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
     <div>
       <h1 class="text-2xl font-bold text-white">PDF → Excel</h1>
-      <p id="page-subtitle" class="text-slate-400 text-sm mt-0.5">Convert a text-based stock PDF into Excel — reproduces the page layout exactly</p>
+      <p id="page-subtitle" class="text-slate-400 text-sm mt-0.5">Convert a text-based stock PDF into a clean, styled Excel table</p>
     </div>
     <div class="flex items-center gap-2 flex-wrap">
       <button id="export-xlsx-btn" class="btn-primary text-sm py-2 px-4 hidden">
@@ -87,8 +87,9 @@
       <h3 class="text-slate-200 font-semibold text-sm">Preview</h3>
       <span id="truncate-note" class="text-slate-500 text-xs"></span>
     </div>
+    <div id="meta-line" class="px-5 py-2 text-xs text-slate-500 border-b border-slate-800/50 hidden"></div>
     <div class="overflow-x-auto">
-      <table class="w-full text-sm"><tbody id="results-body"></tbody></table>
+      <table class="w-full text-sm"><thead id="results-head"></thead><tbody id="results-body"></tbody></table>
     </div>
   </div>
 
@@ -108,7 +109,7 @@ if (window.lucide) lucide.createIcons();
 const PREVIEW_ROW_CAP = 250;
 
 // ─── State ───────────────────────────────────────────────────
-let result = null;        // { mode, fieldCols, maxCols, title, pages, totalRows, dataCount }
+let result = null;        // { mode, headers, pages, totalRows, dataCount }
 let activePage = 0;
 let sheetMode = 'single';
 let fileBaseName = 'converted';
@@ -125,7 +126,9 @@ const modeMultiBtn  = document.getElementById('mode-multi');
 const pageSelect    = document.getElementById('page-select');
 const statsText     = document.getElementById('stats-text');
 const resultsSection= document.getElementById('results-section');
+const resultsHead   = document.getElementById('results-head');
 const resultsBody   = document.getElementById('results-body');
+const metaLine      = document.getElementById('meta-line');
 const truncateNote  = document.getElementById('truncate-note');
 const exportXlsxBtn = document.getElementById('export-xlsx-btn');
 const exportCsvBtn  = document.getElementById('export-csv-btn');
@@ -175,10 +178,10 @@ async function handleFile(file) {
     activePage = 0;
     const modeLabel = result.mode === 'stock' ? 'stock report' : 'grid';
     pageSubtitle.textContent =
-      `${file.name} — ${result.pages.length} page${result.pages.length !== 1 ? 's' : ''}, ${result.dataCount} item rows (${modeLabel})`;
+      `${file.name} — ${result.pages.length} page${result.pages.length !== 1 ? 's' : ''}, ${result.dataCount} items (${modeLabel})`;
 
     pageSelect.innerHTML = result.pages
-      .map((pg, i) => `<option value="${i}">Page ${pg.pageNum} (${pg.rows.length})</option>`).join('');
+      .map((pg, i) => `<option value="${i}">Page ${pg.pageNum} (${pg.records.length})</option>`).join('');
 
     statsText.textContent =
       `${result.mode === 'stock' ? 'Stock report' : 'Generic'} · ${result.pages.length} page${result.pages.length !== 1 ? 's' : ''} · ${result.dataCount} items`;
@@ -211,30 +214,42 @@ function setMode(m) {
 
 // ─── Preview ──────────────────────────────────────────────────
 function renderPreview() {
-  const rows = result.pages[activePage]?.rows || [];
+  const page = result.pages[activePage];
+  const rows = page?.records || [];
   const shown = rows.slice(0, PREVIEW_ROW_CAP);
-  const fc = result.fieldCols;
-  const nameCol = fc?.[1], locCol = fc?.[2], colorCol = fc?.[3], readyCol = fc?.[4];
 
   truncateNote.textContent = rows.length > PREVIEW_ROW_CAP
     ? `Showing first ${PREVIEW_ROW_CAP} of ${rows.length} rows — full data is in the download`
     : `${rows.length} rows`;
 
-  resultsBody.innerHTML = shown.map(r => {
-    const trClass = r.kind === 'header' ? 'bg-[#1F4E79] text-white'
-      : r.kind === 'other' ? 'text-slate-500'
-      : '';
-    const cells = r.cells.map((c, ci) => {
-      const val = esc(c).replace(/\n/g, '<br>');
-      let cls = 'px-3 py-1.5 border border-slate-800/40 align-top whitespace-nowrap';
-      if (r.kind === 'header') cls += ' font-semibold';
-      if (r.kind === 'data' && (ci === nameCol || ci === locCol)) cls += ' font-semibold text-slate-100';
-      if (r.kind === 'data' && readyCol != null && ci >= readyCol) cls += ' text-center';
-      if (r.kind === 'data' && ci === colorCol) cls += ' whitespace-pre-line text-slate-300';
-      return `<td class="${cls}">${val}</td>`;
+  if (result.mode === 'stock') {
+    const m = page.meta || {};
+    metaLine.innerHTML = `${esc(m.title || '')}${m.pageInfo ? ' · ' + esc(m.pageInfo) : ''}${m.banner ? ' · <span class="text-slate-400">' + esc(m.banner) + '</span>' : ''}`;
+    metaLine.classList.remove('hidden');
+    resultsHead.innerHTML = `<tr class="bg-[#1F4E79]">${
+      result.headers.map(h => `<th class="px-3 py-2 text-left text-white font-semibold whitespace-nowrap border border-slate-700">${esc(h)}</th>`).join('')
+    }</tr>`;
+    resultsBody.innerHTML = shown.map((r, idx) => {
+      const cls = idx % 2 ? 'bg-slate-900/30' : '';
+      const cells = r.map((c, ci) => {
+        let k = 'px-3 py-1.5 border border-slate-800/40 align-top';
+        if (ci === 1 || ci === 2) k += ' font-semibold text-slate-100';
+        else if (ci >= 4) k += ' text-center text-slate-300';
+        else k += ' text-slate-300';
+        if (ci === 3) k += ' whitespace-pre-line';
+        return `<td class="${k}">${esc(c).replace(/\n/g, '<br>')}</td>`;
+      }).join('');
+      return `<tr class="${cls}">${cells}</tr>`;
     }).join('');
-    return `<tr class="${trClass}">${cells}</tr>`;
-  }).join('');
+  } else {
+    metaLine.classList.add('hidden');
+    resultsHead.innerHTML = '';
+    resultsBody.innerHTML = shown.map((r, idx) => {
+      const cls = idx % 2 ? 'bg-slate-900/30' : '';
+      const cells = r.map(c => `<td class="px-3 py-1.5 border border-slate-800/40 align-top whitespace-nowrap text-slate-300">${esc(c)}</td>`).join('');
+      return `<tr class="${cls}">${cells}</tr>`;
+    }).join('');
+  }
 
   resultsSection.classList.remove('hidden');
 }
@@ -247,50 +262,68 @@ pageSelect.addEventListener('change', () => {
 // ─── ExcelJS builders ─────────────────────────────────────────
 const THIN = { style: 'thin', color: { argb: 'FFB0B0B0' } };
 const BORDER = { top: THIN, left: THIN, bottom: THIN, right: THIN };
+const BLUE = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E79' } };
 
-function buildStockSheet(ws, rows, fieldCols, maxCols) {
-  const [itemNoCol, nameCol, locCol, colorCol, readyCol, salesCol, balCol] = fieldCols;
-  const bandStart = Math.min(...fieldCols);
-  const bandEnd   = Math.max(...fieldCols);
+function mergeAcross(ws, rowNum, n) { try { ws.mergeCells(rowNum, 1, rowNum, n); } catch (e) {} }
 
-  // Column widths
-  const widths = new Array(maxCols).fill(4);
-  const fw = [10, 26, 16, 46, 11, 11, 11];
-  fieldCols.forEach((col, i) => { widths[col] = fw[i]; });
-  ws.columns = widths.map(w => ({ width: w }));
+function buildStockSheet(ws, blocks, headers) {
+  const N = headers.length; // 7
+  ws.columns = [12, 24, 16, 52, 12, 12, 12].map(w => ({ width: w }));
 
-  for (const r of rows) {
-    const vals = r.cells.map((c, ci) =>
-      (ci === readyCol || ci === salesCol || ci === balCol) && /^\d+$/.test((c || '').trim())
-        ? Number(c) : (c || null)
-    );
-    const er = ws.addRow(vals);
+  blocks.forEach(block => {
+    const m = block.meta || {};
 
-    if (r.kind === 'header') {
-      for (let col = bandStart; col <= bandEnd; col++) {
-        const cell = er.getCell(col + 1);
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E79' } };
-        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-        cell.border = BORDER;
-      }
-      if (readyCol - 1 > colorCol) { try { ws.mergeCells(er.number, colorCol + 1, er.number, readyCol); } catch (e) {} }
-    } else if (r.kind === 'data') {
-      for (let col = bandStart; col <= bandEnd; col++) er.getCell(col + 1).border = BORDER;
-      er.getCell(nameCol + 1).font = { bold: true };
-      er.getCell(locCol + 1).font = { bold: true };
-      [readyCol, salesCol, balCol].forEach(col => { er.getCell(col + 1).alignment = { horizontal: 'center', vertical: 'middle' }; });
-      er.getCell(colorCol + 1).alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
-    } else {
-      const first = r.cells.find(c => c && c.trim());
-      if (first && /^KUNTAL/i.test(first)) er.eachCell(c => { c.font = { bold: true }; });
+    if (m.title) {
+      const r = ws.addRow([m.title]);
+      mergeAcross(ws, r.number, N);
+      r.getCell(1).font = { bold: true, size: 12 };
     }
-  }
+    if (m.filter || m.pageInfo) {
+      const r = ws.addRow([m.filter || '']);
+      if (m.pageInfo) { r.getCell(N).value = m.pageInfo; r.getCell(N).alignment = { horizontal: 'right' }; }
+      r.getCell(1).font = { size: 9, color: { argb: 'FF888888' } };
+      r.getCell(N).font = { size: 9, color: { argb: 'FF888888' } };
+    }
+    if (m.banner) {
+      const r = ws.addRow([m.banner]);
+      mergeAcross(ws, r.number, N);
+      r.getCell(1).font = { bold: true };
+      r.getCell(1).alignment = { horizontal: 'center' };
+    }
+
+    // Header row
+    const hr = ws.addRow(headers);
+    hr.height = 22;
+    hr.eachCell(cell => {
+      cell.fill = BLUE;
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cell.border = BORDER;
+    });
+
+    // Item rows
+    for (const rec of block.records) {
+      const vals = rec.map((v, ci) => (ci >= 4 && /^\d+$/.test((v || '').trim()) ? Number(v) : (v || null)));
+      const er = ws.addRow(vals);
+      for (let col = 1; col <= N; col++) er.getCell(col).border = BORDER;
+      er.getCell(2).font = { bold: true };
+      er.getCell(3).font = { bold: true };
+      [5, 6, 7].forEach(col => { er.getCell(col).alignment = { horizontal: 'center', vertical: 'middle' }; });
+      er.getCell(4).alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
+    }
+
+    if (m.generatedBy) {
+      const r = ws.addRow([m.generatedBy]);
+      mergeAcross(ws, r.number, N);
+      r.getCell(1).font = { italic: true, size: 9, color: { argb: 'FF888888' } };
+    }
+    ws.addRow([]); // spacer between pages
+  });
 }
 
 function plainSheet(ws, rows) {
   rows.forEach((r, i) => {
-    const row = ws.addRow(r.cells);
+    const row = ws.addRow(r);
     if (i === 0) row.font = { bold: true };
   });
 }
@@ -299,15 +332,15 @@ async function buildWorkbook() {
   const wb = new ExcelJS.Workbook();
   if (result.mode === 'stock') {
     if (sheetMode === 'single') {
-      buildStockSheet(wb.addWorksheet('Stock'), result.pages.flatMap(p => p.rows), result.fieldCols, result.maxCols);
+      buildStockSheet(wb.addWorksheet('Stock'), result.pages, result.headers);
     } else {
-      result.pages.forEach(p => buildStockSheet(wb.addWorksheet(`Page ${p.pageNum}`), p.rows, result.fieldCols, result.maxCols));
+      result.pages.forEach(p => buildStockSheet(wb.addWorksheet(`Page ${p.pageNum}`), [p], result.headers));
     }
   } else {
     if (sheetMode === 'single') {
-      plainSheet(wb.addWorksheet('Sheet1'), result.pages.flatMap(p => p.rows));
+      plainSheet(wb.addWorksheet('Sheet1'), result.pages.flatMap(p => p.records));
     } else {
-      result.pages.forEach(p => plainSheet(wb.addWorksheet(`Page ${p.pageNum}`), p.rows));
+      result.pages.forEach(p => plainSheet(wb.addWorksheet(`Page ${p.pageNum}`), p.records));
     }
   }
   return wb;
@@ -335,9 +368,10 @@ exportXlsxBtn.addEventListener('click', async () => {
 
 exportCsvBtn.addEventListener('click', () => {
   if (!result) return;
-  const rows = result.pages[activePage]?.rows || [];
-  const csv = rows
-    .map(r => r.cells.map(v => `"${String(v ?? '').replace(/\n/g, ' ').replace(/"/g, '""')}"`).join(','))
+  const rows = result.pages[activePage]?.records || [];
+  const out = result.mode === 'stock' ? [result.headers, ...rows] : rows;
+  const csv = out
+    .map(r => r.map(v => `"${String(v ?? '').replace(/\n/g, ' ').replace(/"/g, '""')}"`).join(','))
     .join('\r\n');
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
@@ -354,7 +388,7 @@ resetBtn.addEventListener('click', () => {
   result = null; activePage = 0; fileBaseName = 'converted';
   fileInput.value = '';
   setMode('single');
-  pageSubtitle.textContent = 'Convert a text-based stock PDF into Excel — reproduces the page layout exactly';
+  pageSubtitle.textContent = 'Convert a text-based stock PDF into a clean, styled Excel table';
   dropZone.classList.remove('hidden');
   processingInd.classList.add('hidden');
   warnBanner.classList.add('hidden');
@@ -364,7 +398,9 @@ resetBtn.addEventListener('click', () => {
   exportCsvBtn.classList.add('hidden');
   resetBtn.classList.add('hidden');
   pageSelect.innerHTML = '';
+  resultsHead.innerHTML = '';
   resultsBody.innerHTML = '';
+  metaLine.classList.add('hidden');
   statsText.textContent = '';
 });
 
