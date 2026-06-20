@@ -129,9 +129,9 @@ export function parseStockFile(rows, category) {
       const rowBalPcs = Number(row[cols.BAL_PCS] || 0);
       const parsedTotal = parsedColors.reduce((s, c) => s + c.qty, 0);
       totalRows++;
-      if (rowBalPcs > 0 && parsedTotal !== rowBalPcs) {
+      if (parsedTotal !== rowBalPcs) {
         mismatchRows++;
-        balPcsMismatches.push({ sku, name: String(itemName || sku).trim(), rowBalPcs, parsedTotal, diff: parsedTotal - rowBalPcs, category });
+        balPcsMismatches.push({ sku, name: String(itemName || sku).trim(), subLoc, rowBalPcs, parsedTotal, diff: parsedTotal - rowBalPcs, category });
       }
     }
 

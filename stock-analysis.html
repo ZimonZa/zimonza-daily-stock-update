@@ -49,6 +49,32 @@
     </div>
   </div>
 
+  <!-- Changes — BAL PCS Mismatches -->
+  <div id="changes-panel" class="hidden glass-card border border-amber-500/30 overflow-hidden">
+    <div class="flex items-center gap-2 px-5 py-3 border-b border-slate-700/50 bg-amber-500/5 flex-wrap">
+      <i data-lucide="alert-circle" class="w-4 h-4 text-amber-400"></i>
+      <h3 class="text-amber-300 font-semibold text-sm">Changes — BAL PCS Mismatches</h3>
+      <span id="changes-count" class="badge badge-warning"></span>
+      <span class="text-slate-500 text-xs ml-auto">Rows where colour pcs total ≠ BAL PCS (per location)</span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-slate-700/50">
+            <th class="text-left px-5 py-3 text-slate-400 font-medium whitespace-nowrap">ITEM NO</th>
+            <th class="text-left px-5 py-3 text-slate-400 font-medium whitespace-nowrap">ITEM NAME</th>
+            <th class="text-left px-5 py-3 text-slate-400 font-medium whitespace-nowrap">SUB LOCATION</th>
+            <th class="text-right px-5 py-3 text-slate-400 font-medium whitespace-nowrap">COLOUR PCS</th>
+            <th class="text-right px-5 py-3 text-slate-400 font-medium whitespace-nowrap">BAL PCS</th>
+            <th class="text-right px-5 py-3 text-slate-400 font-medium whitespace-nowrap">DIFFERENCE</th>
+          </tr>
+        </thead>
+        <tbody id="changes-body"></tbody>
+      </table>
+    </div>
+    <p id="changes-note" class="hidden text-slate-500 text-xs px-5 py-3"></p>
+  </div>
+
   <!-- Filters Bar -->
   <div class="glass-card p-4 flex flex-wrap gap-3 items-center">
     <input id="search-input" type="text" placeholder="Search SKU or name…" class="zm-input w-48">
@@ -102,7 +128,7 @@
 import { requireAuth } from './js/auth.js';
 import { renderShell } from './js/ui-components.js';
 import notify from './js/notifications.js';
-import { getStockData, getAllUploadDates } from './js/firestore-service.js';
+import { getStockData, getAllUploadDates, getDailySummary } from './js/firestore-service.js';
 import { CATEGORIES } from './js/constants.js';
 import { filterItems, paginate } from './js/filters.js';
 import { exportCSV } from './js/report-generator.js';
@@ -148,6 +174,7 @@ async function load() {
         document.getElementById('data-date-label').textContent = formatDateDisplay(selected);
         page = 1;
         renderStatsBar(allItems);
+        renderChanges(selected);
         safeRenderView();
       } catch(e) {
         notify.error('Failed to load data for selected date.');
@@ -165,6 +192,7 @@ async function load() {
       stockLevel: item.stockLevel || getStockLevel(item.totalQty || 0)
     }));
     renderStatsBar(allItems);
+    renderChanges(date);
     renderView();
   } catch(e) {
     notify.error('Failed to load stock data.');
@@ -175,11 +203,55 @@ async function load() {
 function renderStatsBar(items) {
   const bar = document.getElementById('stats-bar');
   bar.classList.remove('hidden');
-  bar.classList.add('grid');
   document.getElementById('stat-total-skus').textContent = formatNumber(items.length);
   document.getElementById('stat-total-pcs').textContent  = formatNumber(items.reduce((s,i)=>s+(i.totalQty||0),0));
   document.getElementById('stat-low').textContent        = formatNumber(items.filter(i=>i.stockLevel==='low').length);
   document.getElementById('stat-soldout').textContent    = formatNumber(items.filter(i=>i.stockLevel==='sold_out').length);
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function renderChanges(date) {
+  const panel = document.getElementById('changes-panel');
+  const body  = document.getElementById('changes-body');
+  const note  = document.getElementById('changes-note');
+  const count = document.getElementById('changes-count');
+
+  let summary = null;
+  try { summary = await getDailySummary(date); } catch (e) { console.error(e); }
+
+  // Older uploads (before this feature) won't carry the field
+  if (!summary || summary.balPcsMismatches === undefined) {
+    body.innerHTML = '';
+    count.textContent = '0';
+    note.textContent = 'No mismatch data for this date — re-upload the file to populate BAL PCS checks.';
+    note.classList.remove('hidden');
+    panel.classList.remove('hidden');
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+
+  const m = summary.balPcsMismatches || [];
+  if (m.length === 0) { panel.classList.add('hidden'); return; }
+
+  note.classList.add('hidden');
+  count.textContent = `${m.length} mismatch${m.length !== 1 ? 'es' : ''}`;
+  body.innerHTML = m.map(r => {
+    const diff = Number(r.diff) || 0;
+    return `
+    <tr class="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
+      <td class="px-5 py-3 text-emerald-400 font-mono font-semibold whitespace-nowrap">${esc(r.sku)}</td>
+      <td class="px-5 py-3 text-slate-200">${esc(r.name)}</td>
+      <td class="px-5 py-3 text-slate-300 whitespace-nowrap">${esc(r.subLoc || '—')}</td>
+      <td class="px-5 py-3 text-right text-blue-400 font-mono">${esc(r.parsedTotal)}</td>
+      <td class="px-5 py-3 text-right text-white font-mono">${esc(r.rowBalPcs)}</td>
+      <td class="px-5 py-3 text-right font-mono ${diff > 0 ? 'text-amber-400' : 'text-red-400'}">${diff > 0 ? '+' : ''}${diff}</td>
+    </tr>`;
+  }).join('');
+  panel.classList.remove('hidden');
+  if (window.lucide) lucide.createIcons();
 }
 
 function getFilters() {

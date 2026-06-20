@@ -277,10 +277,12 @@ function showPreview(report, title) {
     </tr>`;
   }).join('');
   document.getElementById('preview-table').innerHTML = `
-    <table class="w-full zm-table text-xs">
-      <thead><tr><th>SKU</th><th>Name</th><th>Category</th><th>Qty</th><th>Level</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
+    <div class="overflow-x-auto">
+      <table class="w-full zm-table text-xs">
+        <thead><tr><th>SKU</th><th>Name</th><th>Category</th><th>Qty</th><th>Level</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
     ${report.items.length > 20 ? `<p class="text-slate-500 text-xs text-center py-2">Showing 20 of ${report.items.length} items. Download for full report.</p>` : ''}`;
   document.getElementById('report-preview').scrollIntoView({ behavior:'smooth', block:'nearest' });
   if (window.lucide) lucide.createIcons();

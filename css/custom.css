@@ -192,6 +192,7 @@ body {
   outline: none;
   transition: border-color 0.2s;
   width: 100%;
+  max-width: 100%;
   font-family: 'Inter', sans-serif;
 }
 

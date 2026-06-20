@@ -581,7 +581,12 @@ async function approveAndSave(items, uploadDate) {
       prevItems = [...pl, ...ps];
     }
     const finalAnalysis = analyzeStockChanges(items, prevItems);
-    await saveDailySummary(uploadDate, { ...finalAnalysis.summary, uploadDate });
+    // Persist per-row colour-pcs vs BAL PCS mismatches so Stock Analysis can show them
+    const balPcsMismatches = [
+      ...(state.lehnga?.summary?.balPcsMismatches || []),
+      ...(state.saree?.summary?.balPcsMismatches || []),
+    ].slice(0, 2000); // cap for Firestore 1MB doc safety
+    await saveDailySummary(uploadDate, { ...finalAnalysis.summary, uploadDate, balPcsMismatches });
     setStep('step-save','done');
 
     // Step 4: History
