@@ -16,3 +16,4 @@ Thumbs.db
 # Real stock data — keep business data out of public repo
 *.xlsx
 *.xls
+*.pdf

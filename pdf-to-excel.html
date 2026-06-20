@@ -5,7 +5,7 @@
   <title>PDF → Excel — Zimonza</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
   <link rel="stylesheet" href="css/custom.css">
   <link rel="stylesheet" href="css/animations.css">
   <link rel="stylesheet" href="css/theme.css">
@@ -18,7 +18,7 @@
   <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
     <div>
       <h1 class="text-2xl font-bold text-white">PDF → Excel</h1>
-      <p id="page-subtitle" class="text-slate-400 text-sm mt-0.5">Convert a text-based PDF into an Excel sheet — auto-detects columns by position</p>
+      <p id="page-subtitle" class="text-slate-400 text-sm mt-0.5">Convert a text-based stock PDF into a styled Excel sheet — auto-detects the ITEM NO … BAL PCS table</p>
     </div>
     <div class="flex items-center gap-2 flex-wrap">
       <button id="export-xlsx-btn" class="btn-primary text-sm py-2 px-4 hidden">
@@ -69,10 +69,11 @@
 
   <!-- Options + Stats -->
   <div id="options-bar" class="hidden glass-card p-4 flex flex-wrap gap-4 items-center">
-    <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer select-none">
-      <input id="combine-toggle" type="checkbox" class="accent-emerald-500 w-4 h-4">
-      Combine all pages into one sheet
-    </label>
+    <div class="flex items-center gap-1 bg-slate-800/60 rounded-lg p-1">
+      <button id="mode-single" class="px-3 py-1.5 rounded-md text-xs font-medium transition-colors bg-emerald-600 text-white">Single sheet</button>
+      <button id="mode-multi"  class="px-3 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-400 hover:text-white">Multiple sheets</button>
+    </div>
+    <span class="text-slate-500 text-xs">one per page when "Multiple"</span>
     <div class="flex items-center gap-2">
       <span class="text-slate-500 text-xs">Preview page</span>
       <select id="page-select" class="zm-input w-28 text-sm"></select>
@@ -88,6 +89,7 @@
     </div>
     <div class="overflow-x-auto">
       <table class="w-full text-sm">
+        <thead id="results-head"></thead>
         <tbody id="results-body"></tbody>
       </table>
     </div>
@@ -109,22 +111,24 @@ if (window.lucide) lucide.createIcons();
 const PREVIEW_ROW_CAP = 200;
 
 // ─── State ───────────────────────────────────────────────────
-let result = null;       // { pages, maxCols, totalRows }
-let activePage = 0;      // index into result.pages
+let result = null;        // { mode, headers, title, pages, totalRows }
+let activePage = 0;
+let sheetMode = 'single'; // 'single' | 'multi'
 let fileBaseName = 'converted';
 
 // ─── DOM refs ────────────────────────────────────────────────
 const dropZone      = document.getElementById('drop-zone');
 const fileInput     = document.getElementById('file-input');
-const uploadSection = document.getElementById('upload-section');
 const processingInd = document.getElementById('processing-indicator');
 const processingTxt = document.getElementById('processing-text');
 const warnBanner    = document.getElementById('warn-banner');
 const optionsBar    = document.getElementById('options-bar');
-const combineToggle = document.getElementById('combine-toggle');
+const modeSingleBtn = document.getElementById('mode-single');
+const modeMultiBtn  = document.getElementById('mode-multi');
 const pageSelect    = document.getElementById('page-select');
 const statsText     = document.getElementById('stats-text');
 const resultsSection= document.getElementById('results-section');
+const resultsHead   = document.getElementById('results-head');
 const resultsBody   = document.getElementById('results-body');
 const truncateNote  = document.getElementById('truncate-note');
 const exportXlsxBtn = document.getElementById('export-xlsx-btn');
@@ -173,15 +177,15 @@ async function handleFile(file) {
     }
 
     activePage = 0;
+    const modeLabel = result.mode === 'stock' ? 'stock table' : 'grid';
     pageSubtitle.textContent =
-      `${file.name} — ${result.pages.length} page${result.pages.length !== 1 ? 's' : ''}, ${result.totalRows} rows`;
+      `${file.name} — ${result.pages.length} page${result.pages.length !== 1 ? 's' : ''}, ${result.totalRows} rows (${modeLabel})`;
 
-    // Page selector
     pageSelect.innerHTML = result.pages
       .map((pg, i) => `<option value="${i}">Page ${pg.pageNum} (${pg.rows.length})</option>`).join('');
 
     statsText.textContent =
-      `${result.pages.length} page${result.pages.length !== 1 ? 's' : ''} · ${result.totalRows} rows · up to ${result.maxCols} columns`;
+      `${result.mode === 'stock' ? 'Stock report' : 'Generic'} · ${result.pages.length} page${result.pages.length !== 1 ? 's' : ''} · ${result.totalRows} rows`;
 
     optionsBar.classList.remove('hidden');
     exportXlsxBtn.classList.remove('hidden');
@@ -199,6 +203,17 @@ async function handleFile(file) {
   }
 }
 
+// ─── Sheet-mode toggle ────────────────────────────────────────
+modeSingleBtn.addEventListener('click', () => setMode('single'));
+modeMultiBtn.addEventListener('click', () => setMode('multi'));
+function setMode(m) {
+  sheetMode = m;
+  const on = 'bg-emerald-600 text-white';
+  const off = 'text-slate-400 hover:text-white';
+  modeSingleBtn.className = `px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${m === 'single' ? on : off}`;
+  modeMultiBtn.className  = `px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${m === 'multi' ? on : off}`;
+}
+
 // ─── Preview ──────────────────────────────────────────────────
 function renderPreview() {
   const rows = result.pages[activePage]?.rows || [];
@@ -208,11 +223,21 @@ function renderPreview() {
     ? `Showing first ${PREVIEW_ROW_CAP} of ${rows.length} rows — full data is in the download`
     : `${rows.length} rows`;
 
+  if (result.mode === 'stock') {
+    resultsHead.innerHTML = `<tr class="bg-[#1F4E79]">${
+      result.headers.map(h => `<th class="px-3 py-2 text-left text-white font-semibold whitespace-nowrap border border-slate-700">${esc(h)}</th>`).join('')
+    }</tr>`;
+  } else {
+    resultsHead.innerHTML = '';
+  }
+
   resultsBody.innerHTML = shown.map((r, idx) => {
-    const cells = r.map(c =>
-      `<td class="px-3 py-2 text-slate-300 border-b border-slate-800/40 whitespace-nowrap align-top">${esc(c)}</td>`
-    ).join('');
     const rowClass = idx % 2 === 0 ? '' : 'bg-slate-900/30';
+    const cells = r.map((c, ci) => {
+      const bold = result.mode === 'stock' && (ci === 1 || ci === 2) ? 'font-semibold text-slate-100' : 'text-slate-300';
+      const align = result.mode === 'stock' && ci >= 4 ? 'text-center' : '';
+      return `<td class="px-3 py-2 ${bold} ${align} border-b border-slate-800/40 whitespace-nowrap align-top">${esc(c)}</td>`;
+    }).join('');
     return `<tr class="${rowClass}">${cells}</tr>`;
   }).join('');
 
@@ -224,39 +249,101 @@ pageSelect.addEventListener('change', () => {
   renderPreview();
 });
 
-// ─── Build workbook ───────────────────────────────────────────
-function buildWorkbook() {
-  const wb = XLSX.utils.book_new();
-  if (combineToggle.checked) {
-    const all = [];
-    result.pages.forEach((pg, i) => {
-      if (i > 0) all.push([]); // blank separator row between pages
-      pg.rows.forEach(r => all.push(r));
+// ─── Build workbook (ExcelJS) ─────────────────────────────────
+const THIN = { style: 'thin', color: { argb: 'FFD0D0D0' } };
+const BORDER = { top: THIN, left: THIN, bottom: THIN, right: THIN };
+
+function styleStockSheet(ws, rows, headers, title, withTitle) {
+  ws.columns = [
+    { width: 10 }, { width: 26 }, { width: 16 }, { width: 44 },
+    { width: 12 }, { width: 12 }, { width: 12 },
+  ];
+
+  if (withTitle && title) {
+    const tr = ws.addRow([title]);
+    ws.mergeCells(tr.number, 1, tr.number, headers.length);
+    const c = ws.getCell(tr.number, 1);
+    c.font = { bold: true, size: 13 };
+    c.alignment = { horizontal: 'center' };
+  }
+
+  const hr = ws.addRow(headers);
+  hr.eachCell(cell => {
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E79' } };
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border = BORDER;
+  });
+
+  for (const rec of rows) {
+    const vals = rec.map((v, i) => (i >= 4 && /^\d+$/.test(v) ? Number(v) : v));
+    const row = ws.addRow(vals);
+    row.eachCell({ includeEmpty: true }, (cell, col) => {
+      cell.border = BORDER;
+      if (col === 2 || col === 3) cell.font = { bold: true };
+      if (col >= 5) cell.alignment = { horizontal: 'center' };
+      if (col === 4) cell.alignment = { horizontal: 'left', wrapText: true };
     });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(all), 'Sheet1');
+  }
+}
+
+function plainSheet(ws, rows) {
+  rows.forEach((r, i) => {
+    const row = ws.addRow(r);
+    if (i === 0) row.font = { bold: true };
+  });
+}
+
+async function buildWorkbook() {
+  const wb = new ExcelJS.Workbook();
+
+  if (result.mode === 'stock') {
+    if (sheetMode === 'single') {
+      const ws = wb.addWorksheet('Stock');
+      const all = result.pages.flatMap(p => p.rows);
+      styleStockSheet(ws, all, result.headers, result.title, true);
+    } else {
+      result.pages.forEach(p => {
+        const ws = wb.addWorksheet(`Page ${p.pageNum}`);
+        styleStockSheet(ws, p.rows, result.headers, result.title, false);
+      });
+    }
   } else {
-    result.pages.forEach(pg => {
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(pg.rows), `Page ${pg.pageNum}`);
-    });
+    if (sheetMode === 'single') {
+      const ws = wb.addWorksheet('Sheet1');
+      plainSheet(ws, result.pages.flatMap(p => p.rows));
+    } else {
+      result.pages.forEach(p => plainSheet(wb.addWorksheet(`Page ${p.pageNum}`), p.rows));
+    }
   }
   return wb;
 }
 
-exportXlsxBtn.addEventListener('click', () => {
+exportXlsxBtn.addEventListener('click', async () => {
   if (!result) return;
   try {
-    XLSX.writeFile(buildWorkbook(), `${fileBaseName}.xlsx`);
+    exportXlsxBtn.disabled = true;
+    const wb = await buildWorkbook();
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${fileBaseName}.xlsx`; a.click();
+    URL.revokeObjectURL(url);
     notify.success('Excel downloaded');
   } catch (e) {
     notify.error('Export failed: ' + e.message);
     console.error(e);
+  } finally {
+    exportXlsxBtn.disabled = false;
   }
 });
 
 exportCsvBtn.addEventListener('click', () => {
   if (!result) return;
   const rows = result.pages[activePage]?.rows || [];
-  const csv = rows
+  const out = result.mode === 'stock' ? [result.headers, ...rows] : rows;
+  const csv = out
     .map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
     .join('\r\n');
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -275,7 +362,8 @@ resetBtn.addEventListener('click', () => {
   activePage = 0;
   fileBaseName = 'converted';
   fileInput.value = '';
-  pageSubtitle.textContent = 'Convert a text-based PDF into an Excel sheet — auto-detects columns by position';
+  setMode('single');
+  pageSubtitle.textContent = 'Convert a text-based stock PDF into a styled Excel sheet — auto-detects the ITEM NO … BAL PCS table';
   dropZone.classList.remove('hidden');
   processingInd.classList.add('hidden');
   warnBanner.classList.add('hidden');
@@ -284,8 +372,8 @@ resetBtn.addEventListener('click', () => {
   exportXlsxBtn.classList.add('hidden');
   exportCsvBtn.classList.add('hidden');
   resetBtn.classList.add('hidden');
-  combineToggle.checked = false;
   pageSelect.innerHTML = '';
+  resultsHead.innerHTML = '';
   resultsBody.innerHTML = '';
   statsText.textContent = '';
 });
