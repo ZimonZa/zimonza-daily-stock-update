@@ -149,6 +149,119 @@ function firstLine(items) {
   return String(top.str).split(/\n|Phone|GSTIN/)[0].trim();
 }
 
+// ─── Table grid-line detection (vector ops) ───────────────────────
+// PDF matrices are [a,b,c,d,e,f]; point: x' = a*x+c*y+e, y' = b*x+d*y+f.
+function composeMatrix(m1, m2) {
+  return [
+    m1[0] * m2[0] + m1[2] * m2[1],
+    m1[1] * m2[0] + m1[3] * m2[1],
+    m1[0] * m2[2] + m1[2] * m2[3],
+    m1[1] * m2[2] + m1[3] * m2[3],
+    m1[0] * m2[4] + m1[2] * m2[5] + m1[4],
+    m1[1] * m2[4] + m1[3] * m2[5] + m1[5],
+  ];
+}
+const tX = (m, x, y) => m[0] * x + m[2] * y + m[4];
+const tY = (m, x, y) => m[1] * x + m[3] * y + m[5];
+
+/**
+ * Recover the y-positions of horizontal ruling lines (table row borders)
+ * in PDF user space (same space as text item.transform[5]).
+ * Returns boundaries sorted top→bottom, or null if too few found.
+ */
+async function extractRowBands(page) {
+  let opList;
+  try { opList = await page.getOperatorList(); } catch { return null; }
+  const OPS = pdfjsLib.OPS;
+  let ctm = [1, 0, 0, 1, 0, 0];
+  const stack = [];
+  const ys = [];
+  const consider = (x0, y0, x1, y1) => {
+    const ay0 = tY(ctm, x0, y0), ay1 = tY(ctm, x1, y1);
+    const ax0 = tX(ctm, x0, y0), ax1 = tX(ctm, x1, y1);
+    if (Math.abs(ay0 - ay1) < 1.5 && Math.abs(ax1 - ax0) > 40) ys.push((ay0 + ay1) / 2);
+  };
+  const fns = opList.fnArray, argsArr = opList.argsArray;
+  for (let i = 0; i < fns.length; i++) {
+    const fn = fns[i];
+    if (fn === OPS.save) stack.push(ctm.slice());
+    else if (fn === OPS.restore) { if (stack.length) ctm = stack.pop(); }
+    else if (fn === OPS.transform) { ctm = composeMatrix(ctm, argsArr[i]); }
+    else if (fn === OPS.constructPath) {
+      const a = argsArr[i];
+      const pathOps = a[0], coords = a[1];
+      let ci = 0, cx = 0, cy = 0;
+      for (const pop of pathOps) {
+        if (pop === OPS.moveTo) { cx = coords[ci++]; cy = coords[ci++]; }
+        else if (pop === OPS.lineTo) { const nx = coords[ci++], ny = coords[ci++]; consider(cx, cy, nx, ny); cx = nx; cy = ny; }
+        else if (pop === OPS.curveTo) { ci += 4; cx = coords[ci++]; cy = coords[ci++]; }
+        else if (pop === OPS.curveTo2) { ci += 2; cx = coords[ci++]; cy = coords[ci++]; }
+        else if (pop === OPS.curveTo3) { ci += 2; cx = coords[ci++]; cy = coords[ci++]; }
+        else if (pop === OPS.rectangle) {
+          const rx = coords[ci++], ry = coords[ci++], rw = coords[ci++], rh = coords[ci++];
+          consider(rx, ry, rx + rw, ry);
+          consider(rx, ry + rh, rx + rw, ry + rh);
+          cx = rx; cy = ry;
+        }
+      }
+    }
+  }
+  if (ys.length < 4) return null;
+  ys.sort((a, b) => a - b);
+  const merged = [];
+  for (const y of ys) {
+    if (!merged.length || Math.abs(y - merged[merged.length - 1]) > 2.5) merged.push(y);
+  }
+  merged.sort((a, b) => b - a); // top first
+  return merged.length >= 4 ? merged : null;
+}
+
+/** Reading-order heuristic: flush buffered colour lines to the next item. */
+function buildFlushRecords(dataLines, anchors) {
+  const records = [];
+  let buffer = [];
+  for (const line of dataLines) {
+    const cells = assignStockRow(line.items, anchors);
+    const itemNo = (cells[0] || '').trim();
+    const colour = (cells[3] || '').trim();
+    if (itemNo && itemNo.toUpperCase() !== 'ITEM NO' && !JUNK_RE.test(itemNo)) {
+      const fullColour = [...buffer, colour].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+      buffer = [];
+      records.push([itemNo, (cells[1] || '').trim(), (cells[2] || '').trim(), fullColour,
+        (cells[4] || '').trim(), (cells[5] || '').trim(), (cells[6] || '').trim()]);
+    } else if (colour && isColourText(colour)) {
+      buffer.push(colour);
+    }
+  }
+  if (buffer.length && records.length) {
+    const last = records[records.length - 1];
+    last[3] = [last[3], ...buffer].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  }
+  return records;
+}
+
+/** Bin items into the bands between grid lines → one record per table row. */
+function buildRecordsByBands(dataItems, bands, anchors) {
+  const records = [];
+  for (let k = 0; k < bands.length - 1; k++) {
+    const top = bands[k], bottom = bands[k + 1];
+    const bandItems = dataItems.filter(it => it.y > bottom + 0.5 && it.y <= top + 0.5);
+    if (!bandItems.length) continue;
+    bandItems.sort((a, b) => (b.y - a.y) || (a.x - b.x)); // top→bottom, then left→right
+    const cells = ['', '', '', '', '', '', ''];
+    for (const it of bandItems) {
+      const s = it.str.trim();
+      const idx = (/[()*]/.test(s) && it.x < anchors[4]) ? 3 : colIndexFor(it.x, anchors);
+      cells[idx] = cells[idx] ? `${cells[idx]} ${s}` : s;
+    }
+    const itemNo = cells[0].trim();
+    if (!itemNo || itemNo.toUpperCase() === 'ITEM NO' || JUNK_RE.test(itemNo)) continue;
+    records.push([itemNo, cells[1].trim(), cells[2].trim(), cells[3].replace(/\s+/g, ' ').trim(),
+      cells[4].trim(), cells[5].trim(), cells[6].trim()]);
+  }
+  return records;
+}
+
 /**
  * Convert a PDF File into a structured result.
  * @param {File} file
@@ -159,6 +272,7 @@ export async function convertPdfToGrid(file, onProgress) {
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
 
   const pagesItems = [];
+  const pageBands = [];
   const allX = [];
   const charWs = [];
   for (let p = 1; p <= pdf.numPages; p++) {
@@ -167,6 +281,7 @@ export async function convertPdfToGrid(file, onProgress) {
     const content = await page.getTextContent();
     const items = normalizeItems(content.items);
     pagesItems.push(items);
+    pageBands.push(await extractRowBands(page));
     for (const it of items) {
       allX.push(it.x);
       if (it.w > 0 && it.str.length > 0) charWs.push(it.w / it.str.length);
@@ -204,39 +319,21 @@ export async function convertPdfToGrid(file, onProgress) {
         }
       }
 
-      // Colour is stacked ABOVE its item's ITEM NO line. Walk top→bottom,
-      // buffer colour-only lines, and flush the whole buffer to the next
-      // ITEM line below them — so a tall colour block can't leak into the
-      // previous/next item.
-      const records = [];
-      let buffer = [];
-      for (const line of dataLines) {
-        const cells = assignStockRow(line.items, anchors);
-        const itemNo = (cells[C.itemNo] || '').trim();
-        const colour = (cells[C.colour] || '').trim();
+      // Default: reading-order heuristic (colour flushed to the next item).
+      const flushRecords = buildFlushRecords(dataLines, anchors);
+      let rows = flushRecords;
 
-        if (itemNo && itemNo.toUpperCase() !== 'ITEM NO' && !JUNK_RE.test(itemNo)) {
-          const fullColour = [...buffer, colour].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
-          buffer = [];
-          records.push({
-            cells: [
-              itemNo,
-              (cells[C.name] || '').trim(),
-              (cells[C.loc] || '').trim(),
-              fullColour,
-              (cells[C.ready] || '').trim(),
-              (cells[C.sales] || '').trim(),
-              (cells[C.bal] || '').trim(),
-            ],
-          });
-        } else if (colour && isColourText(colour)) {
-          buffer.push(colour);
+      // Preferred: bin items by the real table grid lines so colour can't
+      // cross a row border. Use it only when it yields a comparable, sane
+      // row count (otherwise the grid detection is unreliable → fall back).
+      const bands = pageBands[i];
+      if (bands && bands.length >= 4) {
+        const dataItems = dataLines.flatMap(l => l.items);
+        const bandRecords = buildRecordsByBands(dataItems, bands, anchors);
+        const lo = flushRecords.length * 0.7, hi = flushRecords.length * 1.3 + 1;
+        if (bandRecords.length >= 3 && bandRecords.length >= lo && bandRecords.length <= hi) {
+          rows = bandRecords;
         }
-      }
-      // Any trailing colour (sitting below the final item) → last record
-      if (buffer.length && records.length) {
-        const last = records[records.length - 1];
-        last.cells[C.colour] = [last.cells[C.colour], ...buffer].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
       }
 
       const meta = {
@@ -247,7 +344,6 @@ export async function convertPdfToGrid(file, onProgress) {
         generatedBy: findItem(items, /^Generated By/i),
       };
 
-      const rows = records.map(r => r.cells);
       dataCount += rows.length;
       totalRows += rows.length;
       pages.push({ pageNum: i + 1, records: rows, meta });

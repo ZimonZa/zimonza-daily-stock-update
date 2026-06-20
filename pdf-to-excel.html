@@ -84,8 +84,16 @@
   <!-- Preview Table -->
   <div id="results-section" class="hidden glass-card overflow-hidden">
     <div class="flex items-center justify-between px-5 py-3 border-b border-slate-700/50 bg-slate-900/50 flex-wrap gap-2">
-      <h3 class="text-slate-200 font-semibold text-sm">Preview</h3>
-      <span id="truncate-note" class="text-slate-500 text-xs"></span>
+      <div class="flex items-center gap-3 flex-wrap">
+        <h3 class="text-slate-200 font-semibold text-sm">Preview</h3>
+        <span id="edit-hint" class="text-slate-500 text-xs hidden">Click any cell to edit · edits are saved to the download</span>
+      </div>
+      <div class="flex items-center gap-3">
+        <button id="add-row-btn" class="btn-secondary text-xs py-1.5 px-3 hidden">
+          <i data-lucide="plus" class="w-3.5 h-3.5 inline-block mr-1"></i>Add row
+        </button>
+        <span id="truncate-note" class="text-slate-500 text-xs"></span>
+      </div>
     </div>
     <div id="meta-line" class="px-5 py-2 text-xs text-slate-500 border-b border-slate-800/50 hidden"></div>
     <div class="overflow-x-auto">
@@ -130,6 +138,8 @@ const resultsHead   = document.getElementById('results-head');
 const resultsBody   = document.getElementById('results-body');
 const metaLine      = document.getElementById('meta-line');
 const truncateNote  = document.getElementById('truncate-note');
+const editHint      = document.getElementById('edit-hint');
+const addRowBtn     = document.getElementById('add-row-btn');
 const exportXlsxBtn = document.getElementById('export-xlsx-btn');
 const exportCsvBtn  = document.getElementById('export-csv-btn');
 const resetBtn      = document.getElementById('reset-btn');
@@ -226,23 +236,32 @@ function renderPreview() {
     const m = page.meta || {};
     metaLine.innerHTML = `${esc(m.title || '')}${m.pageInfo ? ' · ' + esc(m.pageInfo) : ''}${m.banner ? ' · <span class="text-slate-400">' + esc(m.banner) + '</span>' : ''}`;
     metaLine.classList.remove('hidden');
-    resultsHead.innerHTML = `<tr class="bg-[#1F4E79]">${
+    editHint.classList.remove('hidden');
+    addRowBtn.classList.remove('hidden');
+    resultsHead.innerHTML = `<tr class="bg-[#1F4E79]"><th class="w-8 border border-slate-700"></th>${
       result.headers.map(h => `<th class="px-3 py-2 text-left text-white font-semibold whitespace-nowrap border border-slate-700">${esc(h)}</th>`).join('')
     }</tr>`;
     resultsBody.innerHTML = shown.map((r, idx) => {
       const cls = idx % 2 ? 'bg-slate-900/30' : '';
+      const del = `<td class="px-1 py-1 border border-slate-800/40 text-center align-middle">
+        <button data-del="${idx}" title="Delete row" class="text-slate-600 hover:text-red-400 transition">
+          <i data-lucide="x" class="w-3.5 h-3.5 pointer-events-none"></i>
+        </button></td>`;
       const cells = r.map((c, ci) => {
-        let k = 'px-3 py-1.5 border border-slate-800/40 align-top';
+        let k = 'px-3 py-1.5 border border-slate-800/40 align-top cursor-text focus:outline-none focus:ring-1 focus:ring-emerald-500 hover:bg-slate-800/40';
         if (ci === 1 || ci === 2) k += ' font-semibold text-slate-100';
         else if (ci >= 4) k += ' text-center text-slate-300';
         else k += ' text-slate-300';
         if (ci === 3) k += ' whitespace-pre-line';
-        return `<td class="${k}">${esc(c).replace(/\n/g, '<br>')}</td>`;
+        return `<td contenteditable="true" data-r="${idx}" data-c="${ci}" class="${k}">${esc(c).replace(/\n/g, '<br>')}</td>`;
       }).join('');
-      return `<tr class="${cls}">${cells}</tr>`;
+      return `<tr class="${cls}">${del}${cells}</tr>`;
     }).join('');
+    if (window.lucide) lucide.createIcons();
   } else {
     metaLine.classList.add('hidden');
+    editHint.classList.add('hidden');
+    addRowBtn.classList.add('hidden');
     resultsHead.innerHTML = '';
     resultsBody.innerHTML = shown.map((r, idx) => {
       const cls = idx % 2 ? 'bg-slate-900/30' : '';
@@ -257,6 +276,29 @@ function renderPreview() {
 pageSelect.addEventListener('change', () => {
   activePage = Number(pageSelect.value) || 0;
   renderPreview();
+});
+
+// ─── Inline editing (stock mode) ──────────────────────────────
+// Live-write cell edits back into the active page's records (no re-render,
+// so the caret stays put). Export reads result.pages → edits flow through.
+resultsBody.addEventListener('input', (e) => {
+  const td = e.target.closest('td[data-r]');
+  if (!td || !result) return;
+  const rec = result.pages[activePage]?.records[+td.dataset.r];
+  if (rec) rec[+td.dataset.c] = td.innerText.replace(/ /g, ' ');
+});
+resultsBody.addEventListener('click', (e) => {
+  const del = e.target.closest('button[data-del]');
+  if (!del || !result) return;
+  result.pages[activePage].records.splice(+del.dataset.del, 1);
+  renderPreview();
+});
+addRowBtn.addEventListener('click', () => {
+  if (!result || result.mode !== 'stock') return;
+  result.pages[activePage].records.push(['', '', '', '', '', '', '']);
+  renderPreview();
+  const last = resultsBody.querySelector('tr:last-child td[data-c="0"]');
+  if (last) last.focus();
 });
 
 // ─── ExcelJS builders ─────────────────────────────────────────
@@ -401,6 +443,8 @@ resetBtn.addEventListener('click', () => {
   resultsHead.innerHTML = '';
   resultsBody.innerHTML = '';
   metaLine.classList.add('hidden');
+  editHint.classList.add('hidden');
+  addRowBtn.classList.add('hidden');
   statsText.textContent = '';
 });
 
