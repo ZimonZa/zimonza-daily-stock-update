@@ -106,7 +106,7 @@ function renderKPIs(items, analysis, date) {
     blue:    { grad: 'from-blue-500/10 to-blue-600/5',    border: 'border-blue-500/20',    bar: '#3B82F6', icon: 'text-blue-400' },
     red:     { grad: 'from-red-500/10 to-red-600/5',      border: 'border-red-500/20',      bar: '#EF4444', icon: 'text-red-400' },
     amber:   { grad: 'from-amber-500/10 to-amber-600/5',  border: 'border-amber-500/20',  bar: '#F59E0B', icon: 'text-amber-400' },
-    purple:  { grad: 'from-purple-500/10 to-purple-600/5',border: 'border-purple-500/20',border: 'border-purple-500/20', bar: '#8B5CF6', icon: 'text-purple-400' },
+    purple:  { grad: 'from-purple-500/10 to-purple-600/5', border: 'border-purple-500/20', bar: '#8B5CF6', icon: 'text-purple-400' },
   };
 
   document.getElementById('kpi-grid').innerHTML = kpis.map(k => {
