@@ -12,6 +12,7 @@ Thumbs.db
 # Editor / local tooling
 .vscode/
 .claude/
+tools/
 
 # Real stock data — keep business data out of public repo
 *.xlsx
