@@ -106,7 +106,6 @@ export const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: 'layout-dashboard', href: 'dashboard.html' },
   { id: 'upload', label: 'Upload Center', icon: 'upload-cloud', href: 'upload.html' },
   { id: 'stock-analysis', label: 'Stock Analysis', icon: 'bar-chart-2', href: 'stock-analysis.html' },
-  { id: 'in-stock-analysis', label: 'In-Stock Analysis', icon: 'layers', href: 'in-stock-analysis.html' },
   { id: 'pdf-to-excel', label: 'PDF → Excel', icon: 'file-spreadsheet', href: 'pdf-to-excel.html' },
   { id: 'zm-panel', label: 'ZM Panel', icon: 'tag', href: 'zm-panel.html' },
   { id: 'new-arrivals', label: 'New Arrivals', icon: 'sparkles', href: 'new-arrivals.html' },

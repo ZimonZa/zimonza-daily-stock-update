@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { CHANGE_TYPES } from './constants.js';
-import { getStockLevel } from './utils.js';
+import { getStockLevel, normColorKey } from './utils.js';
 
 /**
  * Compare current stock items against previous stock items
@@ -36,7 +36,7 @@ export function analyzeStockChanges(currentItems, previousItems) {
         changeType: CHANGE_TYPES.NEW_ARRIVAL,
         prevQty: 0,
         currQty: curr.totalQty,
-        colorChanges: curr.colors.map(c => ({
+        colorChanges: (curr.colors || []).map(c => ({
           color: c.name,
           prevQty: 0,
           currQty: c.qty,
@@ -48,8 +48,8 @@ export function analyzeStockChanges(currentItems, previousItems) {
     }
 
     // Build color maps for comparison
-    const prevColorMap = new Map((prev.colors || []).map(c => [c.name.toLowerCase(), c]));
-    const currColorMap = new Map((curr.colors || []).map(c => [c.name.toLowerCase(), c]));
+    const prevColorMap = new Map((prev.colors || []).map(c => [normColorKey(c.name), c]));
+    const currColorMap = new Map((curr.colors || []).map(c => [normColorKey(c.name), c]));
 
     const colorChanges = [];
     let hasSold = false;
@@ -218,7 +218,7 @@ export function getTopColors(soldItems, topN = 10) {
   for (const item of soldItems) {
     for (const cc of (item.soldColorChanges || item.colorChanges || [])) {
       if (cc.change < 0) {
-        const key = cc.color.toLowerCase();
+        const key = normColorKey(cc.color);
         colorMap.set(key, {
           name: cc.color,
           totalSold: (colorMap.get(key)?.totalSold || 0) + Math.abs(cc.change)

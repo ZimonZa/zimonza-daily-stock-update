@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { VALID_LOCATIONS, SAREE_COLS, LEHNGA_COLS, ZM_COLS, CATEGORIES } from './constants.js';
-import { parseColors, getStockLevel, findColourSuggestion, getEffectiveColours } from './utils.js';
+import { parseColors, getStockLevel, findColourSuggestion, getEffectiveColours, normColorKey } from './utils.js';
 
 /**
  * Read an Excel File object and return raw worksheet data as array of arrays
@@ -172,7 +172,7 @@ export function parseStockFile(rows, category) {
 
     // Merge colours across sub-locations (Main Godown + Sales Studio + Warehouse → combined)
     for (const { name, qty } of parsedColors) {
-      const key = name.toLowerCase().trim();
+      const key = normColorKey(name);
       const existing = entry.colorMap.get(key) || { name, qty: 0 };
       entry.colorMap.set(key, { name: existing.name || name, qty: existing.qty + qty });
     }
@@ -181,7 +181,7 @@ export function parseStockFile(rows, category) {
     const locKey = subLoc; // already uppercased at line 109
     if (!entry.locationMap[locKey]) entry.locationMap[locKey] = new Map();
     for (const { name, qty } of parsedColors) {
-      const key = name.toLowerCase().trim();
+      const key = normColorKey(name);
       const existing = entry.locationMap[locKey].get(key) || { name, qty: 0 };
       entry.locationMap[locKey].set(key, { name: existing.name || name, qty: existing.qty + qty });
     }

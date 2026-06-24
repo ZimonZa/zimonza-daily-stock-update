@@ -51,12 +51,19 @@ export function parseColors(colorStr) {
 }
 
 /**
+ * Canonical colour identity key — lowercase, trimmed, internal whitespace
+ * collapsed. Used everywhere colours are compared/merged so spelling/spacing
+ * variants ("Light  Blue" vs "Light Blue", "Red" vs "red ") map together.
+ */
+export const normColorKey = (s) => String(s ?? '').toLowerCase().trim().replace(/\s+/g, ' ');
+
+/**
  * Merge duplicate color entries, summing quantities
  */
 export function mergeColors(colorsArray) {
   const map = new Map();
   for (const { name, qty } of colorsArray) {
-    const key = name.toLowerCase().trim();
+    const key = normColorKey(name);
     map.set(key, { name, qty: (map.get(key)?.qty || 0) + qty });
   }
   return Array.from(map.values());

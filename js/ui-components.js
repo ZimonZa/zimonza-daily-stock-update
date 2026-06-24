@@ -12,8 +12,29 @@ let sidebarCollapsed = storage.get('sidebar_collapsed', false);
  * Render the full sidebar + topbar into the page
  * @param {string} activePageId - ID of the current page (e.g. 'dashboard')
  */
+/**
+ * Once per tab session, pull the user's stock-level thresholds + custom
+ * colour list from Firestore into localStorage so getStockLevel() and
+ * colour-spelling checks are correct on any device (not just the one where
+ * Settings was last saved). Fire-and-forget; never blocks the UI.
+ */
+function maybeHydrateSettings() {
+  if (sessionStorage.getItem('zm_settings_hydrated')) return;
+  sessionStorage.setItem('zm_settings_hydrated', '1');
+  import('./firestore-service.js').then(async ({ getSettings, getCustomColours }) => {
+    const [settings, colours] = await Promise.all([
+      getSettings().catch(() => null),
+      getCustomColours().catch(() => []),
+    ]);
+    if (settings?.lowStockThreshold)    localStorage.setItem('zm_low_threshold', settings.lowStockThreshold);
+    if (settings?.mediumStockThreshold) localStorage.setItem('zm_medium_threshold', settings.mediumStockThreshold);
+    if (Array.isArray(colours) && colours.length) localStorage.setItem('zm_custom_colours', JSON.stringify(colours));
+  }).catch(() => {});
+}
+
 export function renderShell(activePageId) {
   applyTheme();
+  maybeHydrateSettings();
   injectSidebar(activePageId);
   injectTopbar(activePageId);
   // Apply correct initial page-content margin based on sidebar state

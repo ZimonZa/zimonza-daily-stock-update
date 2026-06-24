@@ -25,15 +25,17 @@ export async function loadZMPanelData() {
     ]);
   }
 
+  // Normalised key so mapping codes join their stock despite case/space drift.
+  const norm = v => String(v ?? '').trim().toUpperCase();
   const stockMap = new Map([
-    ...lehngaStock.map(i => [String(i.sku), i]),
-    ...sareeStock.map(i => [String(i.sku), i])
+    ...lehngaStock.map(i => [norm(i.sku), i]),
+    ...sareeStock.map(i => [norm(i.sku), i])
   ]);
 
   // Merge data
   const products = mappings.map(m => {
     const sku = String(m.kuntalCode);
-    const stock = stockMap.get(sku);
+    const stock = stockMap.get(norm(m.kuntalCode));
     const status = statuses[sku] || { status: UPLOAD_STATUS.PENDING };
     return {
       zmCode: m.zmCode,
@@ -43,7 +45,9 @@ export async function loadZMPanelData() {
       category: stock?.category || '—',
       colors: stock?.colors || [],
       totalQty: stock?.totalQty || 0,
-      stockLevel: stock?.stockLevel || 'sold_out',
+      // Only a real stock doc gets a level; otherwise leave blank ('—') instead
+      // of mislabelling un-stocked mappings as "Sold Out".
+      stockLevel: stock ? (stock.stockLevel || 'sold_out') : '',
       uploadStatus: status.status || UPLOAD_STATUS.PENDING,
       notes: status.notes || '',
       hasStock: !!stock

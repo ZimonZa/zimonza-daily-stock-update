@@ -56,7 +56,7 @@ import { renderShell } from './js/ui-components.js';
 import notify from './js/notifications.js';
 import { getStockData, getAllUploadDates } from './js/firestore-service.js';
 import { CATEGORIES } from './js/constants.js';
-import { formatDateDisplay, debounce } from './js/utils.js';
+import { formatDateDisplay, debounce, getStockLevel } from './js/utils.js';
 
 await requireAuth();
 renderShell('low-stock');
@@ -72,7 +72,7 @@ async function load(date) {
       getStockData(date, CATEGORIES.LEHNGA),
       getStockData(date, CATEGORIES.SAREE)
     ]);
-    items = [...l, ...s].filter(i => (i.totalQty||0) >= 1 && (i.totalQty||0) <= 2);
+    items = [...l, ...s].filter(i => getStockLevel(i.totalQty||0) === 'low');
     renderStats(items);
     renderCards(items);
   } catch(e) { notify.error('Failed to load.'); }
