@@ -108,6 +108,11 @@
       <option value="low">Low</option>
       <option value="sold_out">Sold Out</option>
     </select>
+    <select id="zm-type-filter" class="zm-input w-40">
+      <option value="all">All Types</option>
+      <option value="stitched">Stitched</option>
+      <option value="unstitched">Unstitched</option>
+    </select>
     <button id="zm-apply" class="btn-primary text-sm py-2 px-4">
       <i data-lucide="filter" class="w-4 h-4"></i> Filter
     </button>
@@ -310,7 +315,8 @@ function getFilters() {
   return {
     search: document.getElementById('zm-search').value.toLowerCase(),
     status: document.getElementById('zm-status-filter').value,
-    level: document.getElementById('zm-level-filter').value
+    level: document.getElementById('zm-level-filter').value,
+    type: document.getElementById('zm-type-filter').value
   };
 }
 
@@ -324,6 +330,7 @@ function renderTable(data) {
   );
   if (f.status !== 'all') filtered = filtered.filter(p => p.uploadStatus === f.status);
   if (f.level !== 'all') filtered = filtered.filter(p => p.stockLevel === f.level);
+  if (f.type !== 'all') filtered = filtered.filter(p => (p.itemType || 'stitched') === f.type);
 
   filtered = applySort(filtered);
 
@@ -349,12 +356,17 @@ function renderTable(data) {
     sold_out:'<span class="level-sold_out">Sold Out</span>',
   }[l]||'—');
 
+  const typeChip = t => t === 'unstitched'
+    ? `<span class="px-2 py-0.5 rounded-full text-xs whitespace-nowrap bg-purple-500/15 text-purple-300 border border-purple-500/25">Unstitched</span>`
+    : `<span class="px-2 py-0.5 rounded-full text-xs whitespace-nowrap bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">Stitched</span>`;
+
   const rows = filtered.map(p => {
     const colors = (p.colors||[]).slice(0,3).map(c=>`<span class="color-badge">${c.name}×${c.qty}</span>`).join(' ');
     return `<tr class="border-t border-white/5 hover:bg-white/3 transition">
       <td class="px-4 py-3 text-xs font-mono text-purple-400">${p.zmCode||'—'}</td>
       <td class="px-4 py-3 text-xs font-mono text-emerald-400">${p.kuntalCode}</td>
       <td class="px-4 py-3 text-slate-200 text-sm truncate max-w-[150px]">${p.name}</td>
+      <td class="px-4 py-3">${typeChip(p.itemType)}</td>
       <td class="px-4 py-3">${lvlChip(p.stockLevel)}</td>
       <td class="px-4 py-3 text-white font-semibold">${p.totalQty}</td>
       <td class="px-4 py-3"><div class="flex flex-wrap gap-1">${colors}</div></td>
@@ -376,7 +388,7 @@ function renderTable(data) {
     <div class="overflow-x-auto">
       <table class="w-full zm-table">
         <thead><tr>
-          ${th('ZM Code','zmCode')}${th('Kuntal Code','kuntalCode')}${th('Item Name','name')}
+          ${th('ZM Code','zmCode')}${th('Kuntal Code','kuntalCode')}${th('Item Name','name')}${th('Type','itemType')}
           ${th('Level','stockLevel')}${th('Qty','totalQty')}${th('Colors','colors')}${th('Status','uploadStatus')}<th></th>
         </tr></thead>
         <tbody>${rows}</tbody>
@@ -427,6 +439,7 @@ document.getElementById('zm-apply').addEventListener('click', () => renderTable(
 document.getElementById('zm-search').addEventListener('input', debounce(() => renderTable(products)));
 document.getElementById('zm-status-filter').addEventListener('change', () => renderTable(products));
 document.getElementById('zm-level-filter').addEventListener('change', () => renderTable(products));
+document.getElementById('zm-type-filter').addEventListener('change', () => renderTable(products));
 
 load();
 </script>

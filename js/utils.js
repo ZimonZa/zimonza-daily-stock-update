@@ -58,6 +58,17 @@ export function parseColors(colorStr) {
 export const normColorKey = (s) => String(s ?? '').toLowerCase().trim().replace(/\s+/g, ' ');
 
 /**
+ * Canonical item number — drops trailing dots/spaces ("3121." → "3121")
+ * while preserving meaningful suffixes like "(UNST)".
+ */
+export const normItemNo = (s) => String(s ?? '').trim().replace(/[.\s]+$/, '').trim();
+
+/**
+ * Blouse stitch type from an item number: "(UNST)" → unstitched, else stitched.
+ */
+export const itemStitchType = (s) => /\(\s*UNST\s*\)/i.test(String(s ?? '')) ? 'unstitched' : 'stitched';
+
+/**
  * Merge duplicate color entries, summing quantities
  */
 export function mergeColors(colorsArray) {

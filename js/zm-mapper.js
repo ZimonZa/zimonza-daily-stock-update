@@ -4,6 +4,7 @@
 
 import { saveZMMapping, getAllZMMappings, updateUploadStatus, getAllUploadStatuses, getStockData, getAllUploadDates } from './firestore-service.js';
 import { UPLOAD_STATUS, CATEGORIES } from './constants.js';
+import { normItemNo, itemStitchType } from './utils.js';
 
 /**
  * Load full ZM panel data: mappings + stock + statuses
@@ -25,8 +26,9 @@ export async function loadZMPanelData() {
     ]);
   }
 
-  // Normalised key so mapping codes join their stock despite case/space drift.
-  const norm = v => String(v ?? '').trim().toUpperCase();
+  // Normalised key (drops trailing dot, case-insensitive) so mapping codes
+  // join their stock despite formatting drift. Keeps "(UNST)" distinct.
+  const norm = v => normItemNo(v).toUpperCase();
   const stockMap = new Map([
     ...lehngaStock.map(i => [norm(i.sku), i]),
     ...sareeStock.map(i => [norm(i.sku), i])
@@ -34,13 +36,14 @@ export async function loadZMPanelData() {
 
   // Merge data
   const products = mappings.map(m => {
-    const sku = String(m.kuntalCode);
+    const sku = normItemNo(m.kuntalCode);
     const stock = stockMap.get(norm(m.kuntalCode));
-    const status = statuses[sku] || { status: UPLOAD_STATUS.PENDING };
+    const status = statuses[String(m.kuntalCode)] || statuses[sku] || { status: UPLOAD_STATUS.PENDING };
     return {
       zmCode: m.zmCode,
-      kuntalCode: m.kuntalCode,
+      kuntalCode: sku,
       sku,
+      itemType: itemStitchType(m.kuntalCode), // 'stitched' | 'unstitched'
       name: stock?.name || '—',
       category: stock?.category || '—',
       colors: stock?.colors || [],

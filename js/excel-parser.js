@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { VALID_LOCATIONS, SAREE_COLS, LEHNGA_COLS, ZM_COLS, CATEGORIES } from './constants.js';
-import { parseColors, getStockLevel, findColourSuggestion, getEffectiveColours, normColorKey } from './utils.js';
+import { parseColors, getStockLevel, findColourSuggestion, getEffectiveColours, normColorKey, normItemNo } from './utils.js';
 
 /**
  * Read an Excel File object and return raw worksheet data as array of arrays
@@ -112,7 +112,8 @@ export function parseStockFile(rows, category) {
     // Skip if no SKU
     if (!itemNo) continue;
 
-    const sku = String(itemNo).trim();
+    const sku = normItemNo(itemNo); // "3121." → "3121"; keeps "(UNST)"
+    if (!sku) continue;             // codes that were only dots/spaces
 
     // Skip header-like rows
     if (sku.toUpperCase() === 'ITEM NO' || sku.toUpperCase() === 'SUB LOCATION') continue;
@@ -224,7 +225,7 @@ export function parseZMFile(rows) {
   for (const row of dataRows) {
     if (!row) continue;
     const zmCode = String(row[ZM_COLS.ZM_CODE] || '').trim();
-    const kuntalCode = String(row[ZM_COLS.KUNTAL_CODE] || '').trim();
+    const kuntalCode = normItemNo(row[ZM_COLS.KUNTAL_CODE]); // "3121." → "3121"; keeps "(UNST)"
     if (zmCode && kuntalCode && zmCode !== 'Zimonza Product Code') {
       mappings.push({ zmCode, kuntalCode });
     }
