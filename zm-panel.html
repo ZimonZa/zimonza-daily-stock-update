@@ -159,6 +159,30 @@ if (window.lucide) lucide.createIcons();
 
 let products = [], activeSku = null;
 
+// ── Column sorting ────────────────────────────────────────────
+let sortKey = null, sortDir = 1; // 1 = asc, -1 = desc
+const LEVEL_RANK  = { sold_out: 0, low: 1, medium: 2, high: 3 };
+const STATUS_RANK = { uploaded: 0, pending: 1, not_uploaded: 2, skipped: 3 };
+function sortValue(p, key) {
+  switch (key) {
+    case 'totalQty':     return Number(p.totalQty) || 0;
+    case 'colors':       return (p.colors || []).length;
+    case 'stockLevel':   return LEVEL_RANK[p.stockLevel] ?? -1;
+    case 'uploadStatus': return STATUS_RANK[p.uploadStatus] ?? 99;
+    default:             return String(p[key] ?? '');
+  }
+}
+function applySort(arr) {
+  if (!sortKey) return arr;
+  return [...arr].sort((a, b) => {
+    const va = sortValue(a, sortKey), vb = sortValue(b, sortKey);
+    const c = (typeof va === 'number' && typeof vb === 'number')
+      ? va - vb
+      : String(va).localeCompare(String(vb), undefined, { numeric: true, sensitivity: 'base' });
+    return c * sortDir;
+  });
+}
+
 // ── ZM Manager: Toggle ────────────────────────────────────────
 window.toggleZMManager = function() {
   const body    = document.getElementById('zm-manager-body');
@@ -301,6 +325,8 @@ function renderTable(data) {
   if (f.status !== 'all') filtered = filtered.filter(p => p.uploadStatus === f.status);
   if (f.level !== 'all') filtered = filtered.filter(p => p.stockLevel === f.level);
 
+  filtered = applySort(filtered);
+
   document.getElementById('zm-count').textContent = `${filtered.length} products`;
 
   if (!filtered.length) {
@@ -341,17 +367,29 @@ function renderTable(data) {
     </tr>`;
   }).join('');
 
+  const th = (label, key) => {
+    const arrow = sortKey === key ? `<span class="text-emerald-400 ml-1">${sortDir === 1 ? '▲' : '▼'}</span>` : '';
+    return `<th data-sort="${key}" class="cursor-pointer select-none hover:text-slate-200 transition-colors whitespace-nowrap">${label}${arrow}</th>`;
+  };
+
   document.getElementById('zm-table-container').innerHTML = `
     <div class="overflow-x-auto">
       <table class="w-full zm-table">
         <thead><tr>
-          <th>ZM Code</th><th>Kuntal Code</th><th>Item Name</th>
-          <th>Level</th><th>Qty</th><th>Colors</th><th>Status</th><th></th>
+          ${th('ZM Code','zmCode')}${th('Kuntal Code','kuntalCode')}${th('Item Name','name')}
+          ${th('Level','stockLevel')}${th('Qty','totalQty')}${th('Colors','colors')}${th('Status','uploadStatus')}<th></th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>`;
 
+  document.querySelectorAll('#zm-table-container th[data-sort]').forEach(thEl => {
+    thEl.addEventListener('click', () => {
+      const k = thEl.dataset.sort;
+      if (sortKey === k) sortDir = -sortDir; else { sortKey = k; sortDir = 1; }
+      renderTable(products);
+    });
+  });
   document.querySelectorAll('.edit-btn').forEach(btn => {
     btn.addEventListener('click', () => openModal(btn.dataset.sku, btn.dataset.status, btn.dataset.notes));
   });
