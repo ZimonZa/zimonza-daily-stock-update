@@ -19,6 +19,14 @@
       <h1 class="text-2xl font-bold text-white">ZM Panel</h1>
       <p class="text-slate-400 text-sm mt-0.5">Website upload status management</p>
     </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <button id="export-panel-csv" class="btn-secondary text-sm py-2 px-4 hidden">
+        <i data-lucide="download" class="w-4 h-4 inline-block mr-1"></i> Export CSV
+      </button>
+      <button id="export-panel-xlsx" class="btn-primary text-sm py-2 px-4 hidden">
+        <i data-lucide="file-spreadsheet" class="w-4 h-4 inline-block mr-1"></i> Export Excel
+      </button>
+    </div>
   </div>
 
   <!-- ── Manage ZM Mapping ── -->
@@ -33,7 +41,7 @@
       </div>
       <button onclick="exportZMMappings()"
         class="btn-secondary text-xs py-2 px-3 flex items-center gap-1.5">
-        <i data-lucide="download" class="w-3.5 h-3.5"></i> Export CSV
+        <i data-lucide="download" class="w-3.5 h-3.5"></i> Export Mappings
       </button>
       <button id="toggle-zm-manager" onclick="toggleZMManager()"
         class="btn-secondary text-xs py-2 px-3 flex items-center gap-1.5">
@@ -112,6 +120,11 @@
       <option value="all">All Types</option>
       <option value="stitched">Stitched</option>
       <option value="unstitched">Unstitched</option>
+    </select>
+    <select id="zm-cat-filter" class="zm-input w-36">
+      <option value="all">All Categories</option>
+      <option value="lehnga">Lehnga</option>
+      <option value="saree">Saree</option>
     </select>
     <button id="zm-apply" class="btn-primary text-sm py-2 px-4">
       <i data-lucide="filter" class="w-4 h-4"></i> Filter
@@ -289,11 +302,62 @@ async function load() {
     products = data.products;
     renderSummary(data.summary);
     renderTable(products);
+    const show = products.length > 0;
+    document.getElementById('export-panel-csv').classList.toggle('hidden', !show);
+    document.getElementById('export-panel-xlsx').classList.toggle('hidden', !show);
   } catch(e) {
     notify.error('Failed to load ZM panel.');
     console.error(e);
   }
 }
+
+// ── Export full ZM panel data (all products) ──────────────────
+const PANEL_COLUMNS = [
+  { key: 'zmCode',     label: 'ZM Code' },
+  { key: 'kuntalCode', label: 'Kuntal Code' },
+  { key: 'name',       label: 'Item Name' },
+  { key: 'category',   label: 'Category' },
+  { key: 'itemType',   label: 'Type' },
+  { key: 'stockLevel', label: 'Level' },
+  { key: 'totalQty',   label: 'Qty' },
+  { key: 'colors',     label: 'Colors' },
+  { key: 'uploadStatus', label: 'Status' },
+  { key: 'notes',      label: 'Notes' },
+];
+function buildExportRows() {
+  return products.map(p => ({
+    zmCode: p.zmCode || '',
+    kuntalCode: p.kuntalCode || '',
+    name: p.name || '',
+    category: p.category || '',
+    itemType: p.itemType || '',
+    stockLevel: p.stockLevel || '',
+    totalQty: p.totalQty ?? 0,
+    colors: (p.colors || []).map(c => `${c.name}×${c.qty}`).join('; '),
+    uploadStatus: p.uploadStatus || '',
+    notes: p.notes || '',
+  }));
+}
+document.getElementById('export-panel-csv').addEventListener('click', () => {
+  if (!products.length) { notify.warning('No data to export'); return; }
+  const csv = toCSV(buildExportRows(), PANEL_COLUMNS);
+  downloadFile(csv, `zm-panel-${new Date().toISOString().slice(0,10)}.csv`, 'text/csv;charset=utf-8;');
+  notify.success(`Exported ${products.length} products (CSV)`);
+});
+document.getElementById('export-panel-xlsx').addEventListener('click', () => {
+  if (!products.length) { notify.warning('No data to export'); return; }
+  if (!window.XLSX) { notify.error('Excel library not loaded'); return; }
+  const aoa = [
+    PANEL_COLUMNS.map(c => c.label),
+    ...buildExportRows().map(r => PANEL_COLUMNS.map(c => r[c.key])),
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [10, 14, 24, 10, 12, 10, 8, 40, 14, 24].map(w => ({ wch: w }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'ZM Panel');
+  XLSX.writeFile(wb, `zm-panel-${new Date().toISOString().slice(0,10)}.xlsx`);
+  notify.success(`Exported ${products.length} products (Excel)`);
+});
 
 function renderSummary(s) {
   document.getElementById('zm-summary').innerHTML = [
@@ -316,7 +380,8 @@ function getFilters() {
     search: document.getElementById('zm-search').value.toLowerCase(),
     status: document.getElementById('zm-status-filter').value,
     level: document.getElementById('zm-level-filter').value,
-    type: document.getElementById('zm-type-filter').value
+    type: document.getElementById('zm-type-filter').value,
+    category: document.getElementById('zm-cat-filter').value
   };
 }
 
@@ -331,6 +396,7 @@ function renderTable(data) {
   if (f.status !== 'all') filtered = filtered.filter(p => p.uploadStatus === f.status);
   if (f.level !== 'all') filtered = filtered.filter(p => p.stockLevel === f.level);
   if (f.type !== 'all') filtered = filtered.filter(p => (p.itemType || 'stitched') === f.type);
+  if (f.category !== 'all') filtered = filtered.filter(p => p.category === f.category);
 
   filtered = applySort(filtered);
 
@@ -360,12 +426,18 @@ function renderTable(data) {
     ? `<span class="px-2 py-0.5 rounded-full text-xs whitespace-nowrap bg-purple-500/15 text-purple-300 border border-purple-500/25">Unstitched</span>`
     : `<span class="px-2 py-0.5 rounded-full text-xs whitespace-nowrap bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">Stitched</span>`;
 
+  const catBadge = c => ({
+    lehnga: `<span class="px-2 py-0.5 rounded-full text-xs whitespace-nowrap capitalize bg-purple-500/12 text-purple-300 border border-purple-500/25">lehnga</span>`,
+    saree:  `<span class="px-2 py-0.5 rounded-full text-xs whitespace-nowrap capitalize bg-teal-500/12 text-teal-300 border border-teal-500/25">saree</span>`,
+  }[c] || '<span class="text-slate-500 text-xs">—</span>');
+
   const rows = filtered.map(p => {
-    const colors = (p.colors||[]).slice(0,3).map(c=>`<span class="color-badge">${c.name}×${c.qty}</span>`).join(' ');
+    const colors = (p.colors||[]).map(c=>`<span class="color-badge">${c.name}×${c.qty}</span>`).join(' ') || '<span class="text-slate-600 text-xs">—</span>';
     return `<tr class="border-t border-white/5 hover:bg-white/3 transition">
       <td class="px-4 py-3 text-xs font-mono text-purple-400">${p.zmCode||'—'}</td>
       <td class="px-4 py-3 text-xs font-mono text-emerald-400">${p.kuntalCode}</td>
       <td class="px-4 py-3 text-slate-200 text-sm truncate max-w-[150px]">${p.name}</td>
+      <td class="px-4 py-3">${catBadge(p.category)}</td>
       <td class="px-4 py-3">${typeChip(p.itemType)}</td>
       <td class="px-4 py-3">${lvlChip(p.stockLevel)}</td>
       <td class="px-4 py-3 text-white font-semibold">${p.totalQty}</td>
@@ -388,7 +460,7 @@ function renderTable(data) {
     <div class="overflow-x-auto">
       <table class="w-full zm-table">
         <thead><tr>
-          ${th('ZM Code','zmCode')}${th('Kuntal Code','kuntalCode')}${th('Item Name','name')}${th('Type','itemType')}
+          ${th('ZM Code','zmCode')}${th('Kuntal Code','kuntalCode')}${th('Item Name','name')}${th('Category','category')}${th('Type','itemType')}
           ${th('Level','stockLevel')}${th('Qty','totalQty')}${th('Colors','colors')}${th('Status','uploadStatus')}<th></th>
         </tr></thead>
         <tbody>${rows}</tbody>
@@ -440,6 +512,7 @@ document.getElementById('zm-search').addEventListener('input', debounce(() => re
 document.getElementById('zm-status-filter').addEventListener('change', () => renderTable(products));
 document.getElementById('zm-level-filter').addEventListener('change', () => renderTable(products));
 document.getElementById('zm-type-filter').addEventListener('change', () => renderTable(products));
+document.getElementById('zm-cat-filter').addEventListener('change', () => renderTable(products));
 
 load();
 </script>
