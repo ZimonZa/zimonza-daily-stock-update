@@ -90,14 +90,16 @@
     </div>
   </div>
 
-  <!-- Summary Cards -->
-  <div id="zm-summary" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-    <div class="animate-pulse bg-white/5 rounded-2xl h-24 border border-white/5"></div>
-    <div class="animate-pulse bg-white/5 rounded-2xl h-24 border border-white/5"></div>
-    <div class="animate-pulse bg-white/5 rounded-2xl h-24 border border-white/5"></div>
-    <div class="animate-pulse bg-white/5 rounded-2xl h-24 border border-white/5"></div>
-    <div class="animate-pulse bg-white/5 rounded-2xl h-24 border border-white/5"></div>
+  <!-- Dashboard -->
+  <div id="zm-summary" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+    <div class="animate-pulse bg-white/5 rounded-2xl h-20 border border-white/5"></div>
+    <div class="animate-pulse bg-white/5 rounded-2xl h-20 border border-white/5"></div>
+    <div class="animate-pulse bg-white/5 rounded-2xl h-20 border border-white/5"></div>
+    <div class="animate-pulse bg-white/5 rounded-2xl h-20 border border-white/5"></div>
+    <div class="animate-pulse bg-white/5 rounded-2xl h-20 border border-white/5"></div>
+    <div class="animate-pulse bg-white/5 rounded-2xl h-20 border border-white/5"></div>
   </div>
+  <div id="zm-progress" class="hidden glass-card p-4"></div>
 
   <!-- Filters -->
   <div class="glass-card p-4 flex flex-wrap gap-3 items-center">
@@ -105,6 +107,7 @@
     <select id="zm-status-filter" class="zm-input w-40">
       <option value="all">All Statuses</option>
       <option value="uploaded">Uploaded</option>
+      <option value="partial">Partial</option>
       <option value="not_uploaded">Not Uploaded</option>
       <option value="pending">Pending</option>
       <option value="skipped">Skipped</option>
@@ -142,18 +145,39 @@
  </div>
 </div>
 
-<!-- Notes Modal -->
+<!-- Product Detail + Status Modal -->
 <div id="notes-modal" class="hidden modal-overlay">
-  <div class="modal-box">
-    <h3 class="text-white font-bold mb-1">Update Status</h3>
-    <p class="text-slate-400 text-sm mb-4">SKU: <span id="modal-sku" class="text-emerald-400 font-mono"></span></p>
+  <div class="modal-box max-h-[90vh] overflow-y-auto">
+    <div class="flex items-start justify-between gap-3 mb-3">
+      <div class="min-w-0">
+        <h3 id="modal-name" class="text-white font-bold text-lg truncate">Product</h3>
+        <p class="text-slate-400 text-sm">Kuntal: <span id="modal-sku" class="text-emerald-400 font-mono"></span> · ZM: <span id="modal-zm" class="text-purple-400 font-mono">—</span></p>
+      </div>
+      <button id="modal-x" class="text-slate-500 hover:text-white text-xl leading-none flex-shrink-0">×</button>
+    </div>
+
+    <div id="modal-detail" class="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4 text-xs"></div>
+
+    <label class="text-slate-500 text-xs block mb-1 font-medium uppercase tracking-wider">Website Status</label>
     <select id="modal-status" class="zm-input mb-3">
       <option value="uploaded">✅ Uploaded to Website</option>
       <option value="not_uploaded">❌ Not Uploaded</option>
       <option value="pending">⏳ Pending</option>
       <option value="skipped">⏭ Skipped</option>
     </select>
-    <textarea id="modal-notes" rows="3" class="zm-input mb-4 resize-none" placeholder="Notes (optional)…"></textarea>
+
+    <div id="modal-colors-section" class="mb-4 hidden">
+      <div class="flex items-center justify-between mb-2">
+        <label class="text-slate-500 text-xs font-medium uppercase tracking-wider">Uploaded colours <span id="modal-colors-count" class="text-slate-400 normal-case"></span></label>
+        <div class="flex gap-3">
+          <button type="button" id="modal-colors-all" class="text-xs text-emerald-400 hover:text-emerald-300">Mark all</button>
+          <button type="button" id="modal-colors-none" class="text-xs text-slate-400 hover:text-slate-200">Clear</button>
+        </div>
+      </div>
+      <div id="modal-colors" class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-44 overflow-y-auto p-1 rounded-xl border border-white/5" style="background:rgba(255,255,255,0.02)"></div>
+    </div>
+
+    <textarea id="modal-notes" rows="2" class="zm-input mb-4 resize-none" placeholder="Notes (optional)…"></textarea>
     <div class="flex gap-3">
       <button id="modal-cancel" class="btn-secondary flex-1 justify-center">Cancel</button>
       <button id="modal-save" class="btn-primary flex-1 justify-center">Save</button>
@@ -167,7 +191,7 @@ import { renderShell } from './js/ui-components.js';
 import notify from './js/notifications.js';
 import { loadZMPanelData, setUploadStatus } from './js/zm-mapper.js';
 import { skipProduct } from './js/skip-manager.js';
-import { debounce, toCSV, downloadFile } from './js/utils.js';
+import { debounce, toCSV, downloadFile, normColorKey, relativeTime } from './js/utils.js';
 import { readExcelFile, parseZMFile, validateZMFile } from './js/excel-parser.js';
 import { saveZMMapping, getAllZMMappings } from './js/firestore-service.js';
 
@@ -180,7 +204,7 @@ let products = [], activeSku = null;
 // ── Column sorting ────────────────────────────────────────────
 let sortKey = null, sortDir = 1; // 1 = asc, -1 = desc
 const LEVEL_RANK  = { sold_out: 0, low: 1, medium: 2, high: 3 };
-const STATUS_RANK = { uploaded: 0, pending: 1, not_uploaded: 2, skipped: 3 };
+const STATUS_RANK = { uploaded: 0, partial: 1, pending: 2, not_uploaded: 3, skipped: 4 };
 function sortValue(p, key) {
   switch (key) {
     case 'totalQty':     return Number(p.totalQty) || 0;
@@ -322,6 +346,8 @@ const PANEL_COLUMNS = [
   { key: 'totalQty',   label: 'Qty' },
   { key: 'colors',     label: 'Colors' },
   { key: 'uploadStatus', label: 'Status' },
+  { key: 'uploadedCount', label: 'Uploaded Count' },
+  { key: 'uploadedColors', label: 'Uploaded Colours' },
   { key: 'notes',      label: 'Notes' },
 ];
 function buildExportRows() {
@@ -335,6 +361,8 @@ function buildExportRows() {
     totalQty: p.totalQty ?? 0,
     colors: (p.colors || []).map(c => `${c.name}×${c.qty}`).join('; '),
     uploadStatus: p.uploadStatus || '',
+    uploadedCount: `${(p.uploadedColors || []).length}/${(p.colors || []).length}`,
+    uploadedColors: (p.uploadedColors || []).join('; '),
     notes: p.notes || '',
   }));
 }
@@ -352,7 +380,7 @@ document.getElementById('export-panel-xlsx').addEventListener('click', () => {
     ...buildExportRows().map(r => PANEL_COLUMNS.map(c => r[c.key])),
   ];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [10, 14, 24, 10, 12, 10, 8, 40, 14, 24].map(w => ({ wch: w }));
+  ws['!cols'] = [10, 14, 24, 10, 12, 10, 8, 40, 14, 14, 40, 24].map(w => ({ wch: w }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'ZM Panel');
   XLSX.writeFile(wb, `zm-panel-${new Date().toISOString().slice(0,10)}.xlsx`);
@@ -361,17 +389,34 @@ document.getElementById('export-panel-xlsx').addEventListener('click', () => {
 
 function renderSummary(s) {
   document.getElementById('zm-summary').innerHTML = [
-    { label:'Total Mapped', value: s.total, icon:'tag', color:'from-blue-500/10 border-blue-500/20' },
-    { label:'Uploaded', value: s.uploaded, icon:'check-circle', color:'from-emerald-500/10 border-emerald-500/20' },
-    { label:'Pending', value: s.pending, icon:'clock', color:'from-amber-500/10 border-amber-500/20' },
-    { label:'Skipped', value: s.skipped, icon:'skip-forward', color:'from-slate-500/10 border-slate-500/20' },
-    { label:'Low Stock', value: s.lowStock, icon:'alert-triangle', color:'from-red-500/10 border-red-500/20' },
+    { label:'Total Mapped', value: s.total,        icon:'tag',            color:'from-blue-500/10 border-blue-500/20' },
+    { label:'Uploaded',     value: s.uploaded,     icon:'check-circle',   color:'from-emerald-500/10 border-emerald-500/20' },
+    { label:'Partial',      value: s.partial,      icon:'pie-chart',      color:'from-amber-500/10 border-amber-500/20' },
+    { label:'Pending',      value: s.pending,      icon:'clock',          color:'from-slate-500/10 border-slate-500/20' },
+    { label:'Not Uploaded', value: s.notUploaded,  icon:'x-circle',       color:'from-red-500/10 border-red-500/20' },
+    { label:'Skipped',      value: s.skipped,      icon:'skip-forward',   color:'from-slate-500/10 border-slate-500/20' },
+    { label:'Low Stock',    value: s.lowStock,     icon:'alert-triangle', color:'from-red-500/10 border-red-500/20' },
+    { label:'Lehnga',       value: s.lehnga,       icon:'shirt',          color:'from-purple-500/10 border-purple-500/20' },
+    { label:'Saree',        value: s.saree,        icon:'shirt',          color:'from-teal-500/10 border-teal-500/20' },
+    { label:'Stitched',     value: s.stitched,     icon:'scissors',       color:'from-emerald-500/10 border-emerald-500/20' },
+    { label:'Unstitched',   value: s.unstitched,   icon:'package',        color:'from-purple-500/10 border-purple-500/20' },
+    { label:'Colours',      value: s.totalColours, icon:'palette',        color:'from-pink-500/10 border-pink-500/20' },
   ].map(c=>`
-    <div class="bg-gradient-to-br ${c.color} border rounded-2xl p-4 flex flex-col gap-2">
+    <div class="bg-gradient-to-br ${c.color} border rounded-2xl p-3 flex flex-col gap-1.5">
       <i data-lucide="${c.icon}" class="w-4 h-4 text-slate-400"></i>
-      <span class="text-2xl font-bold text-white">${c.value}</span>
+      <span class="text-xl font-bold text-white">${(c.value ?? 0).toLocaleString()}</span>
       <span class="text-slate-500 text-xs">${c.label}</span>
     </div>`).join('');
+
+  const pct = s.uploadedPct || 0;
+  document.getElementById('zm-progress').innerHTML = `
+    <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+      <span class="text-slate-300 text-sm font-medium">Website upload progress (colours)</span>
+      <span class="text-slate-400 text-xs">${(s.uploadedColours||0).toLocaleString()} / ${(s.totalColours||0).toLocaleString()} colours · <span class="text-emerald-400 font-semibold">${pct}%</span></span>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>`;
+  document.getElementById('zm-progress').classList.remove('hidden');
+
   if (window.lucide) lucide.createIcons();
 }
 
@@ -410,6 +455,7 @@ function renderTable(data) {
 
   const statusChip = s => ({
     uploaded:     `<span class="status-chip status-uploaded">✅ Uploaded</span>`,
+    partial:      `<span class="status-chip" style="background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.3)">◑ Partial</span>`,
     not_uploaded: `<span class="status-chip status-not_uploaded">❌ Not Uploaded</span>`,
     pending:      `<span class="status-chip status-pending">⏳ Pending</span>`,
     skipped:      `<span class="status-chip status-skipped">⏭ Skipped</span>`,
@@ -432,7 +478,13 @@ function renderTable(data) {
   }[c] || '<span class="text-slate-500 text-xs">—</span>');
 
   const rows = filtered.map(p => {
-    const colors = (p.colors||[]).map(c=>`<span class="color-badge">${c.name}×${c.qty}</span>`).join(' ') || '<span class="text-slate-600 text-xs">—</span>';
+    const upSet = new Set((p.uploadedColors||[]).map(normColorKey));
+    const colors = (p.colors||[]).map(c => {
+      const up = upSet.has(normColorKey(c.name));
+      return `<span class="color-badge ${up ? '!border-emerald-500/50 !bg-emerald-500/10' : ''}">${up ? '<span class="text-emerald-400 mr-0.5">✓</span>' : ''}${c.name}×${c.qty}</span>`;
+    }).join(' ') || '<span class="text-slate-600 text-xs">—</span>';
+    const partialNote = (p.uploadStatus === 'uploaded' || p.uploadStatus === 'partial')
+      ? `<span class="text-xs text-slate-400 ml-1">${(p.uploadedColors||[]).length}/${(p.colors||[]).length}</span>` : '';
     return `<tr class="border-t border-white/5 hover:bg-white/3 transition">
       <td class="px-4 py-3 text-xs font-mono text-purple-400">${p.zmCode||'—'}</td>
       <td class="px-4 py-3 text-xs font-mono text-emerald-400">${p.kuntalCode}</td>
@@ -442,9 +494,9 @@ function renderTable(data) {
       <td class="px-4 py-3">${lvlChip(p.stockLevel)}</td>
       <td class="px-4 py-3 text-white font-semibold">${p.totalQty}</td>
       <td class="px-4 py-3"><div class="flex flex-wrap gap-1">${colors}</div></td>
-      <td class="px-4 py-3">${statusChip(p.uploadStatus)}</td>
+      <td class="px-4 py-3 whitespace-nowrap">${statusChip(p.uploadStatus)}${partialNote}</td>
       <td class="px-4 py-3">
-        <button class="edit-btn text-xs text-slate-400 hover:text-emerald-400 transition mr-2" data-sku="${p.kuntalCode}" data-status="${p.uploadStatus}" data-notes="${p.notes||''}">
+        <button class="edit-btn text-xs text-slate-400 hover:text-emerald-400 transition mr-2" data-sku="${p.kuntalCode}" title="Details / edit">
           <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
         </button>
       </td>
@@ -475,36 +527,113 @@ function renderTable(data) {
     });
   });
   document.querySelectorAll('.edit-btn').forEach(btn => {
-    btn.addEventListener('click', () => openModal(btn.dataset.sku, btn.dataset.status, btn.dataset.notes));
+    btn.addEventListener('click', () => {
+      const p = products.find(x => String(x.kuntalCode) === btn.dataset.sku);
+      if (p) openModal(p);
+    });
   });
   if (window.lucide) lucide.createIcons();
 }
 
-function openModal(sku, status, notes) {
-  activeSku = sku;
-  document.getElementById('modal-sku').textContent = sku;
-  document.getElementById('modal-status').value = status || 'pending';
-  document.getElementById('modal-notes').value = notes || '';
+// ── Detail / status modal ─────────────────────────────────────
+let activeProduct = null;
+
+function updateColorCount() {
+  const total = (activeProduct?.colors || []).length;
+  const checked = document.querySelectorAll('#modal-colors .modal-color-cb:checked').length;
+  document.getElementById('modal-colors-count').textContent = total ? `(${checked}/${total})` : '';
+}
+function syncColorsVisibility() {
+  const show = document.getElementById('modal-status').value === 'uploaded';
+  document.getElementById('modal-colors-section').classList.toggle('hidden', !show);
+}
+function buildColorChecklist(product) {
+  const upSet = new Set((product.uploadedColors || []).map(normColorKey));
+  const box = document.getElementById('modal-colors');
+  box.innerHTML = (product.colors || []).length
+    ? product.colors.map(c => `
+        <label class="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 cursor-pointer">
+          <input type="checkbox" class="modal-color-cb accent-emerald-500" data-name="${c.name}" ${upSet.has(normColorKey(c.name)) ? 'checked' : ''}>
+          <span class="text-slate-200 text-sm">${c.name}</span>
+          <span class="text-slate-500 text-xs ml-auto">×${c.qty}</span>
+        </label>`).join('')
+    : '<p class="text-slate-500 text-xs px-2 py-1">No colour data for this product.</p>';
+  updateColorCount();
+}
+
+function openModal(product) {
+  activeProduct = product;
+  activeSku = product.kuntalCode;
+  const cap = s => s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : '—';
+  const lvl = { high:'High', medium:'Medium', low:'Low', sold_out:'Sold Out' }[product.stockLevel] || '—';
+  document.getElementById('modal-name').textContent = product.name || product.kuntalCode;
+  document.getElementById('modal-sku').textContent = product.kuntalCode;
+  document.getElementById('modal-zm').textContent = product.zmCode || '—';
+  document.getElementById('modal-detail').innerHTML = [
+    ['Category', cap(product.category)],
+    ['Type', cap(product.itemType)],
+    ['Level', lvl],
+    ['Total Qty', (product.totalQty ?? 0).toLocaleString()],
+    ['Colours', (product.colors || []).length],
+    ['Uploaded', `${(product.uploadedColors || []).length}/${(product.colors || []).length}`],
+    ['Updated', product.updatedAt ? relativeTime(product.updatedAt) : '—'],
+    ['Has stock', product.hasStock ? 'Yes' : 'No'],
+  ].map(([k, v]) => `<div class="bg-white/5 rounded-lg px-2 py-1.5"><div class="text-slate-500">${k}</div><div class="text-slate-200 font-medium truncate">${v}</div></div>`).join('');
+
+  // 'partial' maps to the Uploaded option so the checklist shows.
+  const st = product.uploadStatus;
+  document.getElementById('modal-status').value = (st === 'partial') ? 'uploaded' : (st || 'pending');
+  document.getElementById('modal-notes').value = product.notes || '';
+  buildColorChecklist(product);
+  syncColorsVisibility();
   document.getElementById('notes-modal').classList.remove('hidden');
 }
 
-document.getElementById('modal-cancel').addEventListener('click', () => {
-  document.getElementById('notes-modal').classList.add('hidden');
+function closeModal() { document.getElementById('notes-modal').classList.add('hidden'); }
+document.getElementById('modal-cancel').addEventListener('click', closeModal);
+document.getElementById('modal-x').addEventListener('click', closeModal);
+document.getElementById('notes-modal').addEventListener('click', e => { if (e.target.id === 'notes-modal') closeModal(); });
+
+document.getElementById('modal-status').addEventListener('change', () => {
+  syncColorsVisibility();
+  // Switching to Uploaded with nothing previously marked → default all checked.
+  if (document.getElementById('modal-status').value === 'uploaded' &&
+      !document.querySelector('#modal-colors .modal-color-cb:checked') &&
+      (activeProduct?.uploadedColors || []).length === 0) {
+    document.querySelectorAll('#modal-colors .modal-color-cb').forEach(cb => { cb.checked = true; });
+  }
+  updateColorCount();
+});
+document.getElementById('modal-colors').addEventListener('change', updateColorCount);
+document.getElementById('modal-colors-all').addEventListener('click', () => {
+  document.querySelectorAll('#modal-colors .modal-color-cb').forEach(cb => { cb.checked = true; }); updateColorCount();
+});
+document.getElementById('modal-colors-none').addEventListener('click', () => {
+  document.querySelectorAll('#modal-colors .modal-color-cb').forEach(cb => { cb.checked = false; }); updateColorCount();
 });
 
 document.getElementById('modal-save').addEventListener('click', async () => {
-  const status = document.getElementById('modal-status').value;
-  const notes  = document.getElementById('modal-notes').value;
+  if (!activeProduct) return;
+  const sel = document.getElementById('modal-status').value;
+  const notes = document.getElementById('modal-notes').value;
+  let status = sel, uploadedColors = [];
+  if (sel === 'uploaded') {
+    uploadedColors = [...document.querySelectorAll('#modal-colors .modal-color-cb:checked')].map(cb => cb.dataset.name);
+    const total = (activeProduct.colors || []).length;
+    if (total > 0 && uploadedColors.length === total) status = 'uploaded';
+    else if (uploadedColors.length > 0) status = 'partial';
+    else status = 'pending';
+  }
+  const saveBtn = document.getElementById('modal-save');
+  saveBtn.disabled = true;
   try {
-    await setUploadStatus(activeSku, status, notes);
+    await setUploadStatus(activeSku, status, notes, uploadedColors);
     if (status === 'skipped') await skipProduct(activeSku, notes);
     notify.success('Status updated!');
-    document.getElementById('notes-modal').classList.add('hidden');
-    // Update local state
-    const p = products.find(p=>String(p.kuntalCode)===String(activeSku));
-    if (p) { p.uploadStatus = status; p.notes = notes; }
-    renderTable(products);
-  } catch(e) { notify.error('Failed to update.'); }
+    closeModal();
+    await load(); // re-pull so the dashboard + table reflect the change
+  } catch (e) { notify.error('Failed to update.'); console.error(e); }
+  finally { saveBtn.disabled = false; }
 });
 
 document.getElementById('zm-apply').addEventListener('click', () => renderTable(products));

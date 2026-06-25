@@ -87,10 +87,12 @@ export async function getAllZMMappings() {
 
 // ─── Website Upload Status ───────────────────────────────────────
 
-/** Update upload status for a SKU */
-export async function updateUploadStatus(sku, status, notes = '') {
+/** Update upload status for a SKU (optionally the per-colour uploaded list) */
+export async function updateUploadStatus(sku, status, notes = '', uploadedColors) {
   const ref = doc(db, COLLECTIONS.WEBSITE_STATUS, String(sku));
-  await setDoc(ref, { sku: String(sku), status, notes, updatedAt: serverTimestamp() }, { merge: true });
+  const payload = { sku: String(sku), status, notes, updatedAt: serverTimestamp() };
+  if (Array.isArray(uploadedColors)) payload.uploadedColors = uploadedColors;
+  await setDoc(ref, payload, { merge: true });
 }
 
 /** Get all upload statuses */

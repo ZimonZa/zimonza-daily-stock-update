@@ -52,25 +52,38 @@ export async function loadZMPanelData() {
       // of mislabelling un-stocked mappings as "Sold Out".
       stockLevel: stock ? (stock.stockLevel || 'sold_out') : '',
       uploadStatus: status.status || UPLOAD_STATUS.PENDING,
+      uploadedColors: Array.isArray(status.uploadedColors) ? status.uploadedColors : [],
       notes: status.notes || '',
+      updatedAt: status.updatedAt || null,
       hasStock: !!stock
     };
   });
 
+  const totalColours    = products.reduce((s, p) => s + (p.colors?.length || 0), 0);
+  const uploadedColours = products.reduce((s, p) => s + (p.uploadedColors?.length || 0), 0);
   const summary = {
-    total: products.length,
-    uploaded: products.filter(p => p.uploadStatus === UPLOAD_STATUS.UPLOADED).length,
-    pending: products.filter(p => p.uploadStatus === UPLOAD_STATUS.PENDING || p.uploadStatus === UPLOAD_STATUS.NOT_UPLOADED).length,
-    skipped: products.filter(p => p.uploadStatus === UPLOAD_STATUS.SKIPPED).length,
-    lowStock: products.filter(p => p.stockLevel === 'low').length
+    total:        products.length,
+    uploaded:     products.filter(p => p.uploadStatus === UPLOAD_STATUS.UPLOADED).length,
+    partial:      products.filter(p => p.uploadStatus === UPLOAD_STATUS.PARTIAL).length,
+    pending:      products.filter(p => p.uploadStatus === UPLOAD_STATUS.PENDING).length,
+    notUploaded:  products.filter(p => p.uploadStatus === UPLOAD_STATUS.NOT_UPLOADED).length,
+    skipped:      products.filter(p => p.uploadStatus === UPLOAD_STATUS.SKIPPED).length,
+    lowStock:     products.filter(p => p.stockLevel === 'low').length,
+    lehnga:       products.filter(p => p.category === CATEGORIES.LEHNGA).length,
+    saree:        products.filter(p => p.category === CATEGORIES.SAREE).length,
+    stitched:     products.filter(p => p.itemType === 'stitched').length,
+    unstitched:   products.filter(p => p.itemType === 'unstitched').length,
+    totalColours,
+    uploadedColours,
+    uploadedPct:  totalColours ? Math.round((uploadedColours / totalColours) * 100) : 0,
   };
 
   return { products, summary, latestDate };
 }
 
 /**
- * Update a product's upload status
+ * Update a product's upload status (+ optional per-colour uploaded list)
  */
-export async function setUploadStatus(sku, status, notes) {
-  await updateUploadStatus(sku, status, notes);
+export async function setUploadStatus(sku, status, notes, uploadedColors) {
+  await updateUploadStatus(sku, status, notes, uploadedColors);
 }

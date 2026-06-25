@@ -62,6 +62,7 @@ export const COLLECTIONS = {
 // Upload status options
 export const UPLOAD_STATUS = {
   UPLOADED: 'uploaded',
+  PARTIAL: 'partial',
   NOT_UPLOADED: 'not_uploaded',
   SKIPPED: 'skipped',
   PENDING: 'pending'
