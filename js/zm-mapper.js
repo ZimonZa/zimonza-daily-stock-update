@@ -4,7 +4,7 @@
 
 import { saveZMMapping, getAllZMMappings, updateUploadStatus, getAllUploadStatuses, getStockData, getAllUploadDates } from './firestore-service.js';
 import { UPLOAD_STATUS, CATEGORIES } from './constants.js';
-import { normItemNo, itemStitchType } from './utils.js';
+import { normItemNo, itemStitchType, normColorKey } from './utils.js';
 
 /**
  * Load full ZM panel data: mappings + stock + statuses
@@ -61,6 +61,10 @@ export async function loadZMPanelData() {
 
   const totalColours    = products.reduce((s, p) => s + (p.colors?.length || 0), 0);
   const uploadedColours = products.reduce((s, p) => s + (p.uploadedColors?.length || 0), 0);
+  const outOfStockColours = products.reduce((s, p) => {
+    const sk = new Set((p.colors || []).map(c => normColorKey(c.name)));
+    return s + (p.uploadedColors || []).filter(n => !sk.has(normColorKey(n))).length;
+  }, 0);
   const summary = {
     total:        products.length,
     uploaded:     products.filter(p => p.uploadStatus === UPLOAD_STATUS.UPLOADED).length,
@@ -75,6 +79,7 @@ export async function loadZMPanelData() {
     unstitched:   products.filter(p => p.itemType === 'unstitched').length,
     totalColours,
     uploadedColours,
+    outOfStockColours,
     uploadedPct:  totalColours ? Math.round((uploadedColours / totalColours) * 100) : 0,
   };
 

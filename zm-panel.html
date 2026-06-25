@@ -175,6 +175,12 @@
         </div>
       </div>
       <div id="modal-colors" class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-44 overflow-y-auto p-1 rounded-xl border border-white/5" style="background:rgba(255,255,255,0.02)"></div>
+      <div class="flex gap-2 mt-2">
+        <input id="modal-color-add" type="text" placeholder="Add a colour not in stock…" class="zm-input flex-1 text-sm">
+        <button type="button" id="modal-color-add-btn" class="btn-secondary text-sm px-3 flex-shrink-0">
+          <i data-lucide="plus" class="w-3.5 h-3.5"></i> Add
+        </button>
+      </div>
     </div>
 
     <textarea id="modal-notes" rows="2" class="zm-input mb-4 resize-none" placeholder="Notes (optional)…"></textarea>
@@ -401,6 +407,7 @@ function renderSummary(s) {
     { label:'Stitched',     value: s.stitched,     icon:'scissors',       color:'from-emerald-500/10 border-emerald-500/20' },
     { label:'Unstitched',   value: s.unstitched,   icon:'package',        color:'from-purple-500/10 border-purple-500/20' },
     { label:'Colours',      value: s.totalColours, icon:'palette',        color:'from-pink-500/10 border-pink-500/20' },
+    { label:'Out of Stock', value: s.outOfStockColours, icon:'alert-octagon', color:'from-red-500/10 border-red-500/20' },
   ].map(c=>`
     <div class="bg-gradient-to-br ${c.color} border rounded-2xl p-3 flex flex-col gap-1.5">
       <i data-lucide="${c.icon}" class="w-4 h-4 text-slate-400"></i>
@@ -479,10 +486,14 @@ function renderTable(data) {
 
   const rows = filtered.map(p => {
     const upSet = new Set((p.uploadedColors||[]).map(normColorKey));
-    const colors = (p.colors||[]).map(c => {
+    const stockKeys = new Set((p.colors||[]).map(c => normColorKey(c.name)));
+    const inStockBadges = (p.colors||[]).map(c => {
       const up = upSet.has(normColorKey(c.name));
       return `<span class="color-badge ${up ? '!border-emerald-500/50 !bg-emerald-500/10' : ''}">${up ? '<span class="text-emerald-400 mr-0.5">✓</span>' : ''}${c.name}×${c.qty}</span>`;
-    }).join(' ') || '<span class="text-slate-600 text-xs">—</span>';
+    });
+    const oosBadges = (p.uploadedColors||[]).filter(n => !stockKeys.has(normColorKey(n))).map(n =>
+      `<span class="color-badge !bg-red-500/10 !border-red-500/40 text-red-300" title="Uploaded but out of stock"><span class="text-emerald-400 mr-0.5">✓</span>${n} <span class="opacity-70 text-[10px]">(out of stock)</span></span>`);
+    const colors = [...inStockBadges, ...oosBadges].join(' ') || '<span class="text-slate-600 text-xs">—</span>';
     const partialNote = (p.uploadStatus === 'uploaded' || p.uploadStatus === 'partial')
       ? `<span class="text-xs text-slate-400 ml-1">${(p.uploadedColors||[]).length}/${(p.colors||[]).length}</span>` : '';
     return `<tr class="border-t border-white/5 hover:bg-white/3 transition">
@@ -537,9 +548,14 @@ function renderTable(data) {
 
 // ── Detail / status modal ─────────────────────────────────────
 let activeProduct = null;
+let modalColors = []; // [{ name, qty|null, inStock }]  (stock + out-of-stock + manual)
+const colorKey = normColorKey;
 
+function checkedNames() {
+  return [...document.querySelectorAll('#modal-colors .modal-color-cb:checked')].map(cb => cb.dataset.name);
+}
 function updateColorCount() {
-  const total = (activeProduct?.colors || []).length;
+  const total = modalColors.length;
   const checked = document.querySelectorAll('#modal-colors .modal-color-cb:checked').length;
   document.getElementById('modal-colors-count').textContent = total ? `(${checked}/${total})` : '';
 }
@@ -547,17 +563,24 @@ function syncColorsVisibility() {
   const show = document.getElementById('modal-status').value === 'uploaded';
   document.getElementById('modal-colors-section').classList.toggle('hidden', !show);
 }
-function buildColorChecklist(product) {
-  const upSet = new Set((product.uploadedColors || []).map(normColorKey));
+const allColorKeys = () => new Set(modalColors.map(c => colorKey(c.name)));
+function renderColorRows(checkedSet) {
   const box = document.getElementById('modal-colors');
-  box.innerHTML = (product.colors || []).length
-    ? product.colors.map(c => `
-        <label class="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 cursor-pointer">
-          <input type="checkbox" class="modal-color-cb accent-emerald-500" data-name="${c.name}" ${upSet.has(normColorKey(c.name)) ? 'checked' : ''}>
-          <span class="text-slate-200 text-sm">${c.name}</span>
-          <span class="text-slate-500 text-xs ml-auto">×${c.qty}</span>
-        </label>`).join('')
-    : '<p class="text-slate-500 text-xs px-2 py-1">No colour data for this product.</p>';
+  if (!modalColors.length) {
+    box.innerHTML = '<p class="text-slate-500 text-xs px-2 py-1">No stock colours — add one below.</p>';
+    updateColorCount();
+    return;
+  }
+  box.innerHTML = modalColors.map(c => {
+    const checked = checkedSet.has(colorKey(c.name)) ? 'checked' : '';
+    const meta = c.inStock
+      ? `<span class="text-slate-500 text-xs ml-auto whitespace-nowrap">×${c.qty}</span>`
+      : `<span class="text-xs ml-auto px-1.5 py-0.5 rounded bg-red-500/15 text-red-300 border border-red-500/25 whitespace-nowrap">Out of stock</span>`;
+    return `<label class="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 cursor-pointer">
+      <input type="checkbox" class="modal-color-cb accent-emerald-500" data-name="${c.name}" ${checked}>
+      <span class="text-slate-200 text-sm">${c.name}</span>${meta}
+    </label>`;
+  }).join('');
   updateColorCount();
 }
 
@@ -566,6 +589,14 @@ function openModal(product) {
   activeSku = product.kuntalCode;
   const cap = s => s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : '—';
   const lvl = { high:'High', medium:'Medium', low:'Low', sold_out:'Sold Out' }[product.stockLevel] || '—';
+
+  const stock = (product.colors || []).map(c => ({ name: c.name, qty: c.qty, inStock: true }));
+  const stockKeys = new Set(stock.map(c => colorKey(c.name)));
+  const extras = (product.uploadedColors || [])
+    .filter(n => !stockKeys.has(colorKey(n)))
+    .map(n => ({ name: n, qty: null, inStock: false }));
+  modalColors = [...stock, ...extras];
+
   document.getElementById('modal-name').textContent = product.name || product.kuntalCode;
   document.getElementById('modal-sku').textContent = product.kuntalCode;
   document.getElementById('modal-zm').textContent = product.zmCode || '—';
@@ -576,15 +607,16 @@ function openModal(product) {
     ['Total Qty', (product.totalQty ?? 0).toLocaleString()],
     ['Colours', (product.colors || []).length],
     ['Uploaded', `${(product.uploadedColors || []).length}/${(product.colors || []).length}`],
+    ['Out of stock', extras.length],
     ['Updated', product.updatedAt ? relativeTime(product.updatedAt) : '—'],
-    ['Has stock', product.hasStock ? 'Yes' : 'No'],
   ].map(([k, v]) => `<div class="bg-white/5 rounded-lg px-2 py-1.5"><div class="text-slate-500">${k}</div><div class="text-slate-200 font-medium truncate">${v}</div></div>`).join('');
 
   // 'partial' maps to the Uploaded option so the checklist shows.
   const st = product.uploadStatus;
   document.getElementById('modal-status').value = (st === 'partial') ? 'uploaded' : (st || 'pending');
   document.getElementById('modal-notes').value = product.notes || '';
-  buildColorChecklist(product);
+  document.getElementById('modal-color-add').value = '';
+  renderColorRows(new Set((product.uploadedColors || []).map(colorKey)));
   syncColorsVisibility();
   document.getElementById('notes-modal').classList.remove('hidden');
 }
@@ -598,19 +630,29 @@ document.getElementById('modal-status').addEventListener('change', () => {
   syncColorsVisibility();
   // Switching to Uploaded with nothing previously marked → default all checked.
   if (document.getElementById('modal-status').value === 'uploaded' &&
-      !document.querySelector('#modal-colors .modal-color-cb:checked') &&
+      checkedNames().length === 0 &&
       (activeProduct?.uploadedColors || []).length === 0) {
-    document.querySelectorAll('#modal-colors .modal-color-cb').forEach(cb => { cb.checked = true; });
+    renderColorRows(allColorKeys());
   }
   updateColorCount();
 });
 document.getElementById('modal-colors').addEventListener('change', updateColorCount);
-document.getElementById('modal-colors-all').addEventListener('click', () => {
-  document.querySelectorAll('#modal-colors .modal-color-cb').forEach(cb => { cb.checked = true; }); updateColorCount();
-});
-document.getElementById('modal-colors-none').addEventListener('click', () => {
-  document.querySelectorAll('#modal-colors .modal-color-cb').forEach(cb => { cb.checked = false; }); updateColorCount();
-});
+document.getElementById('modal-colors-all').addEventListener('click', () => renderColorRows(allColorKeys()));
+document.getElementById('modal-colors-none').addEventListener('click', () => renderColorRows(new Set()));
+
+function addManualColour() {
+  const input = document.getElementById('modal-color-add');
+  const name = input.value.trim();
+  if (!name) return;
+  const key = colorKey(name);
+  const checked = new Set(checkedNames().map(colorKey));
+  checked.add(key);
+  if (!modalColors.some(c => colorKey(c.name) === key)) modalColors.push({ name, qty: null, inStock: false });
+  input.value = '';
+  renderColorRows(checked);
+}
+document.getElementById('modal-color-add-btn').addEventListener('click', addManualColour);
+document.getElementById('modal-color-add').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addManualColour(); } });
 
 document.getElementById('modal-save').addEventListener('click', async () => {
   if (!activeProduct) return;
@@ -618,8 +660,8 @@ document.getElementById('modal-save').addEventListener('click', async () => {
   const notes = document.getElementById('modal-notes').value;
   let status = sel, uploadedColors = [];
   if (sel === 'uploaded') {
-    uploadedColors = [...document.querySelectorAll('#modal-colors .modal-color-cb:checked')].map(cb => cb.dataset.name);
-    const total = (activeProduct.colors || []).length;
+    uploadedColors = checkedNames();
+    const total = modalColors.length;
     if (total > 0 && uploadedColors.length === total) status = 'uploaded';
     else if (uploadedColors.length > 0) status = 'partial';
     else status = 'pending';
