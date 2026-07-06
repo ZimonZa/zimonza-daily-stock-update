@@ -4,7 +4,7 @@
 
 import { saveZMMapping, getAllZMMappings, updateUploadStatus, getAllUploadStatuses, getStockData, getAllUploadDates } from './firestore-service.js';
 import { UPLOAD_STATUS, CATEGORIES } from './constants.js';
-import { normItemNo, itemStitchType, normColorKey } from './utils.js';
+import { normItemNo, itemStitchType, normColorKey, itemStockLevel } from './utils.js';
 
 /**
  * Load full ZM panel data: mappings + stock + statuses
@@ -50,7 +50,7 @@ export async function loadZMPanelData() {
       totalQty: stock?.totalQty || 0,
       // Only a real stock doc gets a level; otherwise leave blank ('—') instead
       // of mislabelling un-stocked mappings as "Sold Out".
-      stockLevel: stock ? (stock.stockLevel || 'sold_out') : '',
+      stockLevel: stock ? itemStockLevel(stock) : '',
       uploadStatus: status.status || UPLOAD_STATUS.PENDING,
       uploadedColors: Array.isArray(status.uploadedColors) ? status.uploadedColors : [],
       notes: status.notes || '',

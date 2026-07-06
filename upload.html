@@ -263,7 +263,7 @@ import { readExcelFile, parseStockFile, validateStockFile, getFileSummary } from
 import { analyzeStockChanges } from './js/stock-analyzer.js';
 import { saveStockData, saveDailySummary, getStockData, getAllUploadDates, saveUploadHistory } from './js/firestore-service.js';
 import { CATEGORIES } from './js/constants.js';
-import { today, formatDate, formatDateDisplay, formatNumber, getStockLevel } from './js/utils.js';
+import { today, formatDate, formatDateDisplay, formatNumber, worstColorLevel } from './js/utils.js';
 
 await requireAuth();
 renderShell('upload');
@@ -725,7 +725,7 @@ window.updateApprovedQty = function(sku, colorName, val) {
   const c = item.colors.find(c => c.name.toLowerCase() === colorName.toLowerCase());
   if (c) c.qty = qty;
   item.totalQty   = item.colors.reduce((s, c) => s + c.qty, 0);
-  item.stockLevel = getStockLevel(item.totalQty);
+  item.stockLevel = worstColorLevel(item.colors);
   const el = document.getElementById(`edit-total-${sku}`);
   if (el) el.textContent = item.totalQty;
 };

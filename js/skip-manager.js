@@ -6,6 +6,7 @@ import {
   updateUploadStatus, getStockData, getAllUploadDates
 } from './firestore-service.js';
 import { UPLOAD_STATUS, CATEGORIES } from './constants.js';
+import { itemStockLevel } from './utils.js';
 
 export async function loadSkipPanelData() {
   const [skipped, dates] = await Promise.all([
@@ -29,7 +30,7 @@ export async function loadSkipPanelData() {
       category: stock?.category || '—',
       colors: stock?.colors || [],
       totalQty: stock?.totalQty || 0,
-      stockLevel: stock?.stockLevel || 'sold_out'
+      stockLevel: stock ? itemStockLevel(stock) : 'sold_out'
     };
   });
 }

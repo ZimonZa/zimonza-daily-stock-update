@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { CHANGE_TYPES } from './constants.js';
-import { getStockLevel, normColorKey } from './utils.js';
+import { getStockLevel, itemStockLevel, normColorKey } from './utils.js';
 
 /**
  * Compare current stock items against previous stock items
@@ -177,10 +177,42 @@ export function computeStockHealth(items) {
 
   const counts = { low: 0, medium: 0, high: 0, sold_out: 0 };
   for (const item of items) {
-    const level = item.stockLevel || getStockLevel(item.totalQty || 0);
+    const level = itemStockLevel(item);
     counts[level] = (counts[level] || 0) + 1;
   }
 
+  return {
+    low: counts.low,
+    medium: counts.medium,
+    high: counts.high,
+    soldOut: counts.sold_out,
+    total,
+    lowPct: Math.round((counts.low / total) * 100),
+    mediumPct: Math.round((counts.medium / total) * 100),
+    highPct: Math.round((counts.high / total) * 100)
+  };
+}
+
+/**
+ * Compute stock health per COLOUR: every product-colour entry is classified
+ * on its own quantity. Items without colour data count once as sold_out.
+ */
+export function computeColorHealth(items) {
+  const counts = { low: 0, medium: 0, high: 0, sold_out: 0 };
+  let total = 0;
+  for (const item of items) {
+    const colors = Array.isArray(item.colors) ? item.colors : [];
+    if (colors.length === 0) {
+      counts.sold_out++;
+      total++;
+      continue;
+    }
+    for (const c of colors) {
+      counts[getStockLevel(Number(c.qty) || 0)]++;
+      total++;
+    }
+  }
+  if (total === 0) return { low: 0, medium: 0, high: 0, soldOut: 0, total: 0, lowPct: 0, mediumPct: 0, highPct: 0 };
   return {
     low: counts.low,
     medium: counts.medium,

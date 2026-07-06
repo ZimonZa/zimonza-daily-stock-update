@@ -5,7 +5,7 @@
 import { getStockData, getAllUploadDates, getDailySummary } from './firestore-service.js';
 import { computeStockHealth } from './stock-analyzer.js';
 import { CATEGORIES } from './constants.js';
-import { formatDateDisplay, toCSV, downloadFile } from './utils.js';
+import { formatDateDisplay, toCSV, downloadFile, itemStockLevel } from './utils.js';
 
 /** Generate daily stock report data */
 export async function generateDailyReport(date) {
@@ -14,7 +14,8 @@ export async function generateDailyReport(date) {
     getStockData(date, CATEGORIES.SAREE),
     getDailySummary(date)
   ]);
-  const items = [...lehnga, ...saree];
+  // Recompute levels per worst colour so old Firestore docs report correctly
+  const items = [...lehnga, ...saree].map(i => ({ ...i, stockLevel: itemStockLevel(i) }));
   const health = computeStockHealth(items);
 
   return {

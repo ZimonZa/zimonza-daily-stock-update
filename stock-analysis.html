@@ -132,7 +132,7 @@ import { getStockData, getAllUploadDates, getDailySummary } from './js/firestore
 import { CATEGORIES } from './js/constants.js';
 import { filterItems, paginate } from './js/filters.js';
 import { exportCSV } from './js/report-generator.js';
-import { formatNumber, debounce, formatDateDisplay, getStockLevel } from './js/utils.js';
+import { formatNumber, debounce, formatDateDisplay, itemStockLevel } from './js/utils.js';
 
 await requireAuth();
 renderShell('stock-analysis');
@@ -169,7 +169,7 @@ async function load() {
         ]);
         allItems = [...l2, ...s2].map(item => ({
           ...item,
-          stockLevel: item.stockLevel || getStockLevel(item.totalQty || 0)
+          stockLevel: itemStockLevel(item)
         }));
         document.getElementById('data-date-label').textContent = formatDateDisplay(selected);
         page = 1;
@@ -186,10 +186,10 @@ async function load() {
       getStockData(date, CATEGORIES.LEHNGA),
       getStockData(date, CATEGORIES.SAREE)
     ]);
-    // Recompute stockLevel defensively in case Firestore docs are missing the field
+    // Recompute stockLevel per worst colour (old docs carry a total-based level)
     allItems = [...l, ...s].map(item => ({
       ...item,
-      stockLevel: item.stockLevel || getStockLevel(item.totalQty || 0)
+      stockLevel: itemStockLevel(item)
     }));
     renderStatsBar(allItems);
     renderChanges(date);

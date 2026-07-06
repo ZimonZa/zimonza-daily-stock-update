@@ -32,7 +32,7 @@
       </div>
     </div>
 
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
       <div>
         <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Low Stock (max pcs)</label>
         <input type="number" id="low-threshold" min="1" max="10" value="2" class="zm-input">
@@ -47,6 +47,11 @@
         <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">High Stock (min pcs)</label>
         <input type="number" id="high-threshold" class="zm-input opacity-50 cursor-not-allowed" disabled>
         <p class="text-slate-600 text-xs mt-1">Auto-computed</p>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Myntra Gap (pcs)</label>
+        <input type="number" id="myntra-gap" min="0" value="8" class="zm-input">
+        <p class="text-slate-600 text-xs mt-1">Colour stock must be MORE than this to send half to Myntra</p>
       </div>
     </div>
 
@@ -364,14 +369,20 @@ try { settings = await getSettings(); } catch { /* use defaults */ }
 // Prefer localStorage (faster + reflects unsaved changes from previous session)
 const savedLow    = Number(localStorage.getItem('zm_low_threshold'))    || settings.lowStockThreshold    || 2;
 const savedMedium = Number(localStorage.getItem('zm_medium_threshold')) || settings.mediumStockThreshold || 5;
+// Gap of 0 is valid, so check for presence instead of truthiness
+const rawGap   = localStorage.getItem('zm_myntra_gap');
+const savedGap = rawGap !== null && rawGap !== '' ? Number(rawGap)
+               : (settings.myntraGapThreshold != null ? settings.myntraGapThreshold : 8);
 
 const lowEl    = document.getElementById('low-threshold');
 const mediumEl = document.getElementById('medium-threshold');
 const highEl   = document.getElementById('high-threshold');
+const gapEl    = document.getElementById('myntra-gap');
 
 lowEl.value    = savedLow;
 mediumEl.value = savedMedium;
 highEl.value   = savedMedium + 1;
+gapEl.value    = savedGap;
 
 // ── Live threshold preview ───────────────────────────────────
 function renderThresholdPreview() {
@@ -461,6 +472,7 @@ document.getElementById('save-settings-btn').addEventListener('click', async () 
   const btn    = document.getElementById('save-settings-btn');
   const low    = Math.max(1, +lowEl.value);
   const medium = +mediumEl.value;
+  const gap    = Math.max(0, Math.floor(+gapEl.value) || 0);
 
   if (low >= medium) {
     notify.error('Medium threshold must be higher than Low threshold.');
@@ -472,10 +484,11 @@ document.getElementById('save-settings-btn').addEventListener('click', async () 
 
   try {
     const theme = storage.get('theme', 'dark');
-    await saveSettings({ lowStockThreshold: low, mediumStockThreshold: medium, notificationsEnabled: notifEnabled, theme });
+    await saveSettings({ lowStockThreshold: low, mediumStockThreshold: medium, myntraGapThreshold: gap, notificationsEnabled: notifEnabled, theme });
     // Write to localStorage so getStockLevel() picks them up immediately across all pages
     localStorage.setItem('zm_low_threshold',    low);
     localStorage.setItem('zm_medium_threshold', medium);
+    localStorage.setItem('zm_myntra_gap',       gap);
     notify.success('Settings saved successfully!');
     renderThresholdPreview();
   } catch(e) {

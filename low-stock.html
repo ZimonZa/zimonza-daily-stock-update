@@ -15,7 +15,7 @@
   <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
     <div>
       <h1 class="text-2xl font-bold text-white">Low Stock</h1>
-      <p class="text-slate-400 text-sm mt-0.5">Products with 1–2 pieces remaining</p>
+      <p class="text-slate-400 text-sm mt-0.5">Colours running low — each colour counted on its own stock</p>
     </div>
     <div class="flex items-center gap-2">
       <select id="date-select" class="zm-input w-44"></select>
@@ -35,13 +35,13 @@
     <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-400 flex-shrink-0"></i>
     <div>
       <p class="text-amber-300 text-sm font-semibold">Low Stock Alert</p>
-      <p class="text-amber-500/70 text-xs mt-0.5">These items need restocking soon. Consider uploading to website before they sell out.</p>
+      <p class="text-amber-500/70 text-xs mt-0.5">These colours need restocking soon. Consider uploading to website before they sell out.</p>
     </div>
   </div>
 
   <!-- Search -->
   <div class="glass-card p-4 flex gap-3 items-center">
-    <input id="search-input" type="text" placeholder="Search SKU or name…" class="zm-input flex-1 max-w-xs">
+    <input id="search-input" type="text" placeholder="Search SKU, name or colour…" class="zm-input flex-1 max-w-xs">
     <span id="item-count" class="text-slate-500 text-xs ml-auto"></span>
   </div>
 
@@ -56,7 +56,7 @@ import { renderShell } from './js/ui-components.js';
 import notify from './js/notifications.js';
 import { getStockData, getAllUploadDates } from './js/firestore-service.js';
 import { CATEGORIES } from './js/constants.js';
-import { formatDateDisplay, debounce, getStockLevel } from './js/utils.js';
+import { formatDateDisplay, debounce, lowColorEntries } from './js/utils.js';
 
 await requireAuth();
 renderShell('low-stock');
@@ -72,7 +72,7 @@ async function load(date) {
       getStockData(date, CATEGORIES.LEHNGA),
       getStockData(date, CATEGORIES.SAREE)
     ]);
-    items = [...l, ...s].filter(i => getStockLevel(i.totalQty||0) === 'low');
+    items = lowColorEntries([...l, ...s]);
     renderStats(items);
     renderCards(items);
   } catch(e) { notify.error('Failed to load.'); }
@@ -91,10 +91,10 @@ async function init() {
 function renderStats(data) {
   const lCount = data.filter(i=>i.category===CATEGORIES.LEHNGA).length;
   const sCount = data.filter(i=>i.category===CATEGORIES.SAREE).length;
-  const one = data.filter(i=>i.totalQty===1).length;
-  const two = data.filter(i=>i.totalQty===2).length;
+  const one = data.filter(i=>i.qty===1).length;
+  const two = data.filter(i=>i.qty===2).length;
   document.getElementById('stats-strip').innerHTML = [
-    { label:'Total Low Stock', value: data.length, color:'from-amber-500/10 border-amber-500/20' },
+    { label:'Low Stock Colours', value: data.length, color:'from-amber-500/10 border-amber-500/20' },
     { label:'1 Pc Remaining', value: one, color:'from-red-500/10 border-red-500/20' },
     { label:'2 Pcs Remaining', value: two, color:'from-orange-500/10 border-orange-500/20' },
     { label:'Lehnga / Saree', value: lCount+' / '+sCount, color:'from-blue-500/10 border-blue-500/20' },
@@ -109,18 +109,17 @@ function renderCards(data) {
   const q = document.getElementById('search-input').value.toLowerCase();
   let f = data;
   if (cat !== 'all') f = f.filter(i=>i.category===cat);
-  if (q) f = f.filter(i=>String(i.sku).toLowerCase().includes(q)||i.name?.toLowerCase().includes(q));
-  document.getElementById('item-count').textContent = f.length + ' items';
+  if (q) f = f.filter(i=>String(i.sku).toLowerCase().includes(q)||i.name?.toLowerCase().includes(q)||i.colorName?.toLowerCase().includes(q));
+  document.getElementById('item-count').textContent = f.length + ' colours';
   if (!f.length) {
-    document.getElementById('cards-grid').innerHTML = `<div class="col-span-full text-center py-12 text-slate-500">No items found.</div>`;
+    document.getElementById('cards-grid').innerHTML = `<div class="col-span-full text-center py-12 text-slate-500">No colours found.</div>`;
     return;
   }
   document.getElementById('cards-grid').innerHTML = f.map(i => {
-    const urgency = i.totalQty === 1 ? 'border-red-500/30 from-red-500/8' : 'border-amber-500/30 from-amber-500/8';
-    const badge = i.totalQty === 1
+    const urgency = i.qty === 1 ? 'border-red-500/30 from-red-500/8' : 'border-amber-500/30 from-amber-500/8';
+    const badge = i.qty === 1
       ? '<span class="level-low">Critical — 1 pc</span>'
-      : '<span class="level-low">Low — 2 pcs</span>';
-    const colors = (i.colors||[]).map(c=>`<span class="color-badge text-xs">${c.name}×${c.qty}</span>`).join(' ');
+      : `<span class="level-low">Low — ${i.qty} pcs</span>`;
     return `<div class="bg-gradient-to-br ${urgency} border rounded-2xl p-5 flex flex-col gap-3 glass-card-hover">
       <div class="flex items-start justify-between gap-2">
         <div class="min-w-0">
@@ -129,7 +128,7 @@ function renderCards(data) {
         </div>
         ${badge}
       </div>
-      <div class="flex flex-wrap gap-1">${colors}</div>
+      <div class="flex flex-wrap gap-1"><span class="color-badge text-xs">${i.colorName}×${i.qty}</span></div>
       <a href="zm-panel.html" class="text-xs text-emerald-400 hover:text-emerald-300 mt-auto transition font-medium">Mark for upload →</a>
     </div>`;
   }).join('');

@@ -9,7 +9,7 @@ import {
   getUploadHistory
 } from './firestore-service.js';
 import {
-  analyzeStockChanges, computeStockHealth, findFastMovers
+  analyzeStockChanges, computeColorHealth, findFastMovers
 } from './stock-analyzer.js';
 import {
   renderSalesTrendChart, renderStockHealthChart,
@@ -17,7 +17,7 @@ import {
   renderUploadCoverageChart, renderRestockTrendChart
 } from './charts.js';
 import { CATEGORIES } from './constants.js';
-import { formatDateDisplay, formatNumber, today, daysAgo } from './utils.js';
+import { formatDateDisplay, formatNumber, today, daysAgo, lowColorEntries } from './utils.js';
 
 let allItems = [];
 let analysisResult = null;
@@ -86,7 +86,8 @@ async function loadDashboard(date) {
 }
 
 function renderKPIs(items, analysis, date) {
-  const health = computeStockHealth(items);
+  // Health counts individual colours, not product totals
+  const health = computeColorHealth(items);
   const { summary } = analysis;
 
   const kpis = [
@@ -96,9 +97,9 @@ function renderKPIs(items, analysis, date) {
     { label: 'Restocked', value: formatNumber(summary.totalRestockedPcs || 0), icon: 'refresh-cw', color: 'amber', sub: `${summary.restockedCount} SKUs restocked` },
     { label: 'New Arrivals', value: formatNumber(summary.newArrivalsCount || 0), icon: 'sparkles', color: 'purple', sub: 'New SKUs detected' },
     { label: 'Sold Out', value: formatNumber(summary.soldOutCount || 0), icon: 'x-circle', color: 'red', sub: 'Zero quantity' },
-    { label: 'Low Stock', value: formatNumber(health.low || 0), icon: 'alert-triangle', color: 'amber', sub: '1–2 pieces remaining' },
-    { label: 'Medium Stock', value: formatNumber(health.medium || 0), icon: 'minus-circle', color: 'blue', sub: '3–5 pieces' },
-    { label: 'High Stock', value: formatNumber(health.high || 0), icon: 'check-circle', color: 'emerald', sub: '6+ pieces' },
+    { label: 'Low Stock', value: formatNumber(health.low || 0), icon: 'alert-triangle', color: 'amber', sub: 'Colours running low' },
+    { label: 'Medium Stock', value: formatNumber(health.medium || 0), icon: 'minus-circle', color: 'blue', sub: 'Colours at medium level' },
+    { label: 'High Stock', value: formatNumber(health.high || 0), icon: 'check-circle', color: 'emerald', sub: 'Colours well stocked' },
   ];
 
   const colorMap = {
@@ -131,7 +132,7 @@ function renderKPIs(items, analysis, date) {
 async function renderCharts(items, analysis) {
   const lehnga = items.filter(i=>i.category===CATEGORIES.LEHNGA);
   const saree  = items.filter(i=>i.category===CATEGORIES.SAREE);
-  const health = computeStockHealth(items);
+  const health = computeColorHealth(items);
   const fastMovers = findFastMovers(analysis.soldItems, 8);
 
   // Build real 7-day trend from Firestore daily summaries
@@ -213,9 +214,9 @@ function renderActivityFeed(analysis) {
 function renderLowStockList(items) {
   const el = document.getElementById('low-stock-list');
   if (!el) return;
-  const low = items.filter(i=>i.stockLevel==='low'||i.totalQty===1).slice(0,8);
+  const low = lowColorEntries(items).slice(0,8);
   if (!low.length) {
-    el.innerHTML = `<p class="text-slate-500 text-sm text-center py-4">No low stock items.</p>`;
+    el.innerHTML = `<p class="text-slate-500 text-sm text-center py-4">No low stock colours.</p>`;
     return;
   }
   el.innerHTML = low.map(i=>`
@@ -224,10 +225,10 @@ function renderLowStockList(items) {
         <div class="w-2 h-2 rounded-full bg-red-400 flex-shrink-0"></div>
         <div class="min-w-0">
           <p class="text-slate-200 text-sm font-medium truncate">${i.name}</p>
-          <p class="text-slate-500 text-xs">${i.sku} · ${i.category}</p>
+          <p class="text-slate-500 text-xs">${i.sku} · ${i.colorName}</p>
         </div>
       </div>
-      <span class="level-low ml-2 flex-shrink-0">${i.totalQty} pcs</span>
+      <span class="level-low ml-2 flex-shrink-0">${i.qty} pcs</span>
     </div>`).join('');
 }
 

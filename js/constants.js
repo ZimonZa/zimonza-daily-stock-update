@@ -52,6 +52,7 @@ export const ZM_COLS = {
 export const COLLECTIONS = {
   DAILY_STOCK: 'daily_stock',
   ZM_MAPPING: 'zm_mapping',
+  MYNTRA_MAPPING: 'myntra_mapping',
   WEBSITE_STATUS: 'website_upload_status',
   SKIP_PRODUCTS: 'skip_products',
   HISTORY: 'history',
@@ -109,6 +110,7 @@ export const NAV_ITEMS = [
   { id: 'stock-analysis', label: 'Stock Analysis', icon: 'bar-chart-2', href: 'stock-analysis.html' },
   { id: 'pdf-to-excel', label: 'PDF → Excel', icon: 'file-spreadsheet', href: 'pdf-to-excel.html' },
   { id: 'zm-panel', label: 'ZM Panel', icon: 'tag', href: 'zm-panel.html' },
+  { id: 'myntra', label: 'Myntra', icon: 'shopping-bag', href: 'myntra.html' },
   { id: 'new-arrivals', label: 'New Arrivals', icon: 'sparkles', href: 'new-arrivals.html' },
   { id: 'sold-items', label: 'Sold Items', icon: 'trending-down', href: 'sold-items.html' },
   { id: 'restocked', label: 'Restocked', icon: 'refresh-cw', href: 'restocked.html' },

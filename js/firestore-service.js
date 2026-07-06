@@ -85,6 +85,32 @@ export async function getAllZMMappings() {
   return snap.docs.map(d => d.data());
 }
 
+// ─── Myntra Mapping ─────────────────────────────────────────────
+
+/** Save Myntra mapping data (chunked for >499 docs), keyed by SellerSkuCode */
+export async function saveMyntraMappings(mappings) {
+  const operations = mappings.map(m => (batch) => {
+    const id = String(m.sellerSkuCode).replace(/\//g, '_');
+    const ref = doc(db, COLLECTIONS.MYNTRA_MAPPING, id);
+    batch.set(ref, {
+      styleId: m.styleId ?? '',
+      articleType: m.articleType ?? '',
+      colour: m.colour ?? '',
+      sellerSkuCode: m.sellerSkuCode,
+      zmCode: m.zmCode,
+      colourName: m.colourName,
+      updatedAt: serverTimestamp()
+    });
+  });
+  await runChunkedBatch(operations);
+}
+
+/** Get all Myntra mappings */
+export async function getAllMyntraMappings() {
+  const snap = await getDocs(collection(db, COLLECTIONS.MYNTRA_MAPPING));
+  return snap.docs.map(d => d.data());
+}
+
 // ─── Website Upload Status ───────────────────────────────────────
 
 /** Update upload status for a SKU (optionally the per-colour uploaded list) */

@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { VALID_LOCATIONS, SAREE_COLS, LEHNGA_COLS, ZM_COLS, CATEGORIES } from './constants.js';
-import { parseColors, getStockLevel, findColourSuggestion, getEffectiveColours, normColorKey, normItemNo } from './utils.js';
+import { parseColors, worstColorLevel, findColourSuggestion, getEffectiveColours, normColorKey, normItemNo } from './utils.js';
 
 /**
  * Read an Excel File object and return raw worksheet data as array of arrays
@@ -193,7 +193,8 @@ export function parseStockFile(rows, category) {
   for (const [sku, entry] of skuMap) {
     const colors = Array.from(entry.colorMap.values());
     const totalQty = colors.reduce((sum, c) => sum + c.qty, 0);
-    const stockLevel = getStockLevel(totalQty);
+    // Level is per colour: the worst (lowest-qty) colour decides the product's level
+    const stockLevel = worstColorLevel(colors);
 
     items.push({
       sku,

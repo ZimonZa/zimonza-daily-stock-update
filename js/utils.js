@@ -94,6 +94,56 @@ export function getStockLevel(qty) {
 }
 
 /**
+ * Worst (lowest-qty) colour's stock level. Zero-qty entries are ignored so a
+ * listed-but-empty colour doesn't mark an in-stock product as sold out.
+ */
+export function worstColorLevel(colors) {
+  const qtys = (colors || []).map(c => Number(c.qty) || 0).filter(q => q > 0);
+  if (qtys.length === 0) return 'sold_out';
+  return getStockLevel(Math.min(...qtys));
+}
+
+/**
+ * Per-colour stock level for an item: worst colour when colour data exists,
+ * otherwise fall back to the stored/total-based level (old Firestore docs).
+ */
+export function itemStockLevel(item) {
+  if (Array.isArray(item?.colors) && item.colors.length > 0) {
+    return worstColorLevel(item.colors);
+  }
+  return item?.stockLevel || getStockLevel(item?.totalQty || 0);
+}
+
+/**
+ * Flatten items to one entry per LOW-stock colour:
+ * [{ sku, name, category, colorName, qty }], sorted by qty ascending.
+ */
+export function lowColorEntries(items) {
+  const out = [];
+  for (const item of items || []) {
+    for (const c of item.colors || []) {
+      const qty = Number(c.qty) || 0;
+      if (qty > 0 && getStockLevel(qty) === 'low') {
+        out.push({ sku: item.sku, name: item.name, category: item.category, colorName: c.name, qty });
+      }
+    }
+  }
+  return out.sort((a, b) => a.qty - b.qty);
+}
+
+/**
+ * Myntra gap threshold — a colour's stock must EXCEED this to be sent to
+ * Myntra at half quantity. Read from localStorage so Settings applies
+ * immediately; 0 is a valid value, hence the null check.
+ */
+export function getMyntraGapThreshold() {
+  const raw = localStorage.getItem('zm_myntra_gap');
+  if (raw === null || raw === '') return 8;
+  const v = Number(raw);
+  return Number.isFinite(v) && v >= 0 ? v : 8;
+}
+
+/**
  * Get stock level badge classes
  */
 export function getStockBadgeClass(level) {
