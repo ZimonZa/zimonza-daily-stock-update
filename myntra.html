@@ -12,7 +12,7 @@
 </head>
 <body class="bg-slate-950 min-h-screen">
 <div id="page-content" class="ml-64 pt-16 transition-all duration-300">
- <div class="p-7 space-y-6 animate-fade-in">
+ <div class="p-7 space-y-5 animate-fade-in">
 
   <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
     <div>
@@ -22,68 +22,133 @@
     <span id="stock-date-label" class="text-slate-500 text-xs"></span>
   </div>
 
-  <!-- ── Myntra Mapping ── -->
-  <div class="glass-card overflow-hidden">
-    <div class="flex items-center gap-3 px-6 py-4 border-b border-white/5">
-      <div class="w-9 h-9 rounded-xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center flex-shrink-0">
-        <i data-lucide="shopping-bag" class="w-5 h-5 text-pink-400"></i>
-      </div>
-      <div class="flex-1 min-w-0">
-        <h3 class="text-white font-semibold text-sm">Myntra Mapping</h3>
-        <p class="text-slate-400 text-xs">Style Id · Article Type · Colour · SellerSkuCode (e.g. ZM-75-Morpichh)</p>
-      </div>
-    </div>
+  <!-- ── Tabs ── -->
+  <div class="flex items-center gap-1 border-b border-white/10">
+    <button id="tabbtn-generator" class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition flex items-center gap-2">
+      <i data-lucide="file-cog" class="w-4 h-4"></i> Inventory Update
+    </button>
+    <button id="tabbtn-mapping" class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition flex items-center gap-2">
+      <i data-lucide="shopping-bag" class="w-4 h-4"></i> Mapping
+    </button>
+  </div>
 
-    <div class="p-6 space-y-4">
-      <div id="map-drop" class="drop-zone p-5 text-center cursor-pointer"
-        onclick="document.getElementById('map-file').click()">
-        <i data-lucide="upload-cloud" class="w-7 h-7 text-slate-600 mx-auto mb-2"></i>
-        <p class="text-slate-400 text-sm font-medium">Drop mapping file here or click</p>
-        <p class="text-slate-600 text-xs mt-1">Myntra mapping .csv / .xlsx</p>
+  <!-- ════════ TAB: Inventory Update ════════ -->
+  <div id="tab-generator">
+    <div class="glass-card overflow-hidden">
+      <div class="flex items-center gap-3 px-6 py-4 border-b border-white/5">
+        <div class="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center flex-shrink-0">
+          <i data-lucide="file-cog" class="w-5 h-5 text-emerald-400"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <h3 class="text-white font-semibold text-sm">Inventory Update Generator</h3>
+          <p class="text-slate-400 text-xs" id="gap-rule-note"></p>
+        </div>
       </div>
-      <input type="file" id="map-file" accept=".csv,.xlsx,.xls" class="hidden">
 
-      <div id="map-summary" class="grid grid-cols-2 sm:grid-cols-4 gap-3 hidden"></div>
+      <div class="p-6 space-y-4">
+        <!-- Action row: upload OR generate from mapping -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <div id="inv-drop" class="drop-zone p-5 text-center cursor-pointer h-full flex flex-col items-center justify-center"
+              onclick="document.getElementById('inv-file').click()">
+              <i data-lucide="upload-cloud" class="w-7 h-7 text-slate-600 mx-auto mb-2"></i>
+              <p class="text-slate-400 text-sm font-medium">Drop inventory file here or click</p>
+              <p class="text-slate-600 text-xs mt-1">sellerSkuCode,quantity — .csv / .xlsx</p>
+            </div>
+            <input type="file" id="inv-file" accept=".csv,.xlsx,.xls" class="hidden">
+          </div>
+          <div class="p-5 rounded-xl border border-white/10 bg-white/[0.03] flex flex-col items-center justify-center gap-2.5 text-center">
+            <p class="text-slate-300 text-sm font-medium">No file? Generate for all saved SKUs</p>
+            <button id="gen-from-mapping" class="btn-primary text-sm py-2.5 px-5">
+              <i data-lucide="wand-2" class="w-4 h-4 inline-block mr-1"></i> Generate from Mapping
+            </button>
+            <p class="text-slate-600 text-xs">Uses every SellerSkuCode saved in the Mapping tab</p>
+          </div>
+        </div>
 
-      <div class="flex items-center gap-3">
-        <input id="map-search" type="text" placeholder="Search SKU, ZM code, colour…" class="zm-input w-64">
-        <span id="map-count" class="text-slate-500 text-xs ml-auto"></span>
-      </div>
-      <div id="map-table" class="overflow-x-auto">
-        <p class="text-slate-500 text-sm text-center py-6">No Myntra mappings yet — upload the mapping file above.</p>
+        <!-- Clickable summary chips -->
+        <div id="inv-summary" class="grid grid-cols-3 sm:grid-cols-6 gap-3 hidden"></div>
+
+        <!-- Results toolbar -->
+        <div id="inv-toolbar" class="flex flex-wrap gap-3 items-center hidden">
+          <input id="inv-search" type="text" placeholder="Search SKU, product, colour…" class="zm-input w-56">
+          <select id="inv-status-filter" class="zm-input w-44">
+            <option value="all">All Statuses</option>
+            <option value="ok">OK (filled)</option>
+            <option value="below_gap">Below gap → 0</option>
+            <option value="missing">Missing → 0</option>
+            <option value="duplicate">Duplicates</option>
+            <option value="edited">Edited</option>
+          </select>
+          <span id="inv-count" class="text-slate-500 text-xs"></span>
+          <div class="ml-auto flex gap-2">
+            <button id="dl-csv" class="btn-secondary text-xs py-2 px-3">
+              <i data-lucide="download" class="w-3.5 h-3.5 inline-block mr-1"></i> Download CSV
+            </button>
+            <button id="dl-xlsx" class="btn-primary text-xs py-2 px-3">
+              <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 inline-block mr-1"></i> Download Excel
+            </button>
+          </div>
+        </div>
+
+        <div id="inv-table" class="max-h-[65vh] overflow-auto"></div>
       </div>
     </div>
   </div>
 
-  <!-- ── Inventory Update Generator ── -->
-  <div class="glass-card overflow-hidden">
-    <div class="flex items-center gap-3 px-6 py-4 border-b border-white/5">
-      <div class="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center flex-shrink-0">
-        <i data-lucide="file-cog" class="w-5 h-5 text-emerald-400"></i>
+  <!-- ════════ TAB: Mapping ════════ -->
+  <div id="tab-mapping" class="hidden">
+    <div class="glass-card overflow-hidden">
+      <div class="flex items-center gap-3 px-6 py-4 border-b border-white/5">
+        <div class="w-9 h-9 rounded-xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center flex-shrink-0">
+          <i data-lucide="shopping-bag" class="w-5 h-5 text-pink-400"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <h3 class="text-white font-semibold text-sm">Myntra Mapping</h3>
+          <p class="text-slate-400 text-xs">Style Id · Article Type · Colour · SellerSkuCode (e.g. ZM-75-Morpichh)</p>
+        </div>
+        <button id="map-export-csv" class="btn-secondary text-xs py-2 px-3">
+          <i data-lucide="download" class="w-3.5 h-3.5 inline-block mr-1"></i> Export CSV
+        </button>
+        <button id="map-export-xlsx" class="btn-secondary text-xs py-2 px-3">
+          <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 inline-block mr-1"></i> Export Excel
+        </button>
       </div>
-      <div class="flex-1 min-w-0">
-        <h3 class="text-white font-semibold text-sm">Inventory Update Generator</h3>
-        <p class="text-slate-400 text-xs" id="gap-rule-note"></p>
-      </div>
-      <button id="dl-csv" class="btn-secondary text-xs py-2 px-3 hidden">
-        <i data-lucide="download" class="w-3.5 h-3.5 inline-block mr-1"></i> Download CSV
-      </button>
-      <button id="dl-xlsx" class="btn-primary text-xs py-2 px-3 hidden">
-        <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 inline-block mr-1"></i> Download Excel
-      </button>
-    </div>
 
-    <div class="p-6 space-y-4">
-      <div id="inv-drop" class="drop-zone p-5 text-center cursor-pointer"
-        onclick="document.getElementById('inv-file').click()">
-        <i data-lucide="upload-cloud" class="w-7 h-7 text-slate-600 mx-auto mb-2"></i>
-        <p class="text-slate-400 text-sm font-medium">Drop inventory file here or click</p>
-        <p class="text-slate-600 text-xs mt-1">sellerSkuCode,quantity — .csv / .xlsx</p>
-      </div>
-      <input type="file" id="inv-file" accept=".csv,.xlsx,.xls" class="hidden">
+      <div class="p-6 space-y-4">
+        <div id="map-drop" class="drop-zone p-5 text-center cursor-pointer"
+          onclick="document.getElementById('map-file').click()">
+          <i data-lucide="upload-cloud" class="w-7 h-7 text-slate-600 mx-auto mb-2"></i>
+          <p class="text-slate-400 text-sm font-medium">Drop mapping file here or click</p>
+          <p class="text-slate-600 text-xs mt-1">Myntra mapping .csv / .xlsx</p>
+        </div>
+        <input type="file" id="map-file" accept=".csv,.xlsx,.xls" class="hidden">
 
-      <div id="inv-summary" class="grid grid-cols-2 sm:grid-cols-5 gap-3 hidden"></div>
-      <div id="inv-table" class="overflow-x-auto"></div>
+        <!-- Clickable summary chips -->
+        <div id="map-summary" class="grid grid-cols-2 sm:grid-cols-4 gap-3 hidden"></div>
+
+        <!-- Toolbar -->
+        <div class="flex flex-wrap gap-3 items-center">
+          <input id="map-search" type="text" placeholder="Search SKU, ZM code, colour, product…" class="zm-input w-64">
+          <select id="map-status-filter" class="zm-input w-48">
+            <option value="all">All Stock Statuses</option>
+            <option value="matched">Matched (colour found)</option>
+            <option value="in_stock">In stock (&gt;0 pcs)</option>
+            <option value="out_of_stock">Out of stock (0 pcs)</option>
+            <option value="colour_not_found">Colour not found</option>
+            <option value="no_stock_item">No stock item</option>
+            <option value="problems">Problems (no stock/colour)</option>
+          </select>
+          <select id="map-colour-filter" class="zm-input w-40">
+            <option value="all">All Colours</option>
+          </select>
+          <span id="map-count" class="text-slate-500 text-xs ml-auto"></span>
+        </div>
+
+        <div id="map-table" class="max-h-[65vh] overflow-auto">
+          <p class="text-slate-500 text-sm text-center py-6">No Myntra mappings yet — upload the mapping file above.</p>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -96,7 +161,7 @@ import { renderShell } from './js/ui-components.js';
 import notify from './js/notifications.js';
 import { readExcelFile } from './js/excel-parser.js';
 import { saveMyntraMappings, getAllMyntraMappings } from './js/firestore-service.js';
-import { debounce, toCSV, downloadFile, formatDateDisplay, getMyntraGapThreshold } from './js/utils.js';
+import { debounce, toCSV, downloadFile, formatDateDisplay, getMyntraGapThreshold, normColorKey } from './js/utils.js';
 import {
   validateMyntraMappingFile, parseMyntraMappingFile, parseInventoryFile,
   loadMyntraStockContext, resolveStock, findColourQty, generateInventoryUpdate
@@ -110,7 +175,46 @@ let ctx = null;          // { latestDate, stockMap, zmToKuntal }
 let mappings = [];       // stored Myntra mappings
 let genResult = null;    // { rows, summary } from last generation
 
+// View state (filters + sort) per tab
+const genView = { q: '', status: 'all', sortKey: null, sortDir: 1 };
+const mapView = { q: '', status: 'all', colour: 'all', sortKey: null, sortDir: 1 };
+
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+// ── Tabs ──────────────────────────────────────────────────────
+const TABS = ['generator', 'mapping'];
+function setTab(name) {
+  for (const t of TABS) {
+    document.getElementById(`tab-${t}`).classList.toggle('hidden', t !== name);
+    const btn = document.getElementById(`tabbtn-${t}`);
+    btn.classList.toggle('text-emerald-400', t === name);
+    btn.classList.toggle('border-emerald-400', t === name);
+    btn.classList.toggle('text-slate-400', t !== name);
+    btn.classList.toggle('border-transparent', t !== name);
+  }
+  sessionStorage.setItem('zm_myntra_tab', name);
+}
+document.getElementById('tabbtn-generator').addEventListener('click', () => setTab('generator'));
+document.getElementById('tabbtn-mapping').addEventListener('click', () => setTab('mapping'));
+setTab(sessionStorage.getItem('zm_myntra_tab') === 'mapping' ? 'mapping' : 'generator');
+
+// ── Shared sort helpers ───────────────────────────────────────
+function toggleSort(view, key) {
+  if (view.sortKey === key) view.sortDir *= -1;
+  else { view.sortKey = key; view.sortDir = 1; }
+}
+function applySort(rows, view, valueFn) {
+  if (!view.sortKey) return rows;
+  return [...rows].sort((a, b) => {
+    const va = valueFn(a, view.sortKey), vb = valueFn(b, view.sortKey);
+    const c = (typeof va === 'number' && typeof vb === 'number')
+      ? va - vb
+      : String(va).localeCompare(String(vb), undefined, { numeric: true, sensitivity: 'base' });
+    return c * view.sortDir;
+  });
+}
+const thSort = (view, key, label, right = false) =>
+  `<th data-sort="${key}" class="${right ? 'text-right' : 'text-left'} px-4 py-2.5 cursor-pointer select-none whitespace-nowrap hover:text-slate-300">${label}${view.sortKey === key ? (view.sortDir === 1 ? ' ▲' : ' ▼') : ''}</th>`;
 
 function gapNote() {
   const gap = getMyntraGapThreshold();
@@ -124,6 +228,7 @@ async function load() {
     document.getElementById('stock-date-label').textContent =
       ctx.latestDate ? `Stock as of ${formatDateDisplay(ctx.latestDate)}` : 'No stock uploaded yet';
     gapNote();
+    populateColourFilter();
     renderMappings();
   } catch(e) {
     console.error(e);
@@ -131,13 +236,27 @@ async function load() {
   }
 }
 
-// ── Mapping table ─────────────────────────────────────────────
+// ═════════════ MAPPING TAB ═════════════
+
 function mappingRows() {
   return mappings.map(m => {
     const { stock, kuntalCode } = resolveStock(m.zmCode, ctx);
     const qty = stock ? findColourQty(stock, m.colourName) : null;
     return { ...m, kuntalCode: kuntalCode || '', productName: stock?.name || '', qty, hasStock: !!stock };
   }).sort((a,b) => String(a.sellerSkuCode).localeCompare(String(b.sellerSkuCode), undefined, { numeric: true }));
+}
+
+function mapMatchesStatus(r, s) {
+  switch (s) {
+    case 'all':              return true;
+    case 'matched':          return r.hasStock && r.qty !== null;
+    case 'in_stock':         return r.hasStock && r.qty !== null && r.qty > 0;
+    case 'out_of_stock':     return r.hasStock && r.qty === 0;
+    case 'colour_not_found': return r.hasStock && r.qty === null;
+    case 'no_stock_item':    return !r.hasStock;
+    case 'problems':         return !r.hasStock || r.qty === null;
+    default:                 return true;
+  }
 }
 
 function stockChip(r) {
@@ -148,27 +267,57 @@ function stockChip(r) {
   return `<span class="${cls} text-xs">${r.qty} pcs</span>`;
 }
 
+const stockText = r => !r.hasStock ? 'no stock item' : (r.qty === null ? 'colour not found' : r.qty);
+
+function populateColourFilter() {
+  const sel = document.getElementById('map-colour-filter');
+  const current = sel.value || 'all';
+  const seen = new Map();
+  for (const m of mappings) {
+    const key = normColorKey(m.colourName);
+    if (key && !seen.has(key)) seen.set(key, m.colourName);
+  }
+  const colours = [...seen.values()].sort((a,b) => a.localeCompare(b));
+  sel.innerHTML = `<option value="all">All Colours</option>` +
+    colours.map(c => `<option value="${esc(normColorKey(c))}">${esc(c)}</option>`).join('');
+  sel.value = [...seen.keys()].includes(current) ? current : 'all';
+}
+
 function renderMappings() {
   const rows = mappingRows();
-  const q = document.getElementById('map-search').value.trim().toLowerCase();
-  const f = q ? rows.filter(r =>
+  const matched = rows.filter(r => r.hasStock && r.qty !== null).length;
+  const problems = rows.filter(r => !r.hasStock || r.qty === null).length;
+
+  // Clickable chips (Total / Matched / Problems) + info chip
+  const summaryEl = document.getElementById('map-summary');
+  summaryEl.classList.toggle('hidden', rows.length === 0);
+  const chip = (status, label, value, color) => {
+    const active = mapView.status === status;
+    return `<button data-status="${status}" class="bg-gradient-to-br ${color} border rounded-2xl p-3 text-center transition ${active ? 'ring-2 ring-emerald-400/60' : 'hover:brightness-125'}">
+      <p class="text-xl font-bold text-white">${value}</p>
+      <p class="text-slate-500 text-xs mt-0.5">${label}</p>
+    </button>`;
+  };
+  summaryEl.innerHTML =
+    chip('all', 'Total Mappings', rows.length, 'from-blue-500/10 border-blue-500/20') +
+    chip('matched', 'Matched to Stock', matched, 'from-emerald-500/10 border-emerald-500/20') +
+    chip('problems', 'No Stock / Colour', problems, 'from-red-500/10 border-red-500/20') +
+    `<div class="bg-gradient-to-br from-purple-500/10 border-purple-500/20 border rounded-2xl p-3 text-center">
+      <p class="text-xl font-bold text-white">${new Set(rows.map(r=>r.zmCode)).size}</p>
+      <p class="text-slate-500 text-xs mt-0.5">ZM Codes</p>
+    </div>`;
+
+  // Filter + sort
+  let f = rows.filter(r => mapMatchesStatus(r, mapView.status));
+  if (mapView.colour !== 'all') f = f.filter(r => normColorKey(r.colourName) === mapView.colour);
+  const q = mapView.q.toLowerCase();
+  if (q) f = f.filter(r =>
     String(r.sellerSkuCode).toLowerCase().includes(q) ||
     String(r.zmCode).toLowerCase().includes(q) ||
     String(r.colourName).toLowerCase().includes(q) ||
-    String(r.productName).toLowerCase().includes(q)) : rows;
-
-  const matched = rows.filter(r => r.hasStock && r.qty !== null).length;
-  const summaryEl = document.getElementById('map-summary');
-  summaryEl.classList.toggle('hidden', rows.length === 0);
-  summaryEl.innerHTML = [
-    { label:'Total Mappings', value: rows.length, color:'from-blue-500/10 border-blue-500/20' },
-    { label:'Matched to Stock', value: matched, color:'from-emerald-500/10 border-emerald-500/20' },
-    { label:'No Stock / Colour', value: rows.length - matched, color:'from-red-500/10 border-red-500/20' },
-    { label:'ZM Codes', value: new Set(rows.map(r=>r.zmCode)).size, color:'from-purple-500/10 border-purple-500/20' },
-  ].map(c=>`<div class="bg-gradient-to-br ${c.color} border rounded-2xl p-3 text-center">
-    <p class="text-xl font-bold text-white">${c.value}</p>
-    <p class="text-slate-500 text-xs mt-0.5">${c.label}</p>
-  </div>`).join('');
+    String(r.styleId).toLowerCase().includes(q) ||
+    String(r.productName).toLowerCase().includes(q));
+  f = applySort(f, mapView, (r, k) => k === 'qty' ? (r.qty ?? -1) : String(r[k] ?? ''));
 
   document.getElementById('map-count').textContent = rows.length ? `${f.length} of ${rows.length} mappings` : '';
 
@@ -177,16 +326,21 @@ function renderMappings() {
       `<p class="text-slate-500 text-sm text-center py-6">No Myntra mappings yet — upload the mapping file above.</p>`;
     return;
   }
+  if (!f.length) {
+    document.getElementById('map-table').innerHTML =
+      `<p class="text-slate-500 text-sm text-center py-6">No mappings match the current filters.</p>`;
+    return;
+  }
   document.getElementById('map-table').innerHTML = `
     <table class="w-full text-sm">
-      <thead><tr class="text-slate-500 text-xs uppercase tracking-wide border-b border-white/5">
-        <th class="text-left px-4 py-2.5">SellerSkuCode</th>
-        <th class="text-left px-4 py-2.5">ZM Code</th>
-        <th class="text-left px-4 py-2.5">Colour</th>
-        <th class="text-left px-4 py-2.5">Style Id</th>
-        <th class="text-left px-4 py-2.5">Item No.</th>
-        <th class="text-left px-4 py-2.5">Product</th>
-        <th class="text-left px-4 py-2.5">Today's Stock</th>
+      <thead class="sticky top-0 z-10 bg-slate-900"><tr class="text-slate-500 text-xs uppercase tracking-wide border-b border-white/5">
+        ${thSort(mapView,'sellerSkuCode','SellerSkuCode')}
+        ${thSort(mapView,'zmCode','ZM Code')}
+        ${thSort(mapView,'colourName','Colour')}
+        ${thSort(mapView,'styleId','Style Id')}
+        ${thSort(mapView,'kuntalCode','Item No.')}
+        ${thSort(mapView,'productName','Product')}
+        ${thSort(mapView,'qty',"Today's Stock")}
       </tr></thead>
       <tbody>${f.map(r=>`
         <tr class="border-b border-white/5 hover:bg-white/[0.02]">
@@ -202,9 +356,54 @@ function renderMappings() {
     </table>`;
 }
 
-document.getElementById('map-search').addEventListener('input', debounce(renderMappings));
+// Mapping controls
+document.getElementById('map-search').addEventListener('input', debounce(e => { mapView.q = e.target.value.trim(); renderMappings(); }));
+document.getElementById('map-status-filter').addEventListener('change', e => { mapView.status = e.target.value; renderMappings(); });
+document.getElementById('map-colour-filter').addEventListener('change', e => { mapView.colour = e.target.value; renderMappings(); });
+document.getElementById('map-summary').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-status]');
+  if (!btn) return;
+  mapView.status = btn.dataset.status;
+  document.getElementById('map-status-filter').value = mapView.status;
+  renderMappings();
+});
+document.getElementById('map-table').addEventListener('click', e => {
+  const th = e.target.closest('th[data-sort]');
+  if (th) { toggleSort(mapView, th.dataset.sort); renderMappings(); }
+});
 
-// ── Mapping upload ────────────────────────────────────────────
+// Export mappings (full table, with today's stock)
+const MAP_EXPORT_COLUMNS = [
+  { key: 'sellerSkuCode', label: 'SellerSkuCode' },
+  { key: 'zmCode',        label: 'ZM Code' },
+  { key: 'colourName',    label: 'Colour' },
+  { key: 'styleId',       label: 'Style Id' },
+  { key: 'articleType',   label: 'Article Type' },
+  { key: 'kuntalCode',    label: 'Item No.' },
+  { key: 'productName',   label: 'Product' },
+  { key: 'stock',         label: "Today's Stock" },
+];
+const mapExportRows = () => mappingRows().map(r => ({ ...r, stock: stockText(r) }));
+const stamp = () => new Date().toISOString().slice(0,10);
+
+document.getElementById('map-export-csv').addEventListener('click', () => {
+  if (!mappings.length) { notify.warning('No mappings to export'); return; }
+  downloadFile(toCSV(mapExportRows(), MAP_EXPORT_COLUMNS), `myntra_mappings_${stamp()}.csv`, 'text/csv;charset=utf-8;');
+  notify.success(`Exported ${mappings.length} mappings (CSV)`);
+});
+document.getElementById('map-export-xlsx').addEventListener('click', () => {
+  if (!mappings.length) { notify.warning('No mappings to export'); return; }
+  if (!window.XLSX) { notify.error('Excel library not loaded'); return; }
+  const aoa = [MAP_EXPORT_COLUMNS.map(c => c.label), ...mapExportRows().map(r => MAP_EXPORT_COLUMNS.map(c => r[c.key]))];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [22, 10, 14, 12, 14, 12, 28, 14].map(w => ({ wch: w }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Myntra Mappings');
+  XLSX.writeFile(wb, `myntra_mappings_${stamp()}.xlsx`);
+  notify.success(`Exported ${mappings.length} mappings (Excel)`);
+});
+
+// Mapping upload
 const mapDrop = document.getElementById('map-drop');
 const mapFile = document.getElementById('map-file');
 bindDrop(mapDrop, mapFile, handleMappingFile);
@@ -228,6 +427,7 @@ async function handleMappingFile(file) {
     notify.success(`${parsed.length} Myntra mappings saved`);
     if (invalid.length) notify.warning(`Skipped ${invalid.length} SKU(s) not matching ZM-<no>-<colour>: ${invalid.slice(0,3).join(', ')}${invalid.length>3?'…':''}`);
     mappings = await getAllMyntraMappings();
+    populateColourFilter();
     renderMappings();
   } catch(err) {
     notify.error('Failed: ' + err.message);
@@ -236,7 +436,8 @@ async function handleMappingFile(file) {
 }
 window.resetMapDrop = () => resetDrop(mapDrop, 'Myntra mapping .csv / .xlsx');
 
-// ── Inventory generator ──────────────────────────────────────
+// ═════════════ INVENTORY UPDATE TAB ═════════════
+
 const invDrop = document.getElementById('inv-drop');
 const invFile = document.getElementById('inv-file');
 bindDrop(invDrop, invFile, handleInventoryFile);
@@ -250,77 +451,173 @@ const STATUS_CHIPS = {
   colour_not_found: { cls: 'level-low',      label: 'Colour not found' },
   duplicate:        { cls: 'level-sold_out', label: 'Duplicate (skipped)' },
 };
+const MISSING_STATUSES = ['invalid_sku', 'no_zm_mapping', 'no_stock_item', 'colour_not_found'];
+
+function genMatchesStatus(r, s) {
+  if (s === 'all') return true;
+  if (s === 'missing') return MISSING_STATUSES.includes(r.status);
+  if (s === 'edited') return !!r.edited;
+  return r.status === s;
+}
+
+function resetGenView() {
+  genView.q = ''; genView.status = 'all'; genView.sortKey = null; genView.sortDir = 1;
+  document.getElementById('inv-search').value = '';
+  document.getElementById('inv-status-filter').value = 'all';
+}
+
+function runGeneration(skus, sourceLabel) {
+  genResult = generateInventoryUpdate(skus, ctx, getMyntraGapThreshold());
+  resetGenView();
+  renderGenResult();
+  notify.success(`${sourceLabel}: ${genResult.summary.filled} SKUs filled, ${genResult.summary.total - genResult.summary.filled - genResult.summary.duplicates} set to 0`);
+}
 
 async function handleInventoryFile(file) {
   invDrop.innerHTML = `<div class="flex flex-col items-center gap-2 py-2"><div class="spinner"></div><p class="text-slate-400 text-xs">Processing ${esc(file.name)}…</p></div>`;
   try {
-    if (!ctx?.latestDate) { notify.error('No stock data uploaded yet — upload today\'s stock first.'); resetDrop(invDrop, 'sellerSkuCode,quantity — .csv / .xlsx'); return; }
+    if (!ctx?.latestDate) { notify.error('No stock data uploaded yet — upload today\'s stock first.'); resetInvDropUI(); return; }
     const rows = await readExcelFile(file);
     const { skus, hasQuantityColumn } = parseInventoryFile(rows);
-    if (!skus.length) { notify.error('No sellerSkuCode values found in file'); resetDrop(invDrop, 'sellerSkuCode,quantity — .csv / .xlsx'); return; }
+    if (!skus.length) { notify.error('No sellerSkuCode values found in file'); resetInvDropUI(); return; }
     if (!hasQuantityColumn) notify.warning('No quantity column found — one will be added in the output.');
-
-    genResult = generateInventoryUpdate(skus, ctx, getMyntraGapThreshold());
+    runGeneration(skus, 'Inventory update ready');
     invDrop.innerHTML = `<div class="flex flex-col items-center gap-2 py-2 text-center">
       <i data-lucide="check-circle" class="w-7 h-7 text-emerald-400 mx-auto"></i>
       <p class="text-emerald-400 text-sm font-semibold">${esc(file.name)}</p>
-      <p class="text-slate-400 text-xs">${genResult.summary.total} SKUs processed — download below or drop another file</p>
-      <button onclick="resetInvDrop()" class="text-xs text-slate-500 hover:text-slate-300 mt-1">Upload another</button>
+      <p class="text-slate-400 text-xs">${genResult.summary.total} SKUs processed — results below</p>
+      <button onclick="resetInvDropGlobal()" class="text-xs text-slate-500 hover:text-slate-300 mt-1">Upload another</button>
     </div>`;
     if (window.lucide) lucide.createIcons();
-    renderGenResult();
-    notify.success(`Inventory update ready: ${genResult.summary.filled} SKUs filled, ${genResult.summary.total - genResult.summary.filled} set to 0`);
   } catch(err) {
     notify.error('Failed: ' + err.message);
-    resetDrop(invDrop, 'sellerSkuCode,quantity — .csv / .xlsx');
+    resetInvDropUI();
   }
 }
-window.resetInvDrop = () => resetDrop(invDrop, 'sellerSkuCode,quantity — .csv / .xlsx');
+function resetInvDropUI() { resetDrop(invDrop, 'sellerSkuCode,quantity — .csv / .xlsx'); }
+window.resetInvDropGlobal = resetInvDropUI;
+
+// Generate for all saved mappings — no file needed
+document.getElementById('gen-from-mapping').addEventListener('click', () => {
+  if (!ctx?.latestDate) { notify.error('No stock data uploaded yet — upload today\'s stock first.'); return; }
+  if (!mappings.length) {
+    notify.error('No Myntra mappings saved yet — open the Mapping tab and upload the mapping file first.');
+    setTab('mapping');
+    return;
+  }
+  const skus = mappings.map(m => m.sellerSkuCode)
+    .sort((a,b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+  runGeneration(skus, `Generated from ${skus.length} saved mappings`);
+});
 
 function renderGenResult() {
-  const { rows, summary } = genResult;
+  document.getElementById('inv-toolbar').classList.remove('hidden');
+  renderGenSummary();
+  renderGenTable();
+}
+
+function renderGenSummary() {
+  const rows = genResult.rows;
+  const count = s => rows.filter(r => genMatchesStatus(r, s)).length;
   const s = document.getElementById('inv-summary');
   s.classList.remove('hidden');
-  s.innerHTML = [
-    { label:'Total SKUs', value: summary.total, color:'from-blue-500/10 border-blue-500/20' },
-    { label:'Filled (half)', value: summary.filled, color:'from-emerald-500/10 border-emerald-500/20' },
-    { label:'Below Gap → 0', value: summary.belowGap, color:'from-amber-500/10 border-amber-500/20' },
-    { label:'Missing → 0', value: summary.missing, color:'from-red-500/10 border-red-500/20' },
-    { label:'Duplicates', value: summary.duplicates, color:'from-slate-500/10 border-slate-500/20' },
-  ].map(c=>`<div class="bg-gradient-to-br ${c.color} border rounded-2xl p-3 text-center">
-    <p class="text-xl font-bold text-white">${c.value}</p>
-    <p class="text-slate-500 text-xs mt-0.5">${c.label}</p>
-  </div>`).join('');
+  const chip = (status, label, value, color) => {
+    const active = genView.status === status;
+    return `<button data-status="${status}" class="bg-gradient-to-br ${color} border rounded-2xl p-3 text-center transition ${active ? 'ring-2 ring-emerald-400/60' : 'hover:brightness-125'}">
+      <p class="text-xl font-bold text-white">${value}</p>
+      <p class="text-slate-500 text-xs mt-0.5">${label}</p>
+    </button>`;
+  };
+  s.innerHTML =
+    chip('all', 'Total SKUs', rows.length, 'from-blue-500/10 border-blue-500/20') +
+    chip('ok', 'Filled (half)', count('ok'), 'from-emerald-500/10 border-emerald-500/20') +
+    chip('below_gap', 'Below Gap → 0', count('below_gap'), 'from-amber-500/10 border-amber-500/20') +
+    chip('missing', 'Missing → 0', count('missing'), 'from-red-500/10 border-red-500/20') +
+    chip('duplicate', 'Duplicates', count('duplicate'), 'from-slate-500/10 border-slate-500/20') +
+    chip('edited', 'Edited', count('edited'), 'from-purple-500/10 border-purple-500/20');
+}
 
+function renderGenTable() {
+  const all = genResult.rows.map((r, i) => ({ ...r, _idx: i }));
+  let f = all.filter(r => genMatchesStatus(r, genView.status));
+  const q = genView.q.toLowerCase();
+  if (q) f = f.filter(r =>
+    String(r.sellerSkuCode).toLowerCase().includes(q) ||
+    String(r.productName).toLowerCase().includes(q) ||
+    String(r.colourName).toLowerCase().includes(q) ||
+    String(r.kuntalCode).toLowerCase().includes(q));
+  f = applySort(f, genView, (r, k) =>
+    (k === 'stockQty' || k === 'quantity') ? (r[k] ?? -1) : String(r[k] ?? ''));
+
+  document.getElementById('inv-count').textContent = `${f.length} of ${all.length} SKUs`;
+
+  if (!f.length) {
+    document.getElementById('inv-table').innerHTML =
+      `<p class="text-slate-500 text-sm text-center py-6">No SKUs match the current filters.</p>`;
+    return;
+  }
   document.getElementById('inv-table').innerHTML = `
     <table class="w-full text-sm">
-      <thead><tr class="text-slate-500 text-xs uppercase tracking-wide border-b border-white/5">
-        <th class="text-left px-4 py-2.5">sellerSkuCode</th>
-        <th class="text-left px-4 py-2.5">Item No.</th>
-        <th class="text-left px-4 py-2.5">Product</th>
-        <th class="text-left px-4 py-2.5">Colour</th>
-        <th class="text-right px-4 py-2.5">Today's Stock</th>
-        <th class="text-right px-4 py-2.5">Output Qty</th>
-        <th class="text-left px-4 py-2.5">Status</th>
+      <thead class="sticky top-0 z-10 bg-slate-900"><tr class="text-slate-500 text-xs uppercase tracking-wide border-b border-white/5">
+        ${thSort(genView,'sellerSkuCode','sellerSkuCode')}
+        ${thSort(genView,'kuntalCode','Item No.')}
+        ${thSort(genView,'productName','Product')}
+        ${thSort(genView,'colourName','Colour')}
+        ${thSort(genView,'stockQty',"Today's Stock", true)}
+        ${thSort(genView,'quantity','Output Qty', true)}
+        ${thSort(genView,'status','Status')}
       </tr></thead>
-      <tbody>${rows.map(r => {
+      <tbody>${f.map(r => {
         const chip = STATUS_CHIPS[r.status] || STATUS_CHIPS.invalid_sku;
+        const isDup = r.status === 'duplicate';
         return `<tr class="border-b border-white/5 hover:bg-white/[0.02]">
-          <td class="px-4 py-2.5 text-slate-200 font-medium whitespace-nowrap">${esc(r.sellerSkuCode)}</td>
-          <td class="px-4 py-2.5 text-slate-400">${esc(r.kuntalCode) || '—'}</td>
-          <td class="px-4 py-2.5 text-slate-400 max-w-[220px] truncate">${esc(r.productName) || '—'}</td>
-          <td class="px-4 py-2.5 text-slate-300">${esc(r.colourName) || '—'}</td>
-          <td class="px-4 py-2.5 text-right text-slate-300">${r.stockQty ?? '—'}</td>
-          <td class="px-4 py-2.5 text-right font-bold ${r.quantity > 0 ? 'text-emerald-400' : 'text-slate-500'}">${r.quantity}</td>
-          <td class="px-4 py-2.5"><span class="${chip.cls} text-xs">${chip.label}</span></td>
+          <td class="px-4 py-2 text-slate-200 font-medium whitespace-nowrap">${esc(r.sellerSkuCode)}</td>
+          <td class="px-4 py-2 text-slate-400">${esc(r.kuntalCode) || '—'}</td>
+          <td class="px-4 py-2 text-slate-400 max-w-[220px] truncate">${esc(r.productName) || '—'}</td>
+          <td class="px-4 py-2 text-slate-300">${esc(r.colourName) || '—'}</td>
+          <td class="px-4 py-2 text-right text-slate-300">${r.stockQty ?? '—'}</td>
+          <td class="px-4 py-2 text-right">
+            <input type="number" min="0" value="${r.quantity}" data-idx="${r._idx}" ${isDup ? 'disabled' : ''}
+              class="w-20 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-right text-sm font-bold focus:outline-none focus:border-emerald-500/40 ${isDup ? 'opacity-40 cursor-not-allowed' : ''} ${r.edited ? 'ring-2 ring-amber-400/60 text-amber-300' : (r.quantity > 0 ? 'text-emerald-400' : 'text-slate-500')}">
+          </td>
+          <td class="px-4 py-2"><span class="${chip.cls} text-xs">${chip.label}${r.edited ? ' · edited' : ''}</span></td>
         </tr>`;
       }).join('')}
       </tbody>
     </table>`;
-
-  document.getElementById('dl-csv').classList.remove('hidden');
-  document.getElementById('dl-xlsx').classList.remove('hidden');
 }
+
+// Generator controls
+document.getElementById('inv-search').addEventListener('input', debounce(e => { genView.q = e.target.value.trim(); if (genResult) renderGenTable(); }));
+document.getElementById('inv-status-filter').addEventListener('change', e => { genView.status = e.target.value; if (genResult) { renderGenSummary(); renderGenTable(); } });
+document.getElementById('inv-summary').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-status]');
+  if (!btn || !genResult) return;
+  genView.status = btn.dataset.status;
+  document.getElementById('inv-status-filter').value = genView.status;
+  renderGenSummary();
+  renderGenTable();
+});
+const invTableEl = document.getElementById('inv-table');
+invTableEl.addEventListener('click', e => {
+  const th = e.target.closest('th[data-sort]');
+  if (th && genResult) { toggleSort(genView, th.dataset.sort); renderGenTable(); }
+});
+// Edit output quantity in place — updates the row model, downloads use it
+const refreshSummarySoon = debounce(() => { if (genResult) renderGenSummary(); }, 250);
+invTableEl.addEventListener('input', e => {
+  const inp = e.target.closest('input[data-idx]');
+  if (!inp || !genResult) return;
+  const row = genResult.rows[+inp.dataset.idx];
+  if (!row || row.status === 'duplicate') return;
+  row.quantity = Math.max(0, Math.floor(Number(inp.value) || 0));
+  if (!row.edited) {
+    row.edited = true;
+    inp.classList.add('ring-2', 'ring-amber-400/60', 'text-amber-300');
+    inp.classList.remove('text-emerald-400', 'text-slate-500');
+  }
+  refreshSummarySoon();
+});
 
 // ── Downloads (header preserved: sellerSkuCode,quantity) ─────
 const OUT_COLUMNS = [
@@ -328,16 +625,14 @@ const OUT_COLUMNS = [
   { key: 'quantity',      label: 'quantity' },
 ];
 const exportRows = () => genResult.rows.filter(r => r.status !== 'duplicate');
-const stamp = () => new Date().toISOString().slice(0,10);
 
 document.getElementById('dl-csv').addEventListener('click', () => {
-  if (!genResult) return;
-  const csv = toCSV(exportRows(), OUT_COLUMNS);
-  downloadFile(csv, `myntra_inventory_update_${stamp()}.csv`, 'text/csv;charset=utf-8;');
+  if (!genResult) { notify.warning('Generate the inventory update first'); return; }
+  downloadFile(toCSV(exportRows(), OUT_COLUMNS), `myntra_inventory_update_${stamp()}.csv`, 'text/csv;charset=utf-8;');
   notify.success(`Downloaded ${exportRows().length} SKUs (CSV)`);
 });
 document.getElementById('dl-xlsx').addEventListener('click', () => {
-  if (!genResult) return;
+  if (!genResult) { notify.warning('Generate the inventory update first'); return; }
   if (!window.XLSX) { notify.error('Excel library not loaded'); return; }
   const aoa = [OUT_COLUMNS.map(c => c.label), ...exportRows().map(r => [r.sellerSkuCode, r.quantity])];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
