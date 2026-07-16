@@ -30,6 +30,7 @@ function maybeHydrateSettings() {
     if (settings?.mediumStockThreshold) localStorage.setItem('zm_medium_threshold', settings.mediumStockThreshold);
     // != null (not truthiness): a Myntra gap of 0 is a valid saved value
     if (settings?.myntraGapThreshold != null) localStorage.setItem('zm_myntra_gap', settings.myntraGapThreshold);
+    if (settings?.myntraTakePercent != null) localStorage.setItem('zm_myntra_percent', settings.myntraTakePercent);
     if (Array.isArray(colours) && colours.length) localStorage.setItem('zm_custom_colours', JSON.stringify(colours));
   }).catch(() => {});
 }

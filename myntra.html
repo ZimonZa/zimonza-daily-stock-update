@@ -46,6 +46,13 @@
       </div>
 
       <div class="p-6 space-y-4">
+        <!-- Take % control (applies to both generation paths) -->
+        <div class="flex flex-wrap items-center gap-3 p-3 rounded-xl border border-white/10 bg-white/[0.03]">
+          <label for="take-percent" class="text-slate-400 text-xs font-semibold uppercase tracking-wide">Take %</label>
+          <input id="take-percent" type="number" min="1" max="100" class="zm-input w-24">
+          <span class="text-slate-500 text-xs">of each colour's stock goes to Myntra — 50 = half, 75 = 75% (stock 100 → 75)</span>
+        </div>
+
         <!-- Action row: upload OR generate from mapping -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -161,7 +168,7 @@ import { renderShell } from './js/ui-components.js';
 import notify from './js/notifications.js';
 import { readExcelFile } from './js/excel-parser.js';
 import { saveMyntraMappings, getAllMyntraMappings } from './js/firestore-service.js';
-import { debounce, toCSV, downloadFile, formatDateDisplay, getMyntraGapThreshold, normColorKey } from './js/utils.js';
+import { debounce, toCSV, downloadFile, formatDateDisplay, getMyntraGapThreshold, getMyntraTakePercent, normColorKey } from './js/utils.js';
 import {
   validateMyntraMappingFile, parseMyntraMappingFile, parseInventoryFile,
   loadMyntraStockContext, resolveStock, findColourQty, generateInventoryUpdate
@@ -174,6 +181,7 @@ if (window.lucide) lucide.createIcons();
 let ctx = null;          // { latestDate, stockMap, zmToKuntal }
 let mappings = [];       // stored Myntra mappings
 let genResult = null;    // { rows, summary } from last generation
+let lastSkus = null;     // SKU list of the last generation (for % re-runs)
 
 // View state (filters + sort) per tab
 const genView = { q: '', status: 'all', sortKey: null, sortDir: 1 };
@@ -218,8 +226,9 @@ const thSort = (view, key, label, right = false) =>
 
 function gapNote() {
   const gap = getMyntraGapThreshold();
+  const percent = getMyntraTakePercent();
   document.getElementById('gap-rule-note').textContent =
-    `Rule: colour stock more than ${gap} → half (rounded down), otherwise 0. Change the gap in Settings.`;
+    `Rule: colour stock more than ${gap} → take ${percent}% (rounded down), otherwise 0. Gap is in Settings.`;
 }
 
 async function load() {
@@ -467,11 +476,27 @@ function resetGenView() {
 }
 
 function runGeneration(skus, sourceLabel) {
-  genResult = generateInventoryUpdate(skus, ctx, getMyntraGapThreshold());
+  lastSkus = skus;
+  genResult = generateInventoryUpdate(skus, ctx, getMyntraGapThreshold(), getMyntraTakePercent());
   resetGenView();
   renderGenResult();
   notify.success(`${sourceLabel}: ${genResult.summary.filled} SKUs filled, ${genResult.summary.total - genResult.summary.filled - genResult.summary.duplicates} set to 0`);
 }
+
+// ── Take % control ────────────────────────────────────────────
+const takePercentEl = document.getElementById('take-percent');
+takePercentEl.value = getMyntraTakePercent();
+takePercentEl.addEventListener('change', () => {
+  const p = Math.min(100, Math.max(1, Math.floor(Number(takePercentEl.value) || 50)));
+  takePercentEl.value = p;
+  localStorage.setItem('zm_myntra_percent', p);
+  gapNote();
+  if (genResult && lastSkus) {
+    runGeneration(lastSkus, `Recalculated with ${p}% (manual edits reset)`);
+  } else {
+    notify.info(`Take % set to ${p}% — used for the next generation.`);
+  }
+});
 
 async function handleInventoryFile(file) {
   invDrop.innerHTML = `<div class="flex flex-col items-center gap-2 py-2"><div class="spinner"></div><p class="text-slate-400 text-xs">Processing ${esc(file.name)}…</p></div>`;

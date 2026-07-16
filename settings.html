@@ -32,7 +32,7 @@
       </div>
     </div>
 
-    <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
       <div>
         <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Low Stock (max pcs)</label>
         <input type="number" id="low-threshold" min="1" max="10" value="2" class="zm-input">
@@ -51,7 +51,12 @@
       <div>
         <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Myntra Gap (pcs)</label>
         <input type="number" id="myntra-gap" min="0" value="8" class="zm-input">
-        <p class="text-slate-600 text-xs mt-1">Colour stock must be MORE than this to send half to Myntra</p>
+        <p class="text-slate-600 text-xs mt-1">Colour stock must be MORE than this to send stock to Myntra</p>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Myntra Take %</label>
+        <input type="number" id="myntra-percent" min="1" max="100" value="50" class="zm-input">
+        <p class="text-slate-600 text-xs mt-1">How much of each colour's stock to send — 50 = half, 75 = 75%</p>
       </div>
     </div>
 
@@ -370,19 +375,25 @@ try { settings = await getSettings(); } catch { /* use defaults */ }
 const savedLow    = Number(localStorage.getItem('zm_low_threshold'))    || settings.lowStockThreshold    || 2;
 const savedMedium = Number(localStorage.getItem('zm_medium_threshold')) || settings.mediumStockThreshold || 5;
 // Gap of 0 is valid, so check for presence instead of truthiness
-const rawGap   = localStorage.getItem('zm_myntra_gap');
-const savedGap = rawGap !== null && rawGap !== '' ? Number(rawGap)
-               : (settings.myntraGapThreshold != null ? settings.myntraGapThreshold : 8);
+function readNumSetting(lsKey, fsValue, def) {
+  const raw = localStorage.getItem(lsKey);
+  if (raw !== null && raw !== '') return Number(raw);
+  return fsValue != null ? fsValue : def;
+}
+const savedGap = readNumSetting('zm_myntra_gap', settings.myntraGapThreshold, 8);
+const savedPct = readNumSetting('zm_myntra_percent', settings.myntraTakePercent, 50);
 
 const lowEl    = document.getElementById('low-threshold');
 const mediumEl = document.getElementById('medium-threshold');
 const highEl   = document.getElementById('high-threshold');
 const gapEl    = document.getElementById('myntra-gap');
+const pctEl    = document.getElementById('myntra-percent');
 
 lowEl.value    = savedLow;
 mediumEl.value = savedMedium;
 highEl.value   = savedMedium + 1;
 gapEl.value    = savedGap;
+pctEl.value    = savedPct;
 
 // ── Live threshold preview ───────────────────────────────────
 function renderThresholdPreview() {
@@ -473,6 +484,7 @@ document.getElementById('save-settings-btn').addEventListener('click', async () 
   const low    = Math.max(1, +lowEl.value);
   const medium = +mediumEl.value;
   const gap    = Math.max(0, Math.floor(+gapEl.value) || 0);
+  const pct    = Math.min(100, Math.max(1, Math.floor(+pctEl.value) || 50));
 
   if (low >= medium) {
     notify.error('Medium threshold must be higher than Low threshold.');
@@ -484,11 +496,12 @@ document.getElementById('save-settings-btn').addEventListener('click', async () 
 
   try {
     const theme = storage.get('theme', 'dark');
-    await saveSettings({ lowStockThreshold: low, mediumStockThreshold: medium, myntraGapThreshold: gap, notificationsEnabled: notifEnabled, theme });
+    await saveSettings({ lowStockThreshold: low, mediumStockThreshold: medium, myntraGapThreshold: gap, myntraTakePercent: pct, notificationsEnabled: notifEnabled, theme });
     // Write to localStorage so getStockLevel() picks them up immediately across all pages
     localStorage.setItem('zm_low_threshold',    low);
     localStorage.setItem('zm_medium_threshold', medium);
     localStorage.setItem('zm_myntra_gap',       gap);
+    localStorage.setItem('zm_myntra_percent',   pct);
     notify.success('Settings saved successfully!');
     renderThresholdPreview();
   } catch(e) {

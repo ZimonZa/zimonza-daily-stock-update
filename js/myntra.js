@@ -183,11 +183,12 @@ export function findColourQty(stockItem, colourName) {
 
 /**
  * Generate the Myntra inventory update for a list of SellerSkuCodes.
- * Rule: colour stock strictly greater than `gap` → floor(stock/2), else 0.
+ * Rule: colour stock strictly greater than `gap` → floor(stock × percent/100)
+ * (percent 50 = half, 75 = three quarters), else 0.
  * Duplicates are flagged and excluded from export (first occurrence wins).
  * Returns { rows, summary }.
  */
-export function generateInventoryUpdate(skus, ctx, gap) {
+export function generateInventoryUpdate(skus, ctx, gap, percent = 50) {
   const seen = new Set();
   const rows = [];
 
@@ -225,7 +226,7 @@ export function generateInventoryUpdate(skus, ctx, gap) {
     base.stockQty = qty;
 
     if (qty > gap) {
-      rows.push({ ...base, quantity: Math.floor(qty / 2), status: 'ok' });
+      rows.push({ ...base, quantity: Math.floor(qty * percent / 100), status: 'ok' });
     } else {
       rows.push({ ...base, status: 'below_gap' });
     }

@@ -144,6 +144,18 @@ export function getMyntraGapThreshold() {
 }
 
 /**
+ * Myntra take-percentage — how much of a colour's stock to send to Myntra
+ * (50 = half, 75 = three quarters). Default 50, clamped to 1–100.
+ */
+export function getMyntraTakePercent() {
+  const raw = localStorage.getItem('zm_myntra_percent');
+  if (raw === null || raw === '') return 50;
+  const v = Number(raw);
+  if (!Number.isFinite(v)) return 50;
+  return Math.min(100, Math.max(1, Math.floor(v)));
+}
+
+/**
  * Get stock level badge classes
  */
 export function getStockBadgeClass(level) {
