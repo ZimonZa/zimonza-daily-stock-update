@@ -402,6 +402,227 @@ function drawClosing(d, bill, s, yStart) {
   d.text('Authorised Signatory', sx, yStart + 22, { align: 'right' });
 }
 
+// ═══════════════════ Stock pick slip (A5) ═══════════════════
+// Goods coming back OUT of Returns / RTO to fill a label. This is an
+// internal stock movement, not a purchase — deliberately no rate, no GST,
+// no money anywhere on the page.
+
+const SLIP_W = 148, SLIP_H = 210;   // A5 portrait, mm
+const SM = 10;                       // slip margin
+const SLIP_CONTENT_W = SLIP_W - SM * 2;
+
+const SLIP_COLS = [
+  { key: 'srNo',          label: 'Sr',        x: 10,  w: 9,  align: 'left'  },
+  { key: 'kuntalCode',    label: 'Kuntal',    x: 19,  w: 20, align: 'left'  },
+  { key: 'colourName',    label: 'Colour',    x: 39,  w: 28, align: 'left'  },
+  { key: 'sellerSkuCode', label: 'SellerSku', x: 67,  w: 40, align: 'left'  },
+  { key: 'src',           label: 'Src',       x: 107, w: 16, align: 'left'  },
+  { key: 'qty',           label: 'Qty',       x: 123, w: 15, align: 'right' }
+];
+
+const srcLabel = (type) => (type === 'rto' ? 'RTO' : 'RET');
+
+/**
+ * Render a pick slip to PDF and download it.
+ * @param {object} slip     { slipNo, date, sourceFile, lines[], totalPcs }
+ * @param {object} settings purchase settings (for the brand name only)
+ */
+export function exportPickSlipPDF(slip, settings) {
+  if (!window.jspdf) throw new Error('jsPDF not loaded');
+  const { jsPDF } = window.jspdf;
+  const d = new jsPDF({ unit: 'mm', format: 'a5' });
+  const s = settings || {};
+
+  // Header
+  setFill(d, BRAND);
+  d.rect(0, 0, SLIP_W, 3.5, 'F');
+
+  setText(d, INK);
+  d.setFont('helvetica', 'bold');
+  d.setFontSize(13);
+  d.text(fit(d, s.buyerBrand || s.buyerName || 'Stock', SLIP_CONTENT_W).toUpperCase(), SM, 13);
+
+  d.setFontSize(10);
+  setText(d, BRAND_DARK);
+  d.text('STOCK PICK SLIP', SM, 19.5);
+  d.setFont('helvetica', 'normal');
+  d.setFontSize(7);
+  setText(d, MUTED);
+  d.text('from Customer Returns / RTO — internal stock movement', SM, 24);
+
+  setDraw(d, RULE);
+  d.setLineWidth(0.3);
+  d.line(SM, 27, SLIP_W - SM, 27);
+
+  // Meta strip
+  let y = 31;
+  setFill(d, ZEBRA);
+  setDraw(d, RULE);
+  d.roundedRect(SM, y, SLIP_CONTENT_W, 12, 1.5, 1.5, 'FD');
+  d.setFontSize(7);
+  const meta = [
+    ['Slip No', slip.slipNo],
+    ['Date', formatDateDisplay(slip.date) || slip.date],
+    ['Total Pcs', String(slip.totalPcs)]
+  ];
+  let mx = SM + 3;
+  for (const [label, value] of meta) {
+    d.setFont('helvetica', 'normal');
+    setText(d, FAINT);
+    d.text(`${label}:`, mx, y + 5);
+    mx += d.getTextWidth(`${label}:`) + 1.2;
+    d.setFont('helvetica', 'bold');
+    setText(d, INK);
+    d.text(String(value ?? '—'), mx, y + 5);
+    mx += d.getTextWidth(String(value ?? '—')) + 5;
+  }
+  if (slip.sourceFile) {
+    d.setFont('helvetica', 'normal');
+    d.setFontSize(6.5);
+    setText(d, FAINT);
+    d.text(fit(d, `Label file: ${slip.sourceFile}`, SLIP_CONTENT_W - 6), SM + 3, y + 9.5);
+  }
+  y += 18;
+
+  // Table head
+  const drawSlipHead = (yy) => {
+    setFill(d, INK);
+    d.rect(SM, yy - 4.5, SLIP_CONTENT_W, 7, 'F');
+    d.setFont('helvetica', 'bold');
+    d.setFontSize(6.8);
+    setText(d, [255, 255, 255]);
+    for (const col of SLIP_COLS) cellText(d, col.label, col, yy);
+    return yy + 6.5;
+  };
+  y = drawSlipHead(y);
+
+  d.setFont('helvetica', 'normal');
+  d.setFontSize(7);
+  slip.lines.forEach((line, i) => {
+    if (y > SLIP_H - 52) {
+      d.addPage();
+      setFill(d, BRAND);
+      d.rect(0, 0, SLIP_W, 3.5, 'F');
+      y = drawSlipHead(14);
+      d.setFont('helvetica', 'normal');
+      d.setFontSize(7);
+    }
+    if (i % 2 === 0) {
+      setFill(d, ZEBRA);
+      d.rect(SM, y - 3.6, SLIP_CONTENT_W, 5.8, 'F');
+    }
+    setText(d, INK);
+    const values = {
+      srNo: line.srNo,
+      kuntalCode: fit(d, line.kuntalCode || '—', SLIP_COLS[1].w - 3),
+      colourName: fit(d, line.colourName || '—', SLIP_COLS[2].w - 3),
+      sellerSkuCode: fit(d, line.sellerSkuCode || '—', SLIP_COLS[3].w - 3),
+      src: srcLabel(line.type),
+      qty: line.qty
+    };
+    for (const col of SLIP_COLS) cellText(d, values[col.key], col, y);
+    y += 5.8;
+  });
+
+  setDraw(d, RULE);
+  d.line(SM, y - 1.5, SLIP_W - SM, y - 1.5);
+  y += 3;
+
+  // Total pcs bar — the only total on the page
+  setFill(d, INK);
+  d.roundedRect(SLIP_W - SM - 52, y, 52, 9, 1.5, 1.5, 'F');
+  d.setFont('helvetica', 'bold');
+  d.setFontSize(7);
+  setText(d, [255, 255, 255]);
+  d.text('TOTAL PCS', SLIP_W - SM - 49, y + 5.8);
+  d.setFontSize(10);
+  d.text(String(slip.totalPcs), SLIP_W - SM - 3, y + 6, { align: 'right' });
+  y += 15;
+
+  d.setFont('helvetica', 'italic');
+  d.setFontSize(6.3);
+  setText(d, FAINT);
+  for (const line of wrap(d, 'This slip records stock taken from the returns register to fill a label. It is not a purchase — no payment is due against it.', SLIP_CONTENT_W)) {
+    d.text(line, SM, y);
+    y += 3;
+  }
+
+  // Signatures
+  const sy = Math.max(y + 12, SLIP_H - 26);
+  setDraw(d, RULE);
+  d.line(SM, sy, SM + 42, sy);
+  d.line(SLIP_W - SM - 42, sy, SLIP_W - SM, sy);
+  d.setFont('helvetica', 'normal');
+  d.setFontSize(6.3);
+  setText(d, MUTED);
+  d.text('Picked by', SM, sy + 3.5);
+  d.text('Checked by', SLIP_W - SM, sy + 3.5, { align: 'right' });
+
+  // Footer
+  const pageCount = d.internal.getNumberOfPages();
+  for (let p = 1; p <= pageCount; p++) {
+    d.setPage(p);
+    d.setFont('helvetica', 'normal');
+    d.setFontSize(6);
+    setText(d, FAINT);
+    d.text(`${slip.slipNo} · Page ${p} of ${pageCount}`, SM, SLIP_H - 7);
+  }
+
+  d.save(`${String(slip.slipNo).replace(/[\/\\\s]+/g, '_')}_${slip.date}.pdf`);
+}
+
+/** HTML mirror of the pick slip, for the preview modal. */
+export function renderSlipPreviewHTML(slip, settings) {
+  const s = settings || {};
+  return `
+  <div class="bill-sheet" style="max-width:560px">
+    <div class="bill-accent"></div>
+    <div class="bill-head">
+      <div>
+        <h2 class="bill-seller" style="font-size:17px">${esc(s.buyerBrand || s.buyerName || 'Stock')}</h2>
+        <p class="bill-sub">from Customer Returns / RTO — internal stock movement</p>
+      </div>
+      <span class="bill-title-pill">Stock Pick Slip</span>
+    </div>
+
+    <div class="bill-meta">
+      <span><b>Slip No:</b> ${esc(slip.slipNo)}</span>
+      <span><b>Date:</b> ${esc(formatDateDisplay(slip.date) || slip.date)}</span>
+      <span><b>Total Pcs:</b> ${slip.totalPcs}</span>
+      ${slip.sourceFile ? `<span><b>Label:</b> ${esc(slip.sourceFile)}</span>` : ''}
+    </div>
+
+    <table class="bill-table">
+      <thead><tr>
+        <th>Sr</th><th>Kuntal</th><th>Colour</th><th>SellerSku</th><th>Src</th><th class="r">Qty</th>
+      </tr></thead>
+      <tbody>${slip.lines.map(l => `<tr>
+        <td>${l.srNo}</td>
+        <td>${esc(l.kuntalCode) || '—'}</td>
+        <td>${esc(l.colourName) || '—'}</td>
+        <td>${esc(l.sellerSkuCode) || '—'}</td>
+        <td>${srcLabel(l.type)}</td>
+        <td class="r">${l.qty}</td>
+      </tr>`).join('')}</tbody>
+    </table>
+
+    <div class="bill-bottom">
+      <div class="bill-ratesum">
+        <p class="bill-terms" style="max-width:100%">This slip records stock taken from the returns register to fill a label.
+        It is not a purchase — no payment is due against it.</p>
+      </div>
+      <div class="bill-totals" style="flex:0 0 190px">
+        <div class="bill-grand" style="margin-top:0"><span>TOTAL PCS</span><span>${slip.totalPcs}</span></div>
+      </div>
+    </div>
+
+    <div class="bill-close">
+      <div class="bill-sign" style="text-align:left"><div class="bill-sign-line" style="margin-top:26px"></div><p class="bill-sub">Picked by</p></div>
+      <div class="bill-sign"><div class="bill-sign-line" style="margin-top:26px"></div><p class="bill-sub">Checked by</p></div>
+    </div>
+  </div>`;
+}
+
 // ─── On-screen preview (mirrors the PDF) ─────────────────────────
 
 const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

@@ -187,9 +187,12 @@ export function initPurchaseTab(state) {
     return state.mappings.map(m => {
       const zm = normZmCode(m.zmCode);
       const p = priceIdx.get(zm);
-      let stockQty = null, productName = '';
+      let stockQty = null, productName = '', mappedKuntal = '';
       if (state.ctx) {
-        const { stock } = resolveStock(zm, state.ctx);
+        // Same call also yields the Kuntal code, so unpriced styles are still
+        // findable by the code the user actually types.
+        const { stock, kuntalCode } = resolveStock(zm, state.ctx);
+        mappedKuntal = kuntalCode || '';
         if (stock) {
           productName = stock.name || '';
           stockQty = findColourQty(stock, m.colourName);
@@ -199,7 +202,7 @@ export function initPurchaseTab(state) {
         sellerSkuCode: m.sellerSkuCode,
         zmCode: zm,
         colourName: m.colourName,
-        kuntalCode: p?.kuntalCode || '',
+        kuntalCode: p?.kuntalCode || mappedKuntal || '',
         category: p?.category || '',
         rate: p?.kuntalSellingPrice ?? null,
         productName,

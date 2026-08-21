@@ -12,6 +12,7 @@ import {
   addMyntraReturns, getAllMyntraReturns, updateMyntraReturn, deleteMyntraReturn
 } from './firestore-service.js';
 import { pricingIndex } from './myntra-pricing.js';
+import { skuKey, keyFromSellerSku } from './myntra-labels.js';
 import {
   normZmCode, normItemNo, debounce, toCSV, downloadFile, formatDateDisplay, today
 } from './utils.js';
@@ -110,6 +111,77 @@ export function parseReturnsFile(rows) {
   return { rows: out, skippedBlank };
 }
 
+// ═══════════════════ Returned stock as pickable stock ═══════════════════
+// Returns and RTO are stock we already own. A label can be fulfilled from
+// them before anything is bought. They are still NEVER counted into the
+// Myntra inventory update — that isolation is unchanged.
+
+/**
+ * Can a label pull from this row?
+ * Both Customer Return and RTO qualify. Damaged and missing pieces are held
+ * back — they cannot be shipped to a customer again.
+ */
+export const isPullable = (r) =>
+  r.condition !== 'damaged' &&
+  r.condition !== 'missing' &&
+  (Number(r.qty) || 0) > 0;
+
+/**
+ * Index the pullable rows by SKU identity.
+ * Rows come out oldest-first so allocation is FIFO — the piece that has been
+ * sitting longest goes out first.
+ * @returns {Map<string, { total:number, rows:Array }>}
+ */
+export function availableReturnStock(returns) {
+  const index = new Map();
+  for (const r of returns || []) {
+    if (!isPullable(r)) continue;
+    const key = keyFromSellerSku(r.sellerSkuCode) || skuKey(r.zmCode, r.colourName);
+    if (!key || key === '|') continue;
+    if (!index.has(key)) index.set(key, { total: 0, rows: [] });
+    const bucket = index.get(key);
+    bucket.total += Number(r.qty) || 0;
+    bucket.rows.push(r);
+  }
+  const orderKey = (r) => `${r.date || '9999-99-99'}`;
+  for (const bucket of index.values()) {
+    bucket.rows.sort((a, b) => orderKey(a).localeCompare(orderKey(b)));
+  }
+  return index;
+}
+
+/**
+ * Work out which rows would cover `need` for one SKU. PURE — writes nothing.
+ * Callers apply the result only after the user confirms.
+ * @returns {{ taken:number, shortfall:number, picks:Array }}
+ */
+export function allocateFromReturns(key, need, index) {
+  const want = Math.max(0, Math.floor(Number(need) || 0));
+  const bucket = index.get(key);
+  if (!bucket || want === 0) return { taken: 0, shortfall: want, picks: [] };
+
+  let left = want;
+  const picks = [];
+  for (const row of bucket.rows) {
+    if (left <= 0) break;
+    const have = Number(row.qty) || 0;
+    if (have <= 0) continue;
+    const take = Math.min(have, left);
+    picks.push({
+      id: row.id,
+      take,
+      remaining: have - take,
+      type: row.type,
+      date: row.date || '',
+      sellerSkuCode: row.sellerSkuCode,
+      colourName: row.colourName,
+      kuntalCode: row.kuntalCode || ''
+    });
+    left -= take;
+  }
+  return { taken: want - left, shortfall: left, picks };
+}
+
 // ═══════════════════ Returns tab UI ═══════════════════
 
 const RETURN_EXPORT_COLUMNS = [
@@ -159,7 +231,9 @@ export function initReturnsTab(state) {
     if (e.target.id === 'ret-add-modal') el('ret-add-modal').classList.add('hidden');
   });
   el('ret-add-save').addEventListener('click', saveManual);
-  el('ret-add-sku').addEventListener('input', autofillFromSku);
+  el('ret-add-sku').addEventListener('input', () => { manual.sku = true; autofillFromSku(); });
+  el('ret-add-kuntal').addEventListener('input', () => { manual.kuntal = true; autofillFromKuntal(); });
+  el('ret-add-colour').addEventListener('input', () => { manual.colour = true; });
 
   // Upload confirm / cancel
   el('ret-confirm-save').addEventListener('click', commitUpload);
@@ -299,7 +373,37 @@ export function initReturnsTab(state) {
 
   // ═══════════ Manual add ═══════════
 
+  // Which fields the user typed themselves. Auto-fill never overwrites those,
+  // so the SKU→Kuntal and Kuntal→SKU handlers can't fight each other.
+  const manual = { sku: false, colour: false, kuntal: false };
+  const setAuto = (id, value, field) => {
+    if (manual[field] && el(id).value.trim()) return;
+    el(id).value = value;
+  };
+
+  /**
+   * Kuntal Code → the SellerSkuCodes it covers.
+   * One Kuntal code is one ZM style but many colours, so this is one-to-many.
+   * Source is the pricing rows first, then the ZM mapping, so it works for
+   * styles that have never been priced.
+   */
+  function kuntalIndex() {
+    const priceIdx = pricingIndex(state.pricing);
+    const map = new Map();
+    for (const m of state.mappings) {
+      const zm = normZmCode(m.zmCode);
+      let kc = priceIdx.get(zm)?.kuntalCode || '';
+      if (!kc && state.ctx) kc = resolveStock(zm, state.ctx).kuntalCode || '';
+      kc = normItemNo(kc);
+      if (!kc) continue;
+      if (!map.has(kc)) map.set(kc, []);
+      map.get(kc).push(m);
+    }
+    return map;
+  }
+
   function openAddModal() {
+    for (const k of Object.keys(manual)) manual[k] = false;
     el('ret-add-sku').value = '';
     el('ret-add-colour').value = '';
     el('ret-add-kuntal').value = '';
@@ -309,8 +413,12 @@ export function initReturnsTab(state) {
     el('ret-add-condition').value = '';
     el('ret-add-order').value = '';
     el('ret-add-notes').value = '';
+    el('ret-kuntal-hint').textContent = '';
     el('ret-sku-list').innerHTML = state.mappings
       .map(m => `<option value="${esc(m.sellerSkuCode)}"></option>`).join('');
+    el('ret-kuntal-list').innerHTML = [...kuntalIndex().keys()]
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+      .map(k => `<option value="${esc(k)}"></option>`).join('');
     el('ret-add-modal').classList.remove('hidden');
   }
 
@@ -318,9 +426,37 @@ export function initReturnsTab(state) {
     const sku = el('ret-add-sku').value.trim();
     const parsed = parseSellerSku(sku);
     if (!parsed) return;
-    el('ret-add-colour').value = parsed.colourName;
+    setAuto('ret-add-colour', parsed.colourName, 'colour');
     const enriched = enrich({ zmCode: parsed.zmCode, kuntalCode: '' });
-    if (enriched.kuntalCode) el('ret-add-kuntal').value = enriched.kuntalCode;
+    if (enriched.kuntalCode) setAuto('ret-add-kuntal', enriched.kuntalCode, 'kuntal');
+  }
+
+  /** Kuntal Code typed → offer that code's SellerSkuCodes, fill if unambiguous. */
+  function autofillFromKuntal() {
+    const code = normItemNo(el('ret-add-kuntal').value);
+    const hint = el('ret-kuntal-hint');
+    if (!code) { hint.textContent = ''; return; }
+
+    const matches = kuntalIndex().get(code) || [];
+    if (!matches.length) {
+      hint.textContent = 'No SellerSkuCode found for this Kuntal Code';
+      hint.className = 'text-amber-400 text-[11px] mt-1';
+      return;
+    }
+
+    // Narrow the SKU datalist to just this Kuntal Code's colours
+    el('ret-sku-list').innerHTML = matches
+      .map(m => `<option value="${esc(m.sellerSkuCode)}">${esc(m.colourName)}</option>`).join('');
+
+    if (matches.length === 1) {
+      setAuto('ret-add-sku', matches[0].sellerSkuCode, 'sku');
+      setAuto('ret-add-colour', matches[0].colourName, 'colour');
+      hint.textContent = `→ ${matches[0].sellerSkuCode}`;
+      hint.className = 'text-emerald-400 text-[11px] mt-1';
+    } else {
+      hint.textContent = `${matches.length} colours — pick one in the SellerSkuCode box: ${matches.slice(0, 4).map(m => m.colourName).join(', ')}${matches.length > 4 ? '…' : ''}`;
+      hint.className = 'text-slate-400 text-[11px] mt-1';
+    }
   }
 
   async function saveManual() {

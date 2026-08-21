@@ -57,6 +57,7 @@ export const COLLECTIONS = {
   MYNTRA_SKU_STATUS: 'myntra_sku_status',
   MYNTRA_RETURNS: 'myntra_returns',
   PURCHASE_BILLS: 'purchase_bills',
+  PICK_SLIPS: 'stock_pick_slips',
   WEBSITE_STATUS: 'website_upload_status',
   SKIP_PRODUCTS: 'skip_products',
   HISTORY: 'history',

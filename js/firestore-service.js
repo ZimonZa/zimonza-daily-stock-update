@@ -266,6 +266,62 @@ export async function nextBillNumber(docTypeId) {
   return { seq, financialYear: fy, billNo: `${type.prefix}/${fy}/${String(seq).padStart(4, '0')}` };
 }
 
+// ─── Stock Pick Slips (goods taken back out of Returns / RTO) ───
+// The return rows are decremented in place, so the slip IS the record of
+// what was consumed and when. Keep it accurate.
+
+export async function savePickSlip(slip) {
+  const id = billId(slip.slipNo);
+  await setDoc(doc(db, COLLECTIONS.PICK_SLIPS, id), { ...slip, id, savedAt: serverTimestamp() });
+  return id;
+}
+
+/** All pick slips, newest slip date first */
+export async function getAllPickSlips() {
+  const snap = await getDocs(collection(db, COLLECTIONS.PICK_SLIPS));
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => String(b.date ?? '').localeCompare(String(a.date ?? '')));
+}
+
+export async function deletePickSlip(id) {
+  await deleteDoc(doc(db, COLLECTIONS.PICK_SLIPS, id));
+}
+
+/**
+ * Reserve the next pick-slip number, e.g. "PS/26-27/0007".
+ * Shares the counters doc (and the transaction pattern) with nextBillNumber.
+ */
+export async function nextSlipNumber() {
+  const fy = financialYearLabel(new Date());
+  const key = `pick_slip_${fy}`;
+  const ref = doc(db, COLLECTIONS.SETTINGS, 'purchase_counters');
+
+  const seq = await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const data = snap.exists() ? snap.data() : {};
+    const next = (Number(data[key]) || 0) + 1;
+    tx.set(ref, { [key]: next, updatedAt: serverTimestamp() }, { merge: true });
+    return next;
+  });
+
+  return { seq, financialYear: fy, slipNo: `PS/${fy}/${String(seq).padStart(4, '0')}` };
+}
+
+/**
+ * Apply the stock consumed by a pick slip to the return rows.
+ * Partially used rows are decremented; rows that reach zero are deleted.
+ * @param {Array<{id:string, remaining:number}>} updates
+ */
+export async function applyReturnConsumption(updates) {
+  const operations = updates.map(u => (batch) => {
+    const ref = doc(db, COLLECTIONS.MYNTRA_RETURNS, u.id);
+    if (u.remaining > 0) batch.update(ref, { qty: u.remaining, updatedAt: serverTimestamp() });
+    else batch.delete(ref);
+  });
+  await runChunkedBatch(operations);
+}
+
 /** Indian financial year label for a date: 2026-08-21 → "26-27" (Apr–Mar) */
 export function financialYearLabel(date = new Date()) {
   const y = date.getFullYear();

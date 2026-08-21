@@ -96,7 +96,9 @@ Visit `http://localhost:8080`
 │   ├── myntra-pricing.js   ← Myntra Pricing.xlsx parser + Pricing tab
 │   ├── myntra-purchase.js  ← Purchase cart, GST maths, bill history
 │   ├── myntra-returns.js   ← Customer returns & RTO register
-│   ├── invoice-pdf.js      ← Premium GST bill PDF + on-screen preview
+│   ├── invoice-pdf.js      ← GST bill PDF, pick slip PDF + previews
+│   ├── myntra-labels.js    ← label.pdf reader (one page = one piece)
+│   ├── myntra-fulfilment.js← Label → RTO stock first, then purchase
 │   ├── skip-manager.js     ← Skip list management
 │   ├── history-manager.js  ← Calendar & history logic
 │   ├── report-generator.js ← PDF/Excel/CSV export
@@ -124,7 +126,26 @@ One page (`myntra.html`), five sections:
 | **Mapping** | Every SellerSkuCode with its colour, today's stock, live status toggle, and price columns. Bulk activate / deactivate. |
 | **Pricing** | Upload `Myntra Pricing.xlsx`. Flags mapped styles that have no price (those cannot be billed). |
 | **Purchase** | Cart → GST bill → PDF. Saved, auto-numbered, re-downloadable. |
-| **Returns & RTO** | Register of goods coming back. **Never counted into stock.** |
+| **Returns & RTO** | Register of goods coming back. **Never counted into stock**, but a label can be filled from it. |
+
+### Fulfil from label.pdf
+
+Drop the shipping labels into the Purchase tab and the app works out what to send.
+
+1. **Read** — every page is scanned for a SellerSkuCode. **One page = one piece**, so three pages carrying `ZM-11-Purple` means three pieces. Codes are matched against the saved mapping first (longest match wins), which is what lets colours containing spaces — `Parrot Green`, `Off White` — survive intact. A code not in the mapping is still picked up, but flagged.
+2. **Split** — Returns and RTO are checked first, oldest piece out first (FIFO). Rows marked **Damaged** or **Missing** are held back; they cannot be shipped again.
+3. **Review** — a table shows Need / From RTO / To Buy per SKU. `From RTO` is editable and capped at what actually exists, `To Buy` follows automatically. Rows can be unticked. Nothing is written yet.
+4. **Confirm** — produces **two separate documents**:
+   - a **Stock Pick Slip** (A5, no rate, no GST) for the pieces taken out of Returns / RTO, and
+   - a **purchase bill** for the shortfall, with full CGST/SGST as usual.
+
+   The returns rows are then decremented; a row that reaches zero is removed.
+
+Documents are written *before* stock is touched, so a mid-run failure leaves visible paperwork rather than stock that vanished with nothing to show for it. The register is re-read at confirm time, so a review left open while stock moved cannot over-draw.
+
+A scanned (image-only) label PDF has no text layer and is rejected with a message saying so.
+
+> Returns remain invisible to the Myntra inventory update. They are stock for **labels**, never stock for **listings** — running a fulfilment does not change the generated `sellerSkuCode,quantity` file at all.
 
 ### Myntra Pricing.xlsx
 
@@ -132,7 +153,7 @@ One page (`myntra.html`), five sections:
 |---------|-------------|----------|----------------------|------------|-----------------|------------|
 | ZM-01 | 4132 | lehnga | 8990 | | 13830.76923 | 13849 |
 
-Zero-padded codes (`ZM-01`) are normalised to match SellerSkuCodes (`ZM-1-Morpichh`).
+Zero-padded codes (`ZM-01`) are normalised to match SellerSkuCodes (`ZM-1-Morpichh`) — on labels and return rows too.
 A blank Myntra MRP stays blank — it is never coerced to 0.
 
 ### Purchase billing
@@ -145,7 +166,7 @@ A blank Myntra MRP stays blank — it is never coerced to 0.
 
 ### Returns & RTO
 
-Stored in their own `myntra_returns` collection. No stock or inventory-update code path reads it, so returned goods can never leak into stock counts. Rows arrive either from the Myntra returns report (columns auto-detected, reviewed before saving) or by hand.
+Stored in their own `myntra_returns` collection. No stock or inventory-update code path reads it, so returned goods can never leak into stock counts. Rows arrive either from the Myntra returns report (columns auto-detected, reviewed before saving) or by hand. In the Add Row form a **Kuntal Code** suggests the SellerSkuCodes it covers (one code, many colours) and a SellerSkuCode fills the Kuntal Code back — whichever you type first. The Purchase product search also matches on Kuntal Code, priced or not.
 
 ---
 

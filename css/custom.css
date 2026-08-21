@@ -647,3 +647,21 @@ body {
 
 /* Preview modal is wider than the standard 520px box */
 .modal-box-wide { max-width: 900px; }
+
+/* ─── Fulfil-from-label review ─────────────────────────── */
+.ful-flag {
+  display: inline-block; font-size: 10px; font-weight: 600;
+  padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+  margin-right: 3px;
+}
+.ful-flag-warn { background: rgba(245,158,11,0.15); color: #FBB339; border: 1px solid rgba(245,158,11,0.3); }
+.ful-flag-bad  { background: rgba(239,68,68,0.15);  color: #F87171; border: 1px solid rgba(239,68,68,0.3); }
+.ful-flag-info { background: rgba(100,116,139,0.15); color: #94A3B8; border: 1px solid rgba(100,116,139,0.3); }
+
+/* A row that cannot be billed until a rate is typed */
+.ful-row-bad { background: rgba(239,68,68,0.05); }
+
+.light-mode .ful-flag-warn { background: rgba(245,158,11,0.12); color: #B45309; }
+.light-mode .ful-flag-bad  { background: rgba(239,68,68,0.10);  color: #B91C1C; }
+.light-mode .ful-flag-info { background: rgba(100,116,139,0.10); color: #475569; }
+.light-mode .ful-row-bad   { background: rgba(239,68,68,0.06); }

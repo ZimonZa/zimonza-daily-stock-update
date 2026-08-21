@@ -262,6 +262,54 @@
       </div>
     </div>
 
+    <!-- Fulfil from label.pdf -->
+    <div class="glass-card overflow-hidden">
+      <div class="flex flex-wrap items-center gap-3 px-6 py-4 border-b border-white/5">
+        <div class="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center flex-shrink-0">
+          <i data-lucide="scan-line" class="w-5 h-5 text-amber-400"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <h3 class="text-white font-semibold text-sm">Fulfil from Label</h3>
+          <p class="text-slate-400 text-xs">Upload label.pdf — one page is one piece. Returns &amp; RTO are used first, only the shortfall is bought.</p>
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0">
+          <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Buy as</label>
+          <select id="ful-doctype" class="zm-input w-40 text-sm"></select>
+        </div>
+      </div>
+
+      <div class="p-6 space-y-4">
+        <div id="ful-idle">
+          <div id="ful-drop" class="drop-zone p-5 text-center cursor-pointer"
+            onclick="document.getElementById('ful-file').click()">
+            <i data-lucide="upload-cloud" class="w-7 h-7 text-slate-600 mx-auto mb-2"></i>
+            <p class="text-slate-400 text-sm font-medium">Drop <strong class="text-slate-400">label.pdf</strong> here or click</p>
+            <p class="text-slate-600 text-xs mt-1">Myntra label.pdf — one page per piece</p>
+          </div>
+        </div>
+        <input type="file" id="ful-file" accept=".pdf" class="hidden">
+
+        <!-- Review -->
+        <div id="ful-review" class="hidden space-y-3">
+          <div class="flex flex-wrap items-center gap-3">
+            <p id="ful-source" class="text-slate-300 text-xs font-medium"></p>
+            <button id="ful-cancel" class="text-slate-500 hover:text-slate-300 text-xs ml-auto">Discard this label</button>
+          </div>
+
+          <div id="ful-table" class="max-h-[45vh] overflow-auto rounded-xl border border-white/5"></div>
+
+          <div id="ful-summary" class="p-3 rounded-xl border border-white/10 bg-white/[0.03]"></div>
+
+          <div class="flex justify-end">
+            <button id="ful-confirm" class="btn-primary text-sm py-2.5 px-5">
+              <i data-lucide="check-circle" class="w-4 h-4 inline-block mr-1"></i>
+              <span id="ful-confirm-label">Confirm &amp; generate both</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="pur-grid">
       <!-- Picker -->
       <div class="pur-panel">
@@ -320,6 +368,21 @@
         <input id="pur-bills-search" type="text" placeholder="Search bill no, type, date…" class="zm-input w-56">
       </div>
       <div id="pur-bills" class="max-h-[45vh] overflow-auto"></div>
+    </div>
+
+    <!-- Pick slips -->
+    <div class="glass-card overflow-hidden">
+      <div class="flex flex-wrap items-center gap-3 px-6 py-4 border-b border-white/5">
+        <div class="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center flex-shrink-0">
+          <i data-lucide="clipboard-list" class="w-5 h-5 text-amber-400"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <h3 class="text-white font-semibold text-sm">Stock Pick Slips</h3>
+          <p id="ful-slips-count" class="text-slate-500 text-xs"></p>
+        </div>
+        <p class="text-slate-600 text-xs">Stock taken out of Returns / RTO — no money, no GST</p>
+      </div>
+      <div id="ful-slips" class="max-h-[45vh] overflow-auto"></div>
     </div>
   </div>
 
@@ -508,7 +571,9 @@
         </div>
         <div>
           <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Kuntal Code</label>
-          <input id="ret-add-kuntal" class="zm-input w-full mt-1">
+          <input id="ret-add-kuntal" list="ret-kuntal-list" class="zm-input w-full mt-1" autocomplete="off">
+          <datalist id="ret-kuntal-list"></datalist>
+          <p id="ret-kuntal-hint" class="text-slate-400 text-[11px] mt-1"></p>
         </div>
       </div>
       <div class="grid grid-cols-3 gap-2.5">
@@ -578,6 +643,7 @@ import {
 import { initPricingTab, pricingIndex } from './js/myntra-pricing.js';
 import { initPurchaseTab } from './js/myntra-purchase.js';
 import { initReturnsTab } from './js/myntra-returns.js';
+import { initFulfilmentPanel } from './js/myntra-fulfilment.js';
 
 await requireAuth();
 renderShell('myntra');
@@ -645,10 +711,11 @@ const state = {
   onPricingChange: () => { renderMappings(); purchaseTab?.render(); renderKpis(); },
   onBillsChange:   () => renderKpis(),
   onReturnsChange: () => renderKpis(),
-  onCartChange:    () => renderKpis()
+  onCartChange:    () => renderKpis(),
+  onFulfilmentDone: () => renderKpis()
 };
 
-let pricingTab = null, purchaseTab = null, returnsTab = null;
+let pricingTab = null, purchaseTab = null, returnsTab = null, fulfilPanel = null;
 
 // ── Active / deactive helpers ─────────────────────────────────
 const isActive = sku => state.skuStatus[sku]?.active !== false;
@@ -737,15 +804,18 @@ async function load() {
     populateColourFilter();
     renderMappings();
 
-    // Mount the three module-backed tabs
+    // Mount the module-backed tabs. Fulfilment goes last — it drives the
+    // other two (consumes returns stock, creates bills), so it needs them.
     pricingTab = initPricingTab(state);
     purchaseTab = initPurchaseTab(state);
     returnsTab = initReturnsTab(state);
+    fulfilPanel = initFulfilmentPanel(state, { returnsTab, purchaseTab });
 
     renderPartiesLine();
     pricingTab.render();
     purchaseTab.render();
-    await Promise.all([purchaseTab.refreshBills(), returnsTab.refresh()]);
+    fulfilPanel.render();
+    await Promise.all([purchaseTab.refreshBills(), returnsTab.refresh(), fulfilPanel.refreshSlips()]);
     renderKpis();
   } catch (e) {
     console.error(e);
