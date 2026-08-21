@@ -5,7 +5,7 @@
 
 import { getAllZMMappings, getStockData, getAllUploadDates } from './firestore-service.js';
 import { CATEGORIES } from './constants.js';
-import { normItemNo, normColorKey } from './utils.js';
+import { normItemNo, normColorKey, normZmCode } from './utils.js';
 
 // "ZM-75-Morpichh" → zmCode "ZM-75", colour "Morpichh" (colour may contain spaces)
 export const MYNTRA_SKU_RE = /^(ZM-\d+)-(.+)$/i;
@@ -16,16 +16,23 @@ export const MYNTRA_SKU_RE = /^(ZM-\d+)-(.+)$/i;
 export function parseSellerSku(sku) {
   const m = MYNTRA_SKU_RE.exec(String(sku ?? '').trim());
   if (!m) return null;
-  return { zmCode: m[1].toUpperCase(), colourName: m[2].trim() };
+  return { zmCode: normZmCode(m[1]), colourName: m[2].trim() };
 }
 
-const isBlankRow = (row) => !row || row.every(c => c === null || String(c).trim() === '');
+export const isBlankRow = (row) => !row || row.every(c => c === null || String(c).trim() === '');
+
+/**
+ * Statuses that never reach the inventory file Myntra consumes.
+ * Single source of truth — the page's downloads use this too.
+ */
+export const NON_EXPORT_STATUSES = new Set(['duplicate', 'inactive']);
+export const isExportable = (row) => !NON_EXPORT_STATUSES.has(row.status);
 
 /**
  * Locate the header row (first 10 rows) by a cell matching the given regex.
  * Returns { rowIdx, colIdx } or null.
  */
-function findHeaderCell(rows, regex) {
+export function findHeaderCell(rows, regex) {
   for (let i = 0; i < Math.min(rows.length, 10); i++) {
     const row = rows[i];
     if (!row) continue;
@@ -144,10 +151,11 @@ export async function loadMyntraStockContext() {
     ...sareeStock.map(i => [norm(i.sku), i])
   ]);
 
-  // A ZM code can map to several Kuntal codes (e.g. stitched + unstitched)
+  // A ZM code can map to several Kuntal codes (e.g. stitched + unstitched).
+  // Keyed by normZmCode so zero-padded codes ("ZM-01") join plain ones ("ZM-1").
   const zmToKuntal = new Map();
   for (const m of zmMappings) {
-    const key = String(m.zmCode ?? '').trim().toUpperCase();
+    const key = normZmCode(m.zmCode);
     if (!key) continue;
     if (!zmToKuntal.has(key)) zmToKuntal.set(key, []);
     zmToKuntal.get(key).push(m.kuntalCode);
@@ -162,7 +170,7 @@ export async function loadMyntraStockContext() {
  * 'no_zm_mapping' | 'no_stock_item'.
  */
 export function resolveStock(zmCode, ctx) {
-  const kuntals = ctx.zmToKuntal.get(String(zmCode ?? '').trim().toUpperCase());
+  const kuntals = ctx.zmToKuntal.get(normZmCode(zmCode));
   if (!kuntals || !kuntals.length) return { stock: null, kuntalCode: null, reason: 'no_zm_mapping' };
   for (const k of kuntals) {
     const stock = ctx.stockMap.get(normItemNo(k).toUpperCase());
@@ -186,9 +194,13 @@ export function findColourQty(stockItem, colourName) {
  * Rule: colour stock strictly greater than `gap` → floor(stock × percent/100)
  * (percent 50 = half, 75 = three quarters), else 0.
  * Duplicates are flagged and excluded from export (first occurrence wins).
+ * SKUs listed in `opts.inactiveSkus` (a Set of lowercased SellerSkuCodes) are
+ * flagged 'inactive' and likewise excluded — a listing switched off on Myntra
+ * must not receive stock.
  * Returns { rows, summary }.
  */
-export function generateInventoryUpdate(skus, ctx, gap, percent = 50) {
+export function generateInventoryUpdate(skus, ctx, gap, percent = 50, opts = {}) {
+  const inactiveSkus = opts.inactiveSkus instanceof Set ? opts.inactiveSkus : new Set();
   const seen = new Set();
   const rows = [];
 
@@ -201,6 +213,13 @@ export function generateInventoryUpdate(skus, ctx, gap, percent = 50) {
       continue;
     }
     seen.add(sellerSkuCode.toLowerCase());
+
+    if (inactiveSkus.has(sellerSkuCode.toLowerCase())) {
+      const off = parseSellerSku(sellerSkuCode);
+      if (off) { base.zmCode = off.zmCode; base.colourName = off.colourName; }
+      rows.push({ ...base, status: 'inactive' });
+      continue;
+    }
 
     const parsed = parseSellerSku(sellerSkuCode);
     if (!parsed) {
@@ -238,8 +257,9 @@ export function generateInventoryUpdate(skus, ctx, gap, percent = 50) {
     filled: count('ok'),
     belowGap: count('below_gap'),
     duplicates: count('duplicate'),
+    inactive: count('inactive'),
     missing: count('invalid_sku') + count('no_zm_mapping') + count('no_stock_item') + count('colour_not_found'),
-    exported: rows.filter(r => r.status !== 'duplicate').length
+    exported: rows.filter(r => isExportable(r)).length
   };
 
   return { rows, summary };

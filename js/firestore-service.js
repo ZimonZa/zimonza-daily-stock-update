@@ -3,11 +3,12 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { db } from './firebase-config.js';
-import { COLLECTIONS } from './constants.js';
+import { COLLECTIONS, DEFAULT_PARTIES, GST_RATE_DEFAULTS, HSN_DEFAULTS, PURCHASE_DOC_TYPES } from './constants.js';
+import { normZmCode } from './utils.js';
 import {
-  doc, setDoc, getDoc, getDocs, deleteDoc,
+  doc, setDoc, getDoc, getDocs, deleteDoc, updateDoc,
   collection, query, orderBy, limit, serverTimestamp,
-  writeBatch
+  writeBatch, runTransaction
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 // ─── Batch Chunking Helper ───────────────────────────────────────
@@ -109,6 +110,186 @@ export async function saveMyntraMappings(mappings) {
 export async function getAllMyntraMappings() {
   const snap = await getDocs(collection(db, COLLECTIONS.MYNTRA_MAPPING));
   return snap.docs.map(d => d.data());
+}
+
+// ─── Myntra Pricing ─────────────────────────────────────────────
+
+/** Save Myntra pricing rows (chunked), keyed by normalised ZM code */
+export async function saveMyntraPricing(rows) {
+  const operations = rows.map(r => (batch) => {
+    const ref = doc(db, COLLECTIONS.MYNTRA_PRICING, normZmCode(r.zmCode));
+    batch.set(ref, {
+      zmCode: normZmCode(r.zmCode),
+      rawZmCode: r.rawZmCode ?? r.zmCode ?? '',
+      kuntalCode: r.kuntalCode ?? '',
+      category: r.category ?? '',
+      kuntalSellingPrice: r.kuntalSellingPrice ?? null,
+      myntraMrp: r.myntraMrp ?? null,
+      myntraMuPrice: r.myntraMuPrice ?? null,
+      myntraIsp: r.myntraIsp ?? null,
+      updatedAt: serverTimestamp()
+    });
+  });
+  await runChunkedBatch(operations);
+}
+
+/** Get all Myntra pricing rows */
+export async function getAllMyntraPricing() {
+  const snap = await getDocs(collection(db, COLLECTIONS.MYNTRA_PRICING));
+  return snap.docs.map(d => d.data());
+}
+
+/** Delete every pricing row (used by "Replace all" on re-upload) */
+export async function clearMyntraPricing() {
+  const snap = await getDocs(collection(db, COLLECTIONS.MYNTRA_PRICING));
+  if (!snap.docs.length) return 0;
+  await runChunkedBatch(snap.docs.map(d => (batch) => batch.delete(d.ref)));
+  return snap.docs.length;
+}
+
+// ─── Myntra SKU Status (active / deactive on Myntra) ────────────
+// A missing doc means ACTIVE. We only ever store explicit decisions, so a
+// fresh mapping upload doesn't need 400 status writes to mean "all live".
+
+const skuStatusId = (sku) => String(sku).replace(/\//g, '_');
+
+/** Set one SellerSkuCode active/inactive */
+export async function setMyntraSkuActive(sellerSkuCode, active) {
+  const ref = doc(db, COLLECTIONS.MYNTRA_SKU_STATUS, skuStatusId(sellerSkuCode));
+  await setDoc(ref, {
+    sellerSkuCode: String(sellerSkuCode),
+    active: !!active,
+    updatedAt: serverTimestamp()
+  }, { merge: true });
+}
+
+/** Set many SellerSkuCodes active/inactive at once (chunked) */
+export async function setMyntraSkuActiveBulk(sellerSkuCodes, active) {
+  const operations = sellerSkuCodes.map(sku => (batch) => {
+    const ref = doc(db, COLLECTIONS.MYNTRA_SKU_STATUS, skuStatusId(sku));
+    batch.set(ref, {
+      sellerSkuCode: String(sku),
+      active: !!active,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+  });
+  await runChunkedBatch(operations);
+}
+
+/** Map of sellerSkuCode → { active } for every SKU with an explicit decision */
+export async function getAllMyntraSkuStatus() {
+  const snap = await getDocs(collection(db, COLLECTIONS.MYNTRA_SKU_STATUS));
+  const map = {};
+  snap.docs.forEach(d => {
+    const data = d.data();
+    if (data?.sellerSkuCode) map[data.sellerSkuCode] = data;
+  });
+  return map;
+}
+
+// ─── Myntra Returns & RTO ───────────────────────────────────────
+// Deliberately its own collection: nothing in the stock or inventory-update
+// pipeline reads it, so returned goods can never leak into stock counts.
+
+/** Add return/RTO rows (auto-id docs, chunked) */
+export async function addMyntraReturns(rows) {
+  const col = collection(db, COLLECTIONS.MYNTRA_RETURNS);
+  const operations = rows.map(r => (batch) => {
+    batch.set(doc(col), { ...r, createdAt: serverTimestamp() });
+  });
+  await runChunkedBatch(operations);
+}
+
+/** Get all return/RTO rows */
+export async function getAllMyntraReturns() {
+  const snap = await getDocs(collection(db, COLLECTIONS.MYNTRA_RETURNS));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+/** Patch a single return/RTO row */
+export async function updateMyntraReturn(id, patch) {
+  await updateDoc(doc(db, COLLECTIONS.MYNTRA_RETURNS, id), { ...patch, updatedAt: serverTimestamp() });
+}
+
+/** Delete a single return/RTO row */
+export async function deleteMyntraReturn(id) {
+  await deleteDoc(doc(db, COLLECTIONS.MYNTRA_RETURNS, id));
+}
+
+// ─── Purchase Bills ─────────────────────────────────────────────
+
+const billId = (billNo) => String(billNo).replace(/[\/\\#?\s]+/g, '_');
+
+/** Save (or overwrite) a purchase bill, keyed by its bill number */
+export async function savePurchaseBill(bill) {
+  const id = billId(bill.billNo);
+  await setDoc(doc(db, COLLECTIONS.PURCHASE_BILLS, id), {
+    ...bill,
+    id,
+    savedAt: serverTimestamp()
+  });
+  return id;
+}
+
+/** Get all purchase bills, newest bill date first */
+export async function getAllPurchaseBills() {
+  const snap = await getDocs(collection(db, COLLECTIONS.PURCHASE_BILLS));
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => String(b.billDate ?? '').localeCompare(String(a.billDate ?? '')));
+}
+
+/** Delete a purchase bill */
+export async function deletePurchaseBill(id) {
+  await deleteDoc(doc(db, COLLECTIONS.PURCHASE_BILLS, id));
+}
+
+/**
+ * Reserve the next sequential number for a document type.
+ * Transactional so two tabs can't hand out the same invoice number.
+ * Returns { seq, financialYear, billNo } e.g. "INV/25-26/0042".
+ */
+export async function nextBillNumber(docTypeId) {
+  const type = PURCHASE_DOC_TYPES.find(t => t.id === docTypeId) || PURCHASE_DOC_TYPES[0];
+  const fy = financialYearLabel(new Date());
+  const key = `${type.id}_${fy}`;
+  const ref = doc(db, COLLECTIONS.SETTINGS, 'purchase_counters');
+
+  const seq = await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const data = snap.exists() ? snap.data() : {};
+    const next = (Number(data[key]) || 0) + 1;
+    tx.set(ref, { [key]: next, updatedAt: serverTimestamp() }, { merge: true });
+    return next;
+  });
+
+  return { seq, financialYear: fy, billNo: `${type.prefix}/${fy}/${String(seq).padStart(4, '0')}` };
+}
+
+/** Indian financial year label for a date: 2026-08-21 → "26-27" (Apr–Mar) */
+export function financialYearLabel(date = new Date()) {
+  const y = date.getFullYear();
+  const startYear = date.getMonth() >= 3 ? y : y - 1; // April = month 3
+  return `${String(startYear).slice(-2)}-${String(startYear + 1).slice(-2)}`;
+}
+
+// ─── Purchase Settings (parties, GST rates, bank, terms) ────────
+
+export async function getPurchaseSettings() {
+  const ref = doc(db, COLLECTIONS.SETTINGS, 'purchase');
+  const snap = await getDoc(ref);
+  const saved = snap.exists() ? snap.data() : {};
+  return {
+    ...DEFAULT_PARTIES,
+    ...saved,
+    gstRates: { ...GST_RATE_DEFAULTS, ...(saved.gstRates || {}) },
+    hsnCodes: { ...HSN_DEFAULTS, ...(saved.hsnCodes || {}) }
+  };
+}
+
+export async function savePurchaseSettings(settings) {
+  const ref = doc(db, COLLECTIONS.SETTINGS, 'purchase');
+  await setDoc(ref, { ...settings, updatedAt: serverTimestamp() }, { merge: true });
 }
 
 // ─── Website Upload Status ───────────────────────────────────────

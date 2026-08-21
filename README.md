@@ -68,6 +68,8 @@ Visit `http://localhost:8080`
 ├── upload.html             ← Excel file upload & processing center
 ├── stock-analysis.html     ← Full inventory table with filters
 ├── zm-panel.html           ← ZM product code & upload status manager
+├── myntra.html             ← Myntra hub: inventory update, mapping, pricing,
+│                             purchase billing, returns & RTO
 ├── new-arrivals.html       ← Newly detected SKUs
 ├── sold-items.html         ← Stock decreases with color breakdown
 ├── restocked.html          ← Stock increases panel
@@ -90,6 +92,11 @@ Visit `http://localhost:8080`
 │   ├── excel-parser.js     ← SheetJS-powered Excel processor
 │   ├── stock-analyzer.js   ← Comparison engine (sold/restock/new)
 │   ├── zm-mapper.js        ← ZM product code logic
+│   ├── myntra.js           ← SKU parsing, stock resolution, update generator
+│   ├── myntra-pricing.js   ← Myntra Pricing.xlsx parser + Pricing tab
+│   ├── myntra-purchase.js  ← Purchase cart, GST maths, bill history
+│   ├── myntra-returns.js   ← Customer returns & RTO register
+│   ├── invoice-pdf.js      ← Premium GST bill PDF + on-screen preview
 │   ├── skip-manager.js     ← Skip list management
 │   ├── history-manager.js  ← Calendar & history logic
 │   ├── report-generator.js ← PDF/Excel/CSV export
@@ -104,6 +111,41 @@ Visit `http://localhost:8080`
 ├── firebase.json           ← Firebase Hosting config
 └── .env.example            ← Environment variables template
 ```
+
+---
+
+## 🛍️ Myntra Hub
+
+One page (`myntra.html`), five sections:
+
+| Tab | What it does |
+|-----|--------------|
+| **Inventory Update** | Generates the `sellerSkuCode,quantity` file Myntra consumes. Takes a configurable % of each colour's stock above the gap threshold. Deactivated SKUs are excluded from the download. |
+| **Mapping** | Every SellerSkuCode with its colour, today's stock, live status toggle, and price columns. Bulk activate / deactivate. |
+| **Pricing** | Upload `Myntra Pricing.xlsx`. Flags mapped styles that have no price (those cannot be billed). |
+| **Purchase** | Cart → GST bill → PDF. Saved, auto-numbered, re-downloadable. |
+| **Returns & RTO** | Register of goods coming back. **Never counted into stock.** |
+
+### Myntra Pricing.xlsx
+
+| ZM Code | Kuntal Code | Category | Kuntal Selling Price | Myntra MRP | Myntra MU Price | Myntra ISP |
+|---------|-------------|----------|----------------------|------------|-----------------|------------|
+| ZM-01 | 4132 | lehnga | 8990 | | 13830.76923 | 13849 |
+
+Zero-padded codes (`ZM-01`) are normalised to match SellerSkuCodes (`ZM-1-Morpichh`).
+A blank Myntra MRP stays blank — it is never coerced to 0.
+
+### Purchase billing
+
+- **From** Kuntal Antique ART → **Bill To** Kuntal Fashion Private Limited (brand: The Third Label). All names, GSTINs, addresses, bank details and terms are editable under **Parties & GST** and saved once.
+- Rate per line is the **Kuntal Selling Price**, treated as **GST-exclusive**: `Amount = qty × rate` is the taxable value, CGST and SGST are added on top.
+- GST rate comes from the line's category — lehnga 18% (9% + 9%), saree 5% (2.5% + 2.5%) by default. The rate table is editable, any line can be overridden, and lines whose category has no rate are flagged amber.
+- Document type is chosen per bill: Tax Invoice / Purchase Order / Proforma Invoice. Numbers are reserved transactionally per type and financial year (`INV/26-27/0042`).
+- The PDF prints party blocks, an HSN line table, a rate-wise tax summary, round-off, grand total, amount in words, bank details, terms and a signature block. It uses `Rs.` rather than ₹ because jsPDF's built-in fonts have no rupee glyph.
+
+### Returns & RTO
+
+Stored in their own `myntra_returns` collection. No stock or inventory-update code path reads it, so returned goods can never leak into stock counts. Rows arrive either from the Myntra returns report (columns auto-detected, reviewed before saving) or by hand.
 
 ---
 

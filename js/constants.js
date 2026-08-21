@@ -53,12 +53,65 @@ export const COLLECTIONS = {
   DAILY_STOCK: 'daily_stock',
   ZM_MAPPING: 'zm_mapping',
   MYNTRA_MAPPING: 'myntra_mapping',
+  MYNTRA_PRICING: 'myntra_pricing',
+  MYNTRA_SKU_STATUS: 'myntra_sku_status',
+  MYNTRA_RETURNS: 'myntra_returns',
+  PURCHASE_BILLS: 'purchase_bills',
   WEBSITE_STATUS: 'website_upload_status',
   SKIP_PRODUCTS: 'skip_products',
   HISTORY: 'history',
   REPORTS: 'reports',
   SETTINGS: 'settings'
 };
+
+// ─── Purchase / GST ──────────────────────────────────────────────
+
+// Default GST rate (total %) by product category. CGST and SGST are each half.
+// Editable at runtime from the Purchase tab (stored in settings/purchase).
+export const GST_RATE_DEFAULTS = { lehnga: 18, saree: 5 };
+
+// Fallback when a line's category has no rate configured.
+export const GST_RATE_FALLBACK = 18;
+
+// Default HSN per category — blank until the user fills them in.
+export const HSN_DEFAULTS = { lehnga: '', saree: '' };
+
+export const PURCHASE_DOC_TYPES = [
+  { id: 'tax_invoice',    label: 'Tax Invoice',      prefix: 'INV' },
+  { id: 'purchase_order', label: 'Purchase Order',   prefix: 'PO'  },
+  { id: 'proforma',       label: 'Proforma Invoice', prefix: 'PI'  }
+];
+
+// Party defaults — all editable and persisted in settings/purchase
+export const DEFAULT_PARTIES = {
+  sellerName:    'Kuntal Antique ART',
+  sellerAddress: '',
+  sellerGstin:   '',
+  sellerState:   '',
+  buyerName:     'Kuntal Fashion Private Limited',
+  buyerBrand:    'The Third Label',
+  buyerAddress:  '',
+  buyerGstin:    '',
+  buyerState:    '',
+  bankName:      '',
+  bankAccount:   '',
+  bankIfsc:      '',
+  terms:         'Goods once sold will not be taken back.\nSubject to jurisdiction.'
+};
+
+// ─── Returns / RTO ───────────────────────────────────────────────
+
+export const RETURN_TYPES = {
+  CUSTOMER_RETURN: 'customer_return',
+  RTO: 'rto'
+};
+
+export const RETURN_TYPE_LABELS = {
+  customer_return: 'Customer Return',
+  rto: 'RTO'
+};
+
+export const RETURN_CONDITIONS = ['good', 'damaged', 'missing'];
 
 // Upload status options
 export const UPLOAD_STATUS = {

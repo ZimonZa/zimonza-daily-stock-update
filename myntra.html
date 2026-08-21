@@ -6,6 +6,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <link rel="stylesheet" href="css/custom.css">
   <link rel="stylesheet" href="css/animations.css">
   <link rel="stylesheet" href="css/theme.css">
@@ -17,19 +18,21 @@
   <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
     <div>
       <h1 class="text-2xl font-bold text-white">Myntra</h1>
-      <p class="text-slate-400 text-sm mt-0.5">SKU mapping &amp; inventory update generator</p>
+      <p class="text-slate-400 text-sm mt-0.5">Pricing · mapping · purchase billing · inventory · returns</p>
     </div>
     <span id="stock-date-label" class="text-slate-500 text-xs"></span>
   </div>
 
+  <!-- ── KPI strip ── -->
+  <div id="kpi-strip" class="kpi-strip"></div>
+
   <!-- ── Tabs ── -->
-  <div class="flex items-center gap-1 border-b border-white/10">
-    <button id="tabbtn-generator" class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition flex items-center gap-2">
-      <i data-lucide="file-cog" class="w-4 h-4"></i> Inventory Update
-    </button>
-    <button id="tabbtn-mapping" class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition flex items-center gap-2">
-      <i data-lucide="shopping-bag" class="w-4 h-4"></i> Mapping
-    </button>
+  <div class="zm-tabbar border-b border-white/10">
+    <button id="tabbtn-generator" class="zm-tab"><i data-lucide="file-cog" class="w-4 h-4"></i> Inventory Update</button>
+    <button id="tabbtn-mapping"   class="zm-tab"><i data-lucide="shopping-bag" class="w-4 h-4"></i> Mapping <span id="tabcount-mapping" class="zm-tab-count"></span></button>
+    <button id="tabbtn-pricing"   class="zm-tab"><i data-lucide="indian-rupee" class="w-4 h-4"></i> Pricing <span id="tabcount-pricing" class="zm-tab-count"></span></button>
+    <button id="tabbtn-purchase"  class="zm-tab"><i data-lucide="shopping-cart" class="w-4 h-4"></i> Purchase <span id="tabcount-purchase" class="zm-tab-count"></span></button>
+    <button id="tabbtn-returns"   class="zm-tab"><i data-lucide="undo-2" class="w-4 h-4"></i> Returns &amp; RTO <span id="tabcount-returns" class="zm-tab-count"></span></button>
   </div>
 
   <!-- ════════ TAB: Inventory Update ════════ -->
@@ -69,12 +72,12 @@
             <button id="gen-from-mapping" class="btn-primary text-sm py-2.5 px-5">
               <i data-lucide="wand-2" class="w-4 h-4 inline-block mr-1"></i> Generate from Mapping
             </button>
-            <p class="text-slate-600 text-xs">Uses every SellerSkuCode saved in the Mapping tab</p>
+            <p class="text-slate-600 text-xs">Uses every SellerSkuCode saved in the Mapping tab. Deactivated SKUs are excluded from the download.</p>
           </div>
         </div>
 
         <!-- Clickable summary chips -->
-        <div id="inv-summary" class="grid grid-cols-3 sm:grid-cols-6 gap-3 hidden"></div>
+        <div id="inv-summary" class="grid grid-cols-3 sm:grid-cols-7 gap-3 hidden"></div>
 
         <!-- Results toolbar -->
         <div id="inv-toolbar" class="flex flex-wrap gap-3 items-center hidden">
@@ -84,6 +87,7 @@
             <option value="ok">OK (filled)</option>
             <option value="below_gap">Below gap → 0</option>
             <option value="missing">Missing → 0</option>
+            <option value="inactive">Deactivated</option>
             <option value="duplicate">Duplicates</option>
             <option value="edited">Edited</option>
           </select>
@@ -112,7 +116,7 @@
         </div>
         <div class="flex-1 min-w-0">
           <h3 class="text-white font-semibold text-sm">Myntra Mapping</h3>
-          <p class="text-slate-400 text-xs">Style Id · Article Type · Colour · SellerSkuCode (e.g. ZM-75-Morpichh)</p>
+          <p class="text-slate-400 text-xs">SellerSkuCode · colour · live status · price — upload pricing to fill the price columns</p>
         </div>
         <button id="map-export-csv" class="btn-secondary text-xs py-2 px-3">
           <i data-lucide="download" class="w-3.5 h-3.5 inline-block mr-1"></i> Export CSV
@@ -132,24 +136,39 @@
         <input type="file" id="map-file" accept=".csv,.xlsx,.xls" class="hidden">
 
         <!-- Clickable summary chips -->
-        <div id="map-summary" class="grid grid-cols-2 sm:grid-cols-4 gap-3 hidden"></div>
+        <div id="map-summary" class="grid grid-cols-2 sm:grid-cols-6 gap-3 hidden"></div>
 
         <!-- Toolbar -->
         <div class="flex flex-wrap gap-3 items-center">
           <input id="map-search" type="text" placeholder="Search SKU, ZM code, colour, product…" class="zm-input w-64">
           <select id="map-status-filter" class="zm-input w-48">
             <option value="all">All Stock Statuses</option>
+            <option value="active">Active on Myntra</option>
+            <option value="deactive">Deactivated</option>
             <option value="matched">Matched (colour found)</option>
             <option value="in_stock">In stock (&gt;0 pcs)</option>
             <option value="out_of_stock">Out of stock (0 pcs)</option>
             <option value="colour_not_found">Colour not found</option>
             <option value="no_stock_item">No stock item</option>
+            <option value="no_price">Not priced</option>
             <option value="problems">Problems (no stock/colour)</option>
           </select>
           <select id="map-colour-filter" class="zm-input w-40">
             <option value="all">All Colours</option>
           </select>
           <span id="map-count" class="text-slate-500 text-xs ml-auto"></span>
+        </div>
+
+        <!-- Bulk activate / deactivate -->
+        <div id="map-bulkbar" class="zm-bulkbar hidden">
+          <span id="map-selected-count" class="text-emerald-300 text-sm font-semibold"></span>
+          <button id="map-bulk-activate" class="btn-secondary text-xs py-2 px-3">
+            <i data-lucide="check-circle" class="w-3.5 h-3.5 inline-block mr-1"></i> Activate
+          </button>
+          <button id="map-bulk-deactivate" class="btn-secondary text-xs py-2 px-3">
+            <i data-lucide="x-circle" class="w-3.5 h-3.5 inline-block mr-1"></i> Deactivate
+          </button>
+          <button id="map-bulk-clear" class="text-slate-400 hover:text-slate-200 text-xs ml-auto">Clear selection</button>
         </div>
 
         <div id="map-table" class="max-h-[65vh] overflow-auto">
@@ -159,7 +178,382 @@
     </div>
   </div>
 
+  <!-- ════════ TAB: Pricing ════════ -->
+  <div id="tab-pricing" class="hidden">
+    <div class="glass-card overflow-hidden">
+      <div class="flex items-center gap-3 px-6 py-4 border-b border-white/5">
+        <div class="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center flex-shrink-0">
+          <i data-lucide="indian-rupee" class="w-5 h-5 text-amber-400"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <h3 class="text-white font-semibold text-sm">Myntra Pricing</h3>
+          <p class="text-slate-400 text-xs">ZM Code · Kuntal Code · Category · Kuntal Selling Price · Myntra MRP / MU Price / ISP</p>
+        </div>
+        <button id="price-export-csv" class="btn-secondary text-xs py-2 px-3">
+          <i data-lucide="download" class="w-3.5 h-3.5 inline-block mr-1"></i> Export CSV
+        </button>
+        <button id="price-export-xlsx" class="btn-secondary text-xs py-2 px-3">
+          <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 inline-block mr-1"></i> Export Excel
+        </button>
+      </div>
+
+      <div class="p-6 space-y-4">
+        <div id="price-drop" class="drop-zone p-5 text-center cursor-pointer"
+          onclick="document.getElementById('price-file').click()">
+          <i data-lucide="upload-cloud" class="w-7 h-7 text-slate-600 mx-auto mb-2"></i>
+          <p class="text-slate-400 text-sm font-medium">Drop <strong class="text-slate-400">Myntra Pricing.xlsx</strong> here or click</p>
+          <p class="text-slate-600 text-xs mt-1">Re-uploading updates existing styles and adds new ones</p>
+        </div>
+        <input type="file" id="price-file" accept=".csv,.xlsx,.xls" class="hidden">
+
+        <div id="price-summary" class="grid grid-cols-2 sm:grid-cols-5 gap-3 hidden"></div>
+
+        <div id="price-unpriced" class="hidden p-3 rounded-xl border border-amber-500/25 bg-amber-500/[0.07]"></div>
+
+        <div class="flex flex-wrap gap-3 items-center">
+          <input id="price-search" type="text" placeholder="Search ZM code, Kuntal code, category…" class="zm-input w-64">
+          <select id="price-category-filter" class="zm-input w-44">
+            <option value="all">All Categories</option>
+          </select>
+          <span id="price-count" class="text-slate-500 text-xs ml-auto"></span>
+        </div>
+
+        <div id="price-table" class="max-h-[65vh] overflow-auto">
+          <p class="text-slate-500 text-sm text-center py-6">No pricing loaded yet — upload <strong class="text-slate-400">Myntra Pricing.xlsx</strong> above.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════ TAB: Purchase ════════ -->
+  <div id="tab-purchase" class="hidden space-y-5">
+
+    <!-- Bill header -->
+    <div class="glass-card overflow-hidden">
+      <div class="flex items-center gap-3 px-6 py-4 border-b border-white/5">
+        <div class="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center flex-shrink-0">
+          <i data-lucide="receipt" class="w-5 h-5 text-emerald-400"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <h3 class="text-white font-semibold text-sm">Purchase Bill</h3>
+          <p id="pur-parties-line" class="text-slate-400 text-xs truncate"></p>
+        </div>
+        <button id="pur-parties-btn" class="btn-secondary text-xs py-2 px-3 flex-shrink-0">
+          <i data-lucide="settings-2" class="w-3.5 h-3.5 inline-block mr-1"></i> Parties &amp; GST
+        </button>
+      </div>
+      <div class="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div>
+          <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Document</label>
+          <select id="pur-doctype" class="zm-input w-full mt-1"></select>
+        </div>
+        <div>
+          <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Bill No.</label>
+          <input id="pur-billno" type="text" class="zm-input w-full mt-1">
+        </div>
+        <div>
+          <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Date</label>
+          <input id="pur-billdate" type="date" class="zm-input w-full mt-1">
+        </div>
+        <div>
+          <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Place of Supply</label>
+          <input id="pur-place" type="text" placeholder="e.g. 24 - Gujarat" class="zm-input w-full mt-1">
+        </div>
+      </div>
+    </div>
+
+    <div class="pur-grid">
+      <!-- Picker -->
+      <div class="pur-panel">
+        <div class="pur-panel-head">
+          <i data-lucide="search" class="w-4 h-4 text-slate-500"></i>
+          <div class="flex-1 min-w-0">
+            <p class="text-white text-sm font-semibold">Add Products</p>
+            <p id="pur-picker-count" class="text-slate-500 text-xs"></p>
+          </div>
+          <button id="pur-add-all" class="btn-secondary text-xs py-1.5 px-2.5">Add all shown</button>
+        </div>
+        <div class="p-3 border-b border-white/5">
+          <input id="pur-search" type="text" placeholder="Search SellerSkuCode, ZM, Kuntal code, colour…" class="zm-input w-full">
+        </div>
+        <div id="pur-picker" class="max-h-[58vh] overflow-auto"></div>
+      </div>
+
+      <!-- Cart -->
+      <div class="pur-sticky space-y-4">
+        <div class="pur-panel">
+          <div class="pur-panel-head">
+            <i data-lucide="shopping-cart" class="w-4 h-4 text-emerald-400"></i>
+            <div class="flex-1 min-w-0">
+              <p class="text-white text-sm font-semibold">Bill Lines</p>
+              <p id="pur-line-count" class="text-slate-500 text-xs"></p>
+            </div>
+            <button id="pur-clear" class="text-slate-500 hover:text-red-400 text-xs">Clear</button>
+          </div>
+          <div id="pur-cart" class="max-h-[38vh] overflow-auto"></div>
+          <div id="pur-totals" class="p-3 border-t border-white/5"></div>
+          <div class="flex flex-wrap gap-2 p-3 border-t border-white/5">
+            <button id="pur-preview" class="btn-secondary text-xs py-2 px-3 flex-1 justify-center">
+              <i data-lucide="eye" class="w-3.5 h-3.5 inline-block mr-1"></i> Preview
+            </button>
+            <button id="pur-pdf" class="btn-secondary text-xs py-2 px-3 flex-1 justify-center">
+              <i data-lucide="file-down" class="w-3.5 h-3.5 inline-block mr-1"></i> PDF
+            </button>
+            <button id="pur-save" class="btn-primary text-xs py-2 px-3 flex-1 justify-center">
+              <i data-lucide="save" class="w-3.5 h-3.5 inline-block mr-1"></i> Save Bill
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Past bills -->
+    <div class="glass-card overflow-hidden">
+      <div class="flex flex-wrap items-center gap-3 px-6 py-4 border-b border-white/5">
+        <div class="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0">
+          <i data-lucide="history" class="w-5 h-5 text-blue-400"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <h3 class="text-white font-semibold text-sm">Saved Bills</h3>
+          <p id="pur-bills-count" class="text-slate-500 text-xs"></p>
+        </div>
+        <input id="pur-bills-search" type="text" placeholder="Search bill no, type, date…" class="zm-input w-56">
+      </div>
+      <div id="pur-bills" class="max-h-[45vh] overflow-auto"></div>
+    </div>
+  </div>
+
+  <!-- ════════ TAB: Returns & RTO ════════ -->
+  <div id="tab-returns" class="hidden">
+    <div class="glass-card overflow-hidden">
+      <div class="flex items-center gap-3 px-6 py-4 border-b border-white/5">
+        <div class="w-9 h-9 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center flex-shrink-0">
+          <i data-lucide="undo-2" class="w-5 h-5 text-red-400"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <h3 class="text-white font-semibold text-sm">Customer Returns &amp; RTO</h3>
+          <p class="text-slate-400 text-xs">Goods coming back from Myntra</p>
+        </div>
+        <button id="ret-add-btn" class="btn-primary text-xs py-2 px-3">
+          <i data-lucide="plus" class="w-3.5 h-3.5 inline-block mr-1"></i> Add Row
+        </button>
+        <button id="ret-export-csv" class="btn-secondary text-xs py-2 px-3">
+          <i data-lucide="download" class="w-3.5 h-3.5 inline-block mr-1"></i> CSV
+        </button>
+        <button id="ret-export-xlsx" class="btn-secondary text-xs py-2 px-3">
+          <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 inline-block mr-1"></i> Excel
+        </button>
+      </div>
+
+      <div class="p-6 space-y-4">
+        <div class="flex items-start gap-2.5 p-3 rounded-xl border border-amber-500/25 bg-amber-500/[0.07]">
+          <i data-lucide="shield-alert" class="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5"></i>
+          <p class="text-amber-200/90 text-xs">
+            <strong>Recorded here only.</strong> Returns and RTO are never counted into stock and never reach the Myntra inventory update —
+            this register is completely separate from the stock pipeline.
+          </p>
+        </div>
+
+        <div id="ret-drop" class="drop-zone p-5 text-center cursor-pointer"
+          onclick="document.getElementById('ret-file').click()">
+          <i data-lucide="upload-cloud" class="w-7 h-7 text-slate-600 mx-auto mb-2"></i>
+          <p class="text-slate-400 text-sm font-medium">Drop the Myntra returns / RTO report here or click</p>
+          <p class="text-slate-600 text-xs mt-1">Columns are auto-detected — .csv / .xlsx</p>
+        </div>
+        <input type="file" id="ret-file" accept=".csv,.xlsx,.xls" class="hidden">
+
+        <!-- Upload confirmation -->
+        <div id="ret-confirm" class="hidden rounded-xl border border-emerald-500/25 bg-emerald-500/[0.05] overflow-hidden">
+          <div class="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-white/5">
+            <div class="flex-1 min-w-0">
+              <p class="text-white text-sm font-semibold">Review before saving</p>
+              <p id="ret-confirm-note" class="text-slate-400 text-xs"></p>
+            </div>
+            <button id="ret-confirm-cancel" class="btn-secondary text-xs py-2 px-3">Cancel</button>
+            <button id="ret-confirm-save" class="btn-primary text-xs py-2 px-3">Save selected</button>
+          </div>
+          <div id="ret-confirm-table" class="max-h-[40vh] overflow-auto"></div>
+        </div>
+
+        <div id="ret-summary" class="grid grid-cols-2 sm:grid-cols-5 gap-3 hidden"></div>
+
+        <div class="flex flex-wrap gap-3 items-center">
+          <input id="ret-search" type="text" placeholder="Search SKU, colour, order ID, reason…" class="zm-input w-60">
+          <select id="ret-type-filter" class="zm-input w-44">
+            <option value="all">All Types</option>
+            <option value="customer_return">Customer Return</option>
+            <option value="rto">RTO</option>
+          </select>
+          <select id="ret-condition-filter" class="zm-input w-36">
+            <option value="all">Any Condition</option>
+            <option value="">Not set</option>
+            <option value="good">Good</option>
+            <option value="damaged">Damaged</option>
+            <option value="missing">Missing</option>
+          </select>
+          <div class="flex items-center gap-2">
+            <input id="ret-from" type="date" class="zm-input w-36" title="From date">
+            <span class="text-slate-600 text-xs">→</span>
+            <input id="ret-to" type="date" class="zm-input w-36" title="To date">
+          </div>
+          <span id="ret-count" class="text-slate-500 text-xs ml-auto"></span>
+        </div>
+
+        <div id="ret-table" class="max-h-[60vh] overflow-auto">
+          <p class="text-slate-500 text-sm text-center py-6">Nothing recorded yet — upload the Myntra returns report or add a row by hand.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
  </div>
+</div>
+
+<!-- ════════ MODAL: Parties & GST ════════ -->
+<div id="parties-modal" class="hidden modal-overlay">
+  <div class="modal-box modal-box-wide max-h-[90vh] overflow-y-auto">
+    <div class="flex items-start justify-between gap-3 mb-5">
+      <div>
+        <h3 class="text-white font-bold text-lg">Parties, Bank &amp; GST Rates</h3>
+        <p class="text-slate-400 text-sm">Printed on every bill — saved once, reused everywhere</p>
+      </div>
+      <button id="parties-cancel" class="text-slate-500 hover:text-white text-xl leading-none flex-shrink-0">×</button>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+      <div class="space-y-2.5">
+        <p class="text-emerald-400 text-xs font-bold uppercase tracking-wider">From — Supplier</p>
+        <input id="party-sellerName" class="zm-input w-full" placeholder="Supplier name">
+        <textarea id="party-sellerAddress" rows="2" class="zm-input w-full resize-none" placeholder="Address"></textarea>
+        <input id="party-sellerGstin" class="zm-input w-full" placeholder="GSTIN">
+        <input id="party-sellerState" class="zm-input w-full" placeholder="State (e.g. 24 - Gujarat)">
+      </div>
+      <div class="space-y-2.5">
+        <p class="text-emerald-400 text-xs font-bold uppercase tracking-wider">Bill To — Buyer</p>
+        <input id="party-buyerName" class="zm-input w-full" placeholder="Buyer legal name">
+        <input id="party-buyerBrand" class="zm-input w-full" placeholder="Brand (printed under the buyer name)">
+        <textarea id="party-buyerAddress" rows="2" class="zm-input w-full resize-none" placeholder="Address"></textarea>
+        <input id="party-buyerGstin" class="zm-input w-full" placeholder="GSTIN">
+        <input id="party-buyerState" class="zm-input w-full" placeholder="State">
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mt-5">
+      <div class="space-y-2.5">
+        <p class="text-emerald-400 text-xs font-bold uppercase tracking-wider">Bank Details</p>
+        <input id="party-bankName" class="zm-input w-full" placeholder="Bank name &amp; branch">
+        <input id="party-bankAccount" class="zm-input w-full" placeholder="Account number">
+        <input id="party-bankIfsc" class="zm-input w-full" placeholder="IFSC">
+        <p class="text-emerald-400 text-xs font-bold uppercase tracking-wider pt-2">Terms &amp; Conditions</p>
+        <textarea id="party-terms" rows="3" class="zm-input w-full resize-none" placeholder="Printed at the foot of the bill"></textarea>
+      </div>
+      <div class="space-y-2.5">
+        <p class="text-emerald-400 text-xs font-bold uppercase tracking-wider">GST Rate &amp; HSN by Category</p>
+        <div class="grid grid-cols-[1fr_5rem_7rem] gap-2 text-[10px] text-slate-500 uppercase tracking-wider px-0.5">
+          <span>Category</span><span>Total GST %</span><span>HSN</span>
+        </div>
+        <div id="party-rates" class="space-y-2 max-h-52 overflow-y-auto pr-1"></div>
+        <p class="text-slate-600 text-[11px]">CGST and SGST are each half the total rate — 18% → 9% + 9%, 5% → 2.5% + 2.5%.</p>
+        <div class="flex gap-2 pt-1">
+          <input id="party-new-cat" class="zm-input flex-1 text-sm" placeholder="Add a category…">
+          <button id="party-add-cat" type="button" class="btn-secondary text-sm px-3 flex-shrink-0">Add</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-6">
+      <button id="parties-cancel-2" class="btn-secondary flex-1 justify-center">Cancel</button>
+      <button id="parties-save" class="btn-primary flex-1 justify-center">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ MODAL: Bill preview ════════ -->
+<div id="bill-preview-modal" class="hidden modal-overlay">
+  <div class="modal-box modal-box-wide max-h-[92vh] overflow-y-auto" style="background:#0F172A">
+    <div class="flex items-center justify-between gap-3 mb-4">
+      <h3 class="text-white font-bold text-lg">Bill Preview</h3>
+      <div class="flex items-center gap-2">
+        <button id="bill-preview-pdf" class="btn-primary text-xs py-2 px-3">
+          <i data-lucide="file-down" class="w-3.5 h-3.5 inline-block mr-1"></i> Download PDF
+        </button>
+        <button id="bill-preview-close" class="text-slate-500 hover:text-white text-xl leading-none">×</button>
+      </div>
+    </div>
+    <div id="bill-preview-body"></div>
+  </div>
+</div>
+
+<!-- ════════ MODAL: Add return / RTO ════════ -->
+<div id="ret-add-modal" class="hidden modal-overlay">
+  <div class="modal-box max-h-[90vh] overflow-y-auto">
+    <div class="flex items-start justify-between gap-3 mb-5">
+      <div>
+        <h3 class="text-white font-bold text-lg">Add Return / RTO</h3>
+        <p class="text-slate-400 text-sm">Recorded separately — never added to stock</p>
+      </div>
+      <button id="ret-add-cancel" class="text-slate-500 hover:text-white text-xl leading-none flex-shrink-0">×</button>
+    </div>
+
+    <div class="space-y-2.5">
+      <div>
+        <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">SellerSkuCode</label>
+        <input id="ret-add-sku" list="ret-sku-list" class="zm-input w-full mt-1" placeholder="ZM-75-Morpichh" autocomplete="off">
+        <datalist id="ret-sku-list"></datalist>
+      </div>
+      <div class="grid grid-cols-2 gap-2.5">
+        <div>
+          <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Colour</label>
+          <input id="ret-add-colour" class="zm-input w-full mt-1">
+        </div>
+        <div>
+          <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Kuntal Code</label>
+          <input id="ret-add-kuntal" class="zm-input w-full mt-1">
+        </div>
+      </div>
+      <div class="grid grid-cols-3 gap-2.5">
+        <div>
+          <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Qty</label>
+          <input id="ret-add-qty" type="number" min="1" value="1" class="zm-input w-full mt-1">
+        </div>
+        <div>
+          <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Type</label>
+          <select id="ret-add-type" class="zm-input w-full mt-1">
+            <option value="customer_return">Customer Return</option>
+            <option value="rto">RTO</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Date</label>
+          <input id="ret-add-date" type="date" class="zm-input w-full mt-1">
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-2.5">
+        <div>
+          <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Condition</label>
+          <select id="ret-add-condition" class="zm-input w-full mt-1">
+            <option value="">Not set</option>
+            <option value="good">Good</option>
+            <option value="damaged">Damaged</option>
+            <option value="missing">Missing</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Order ID</label>
+          <input id="ret-add-order" class="zm-input w-full mt-1">
+        </div>
+      </div>
+      <div>
+        <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Notes</label>
+        <textarea id="ret-add-notes" rows="2" class="zm-input w-full mt-1 resize-none"></textarea>
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-6">
+      <button id="ret-add-cancel-2" class="btn-secondary flex-1 justify-center">Cancel</button>
+      <button id="ret-add-save" class="btn-primary flex-1 justify-center">Save</button>
+    </div>
+  </div>
 </div>
 
 <script type="module">
@@ -167,44 +561,40 @@ import { requireAuth } from './js/auth.js';
 import { renderShell } from './js/ui-components.js';
 import notify from './js/notifications.js';
 import { readExcelFile } from './js/excel-parser.js';
-import { saveMyntraMappings, getAllMyntraMappings } from './js/firestore-service.js';
-import { debounce, toCSV, downloadFile, formatDateDisplay, getMyntraGapThreshold, getMyntraTakePercent, normColorKey } from './js/utils.js';
+import {
+  saveMyntraMappings, getAllMyntraMappings, getAllMyntraPricing,
+  getAllMyntraSkuStatus, setMyntraSkuActive, setMyntraSkuActiveBulk,
+  getPurchaseSettings
+} from './js/firestore-service.js';
+import {
+  debounce, toCSV, downloadFile, formatDateDisplay, formatINR,
+  getMyntraGapThreshold, getMyntraTakePercent, normColorKey, normZmCode
+} from './js/utils.js';
 import {
   validateMyntraMappingFile, parseMyntraMappingFile, parseInventoryFile,
-  loadMyntraStockContext, resolveStock, findColourQty, generateInventoryUpdate
+  loadMyntraStockContext, resolveStock, findColourQty, generateInventoryUpdate,
+  isExportable
 } from './js/myntra.js';
+import { initPricingTab, pricingIndex } from './js/myntra-pricing.js';
+import { initPurchaseTab } from './js/myntra-purchase.js';
+import { initReturnsTab } from './js/myntra-returns.js';
 
 await requireAuth();
 renderShell('myntra');
 if (window.lucide) lucide.createIcons();
 
-let ctx = null;          // { latestDate, stockMap, zmToKuntal }
-let mappings = [];       // stored Myntra mappings
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const el = id => document.getElementById(id);
+const stamp = () => new Date().toISOString().slice(0,10);
+const money = v => (v === null || v === undefined || v === '') ? '—' : formatINR(v, 0);
+
 let genResult = null;    // { rows, summary } from last generation
 let lastSkus = null;     // SKU list of the last generation (for % re-runs)
+const mapSelection = new Set();
 
 // View state (filters + sort) per tab
 const genView = { q: '', status: 'all', sortKey: null, sortDir: 1 };
 const mapView = { q: '', status: 'all', colour: 'all', sortKey: null, sortDir: 1 };
-
-const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-
-// ── Tabs ──────────────────────────────────────────────────────
-const TABS = ['generator', 'mapping'];
-function setTab(name) {
-  for (const t of TABS) {
-    document.getElementById(`tab-${t}`).classList.toggle('hidden', t !== name);
-    const btn = document.getElementById(`tabbtn-${t}`);
-    btn.classList.toggle('text-emerald-400', t === name);
-    btn.classList.toggle('border-emerald-400', t === name);
-    btn.classList.toggle('text-slate-400', t !== name);
-    btn.classList.toggle('border-transparent', t !== name);
-  }
-  sessionStorage.setItem('zm_myntra_tab', name);
-}
-document.getElementById('tabbtn-generator').addEventListener('click', () => setTab('generator'));
-document.getElementById('tabbtn-mapping').addEventListener('click', () => setTab('mapping'));
-setTab(sessionStorage.getItem('zm_myntra_tab') === 'mapping' ? 'mapping' : 'generator');
 
 // ── Shared sort helpers ───────────────────────────────────────
 function toggleSort(view, key) {
@@ -224,45 +614,185 @@ function applySort(rows, view, valueFn) {
 const thSort = (view, key, label, right = false) =>
   `<th data-sort="${key}" class="${right ? 'text-right' : 'text-left'} px-4 py-2.5 cursor-pointer select-none whitespace-nowrap hover:text-slate-300">${label}${view.sortKey === key ? (view.sortDir === 1 ? ' ▲' : ' ▼') : ''}</th>`;
 
+// ── Shared dropzone helpers ───────────────────────────────────
+function bindDrop(zone, input, handler) {
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('drag-over');
+    if (e.dataTransfer.files[0]) handler(e.dataTransfer.files[0]);
+  });
+  input.addEventListener('change', () => {
+    if (input.files[0]) handler(input.files[0]);
+    input.value = '';
+  });
+}
+function resetDrop(zone, hint) {
+  zone.innerHTML = `<i data-lucide="upload-cloud" class="w-7 h-7 text-slate-600 mx-auto mb-2"></i>
+    <p class="text-slate-400 text-sm font-medium">Drop file here or click</p>
+    <p class="text-slate-600 text-xs mt-1">${hint}</p>`;
+  if (window.lucide) lucide.createIcons();
+}
+
+// ── Shared page state handed to the tab modules ───────────────
+const state = {
+  ctx: null,               // { latestDate, stockMap, zmToKuntal }
+  mappings: [],
+  pricing: [],
+  skuStatus: {},           // sellerSkuCode → { active }
+  purchaseSettings: {},
+  helpers: { toggleSort, applySort, thSort, bindDrop, resetDrop },
+  onPricingChange: () => { renderMappings(); purchaseTab?.render(); renderKpis(); },
+  onBillsChange:   () => renderKpis(),
+  onReturnsChange: () => renderKpis(),
+  onCartChange:    () => renderKpis()
+};
+
+let pricingTab = null, purchaseTab = null, returnsTab = null;
+
+// ── Active / deactive helpers ─────────────────────────────────
+const isActive = sku => state.skuStatus[sku]?.active !== false;
+const inactiveSkuSet = () => new Set(
+  Object.values(state.skuStatus)
+    .filter(s => s?.active === false)
+    .map(s => String(s.sellerSkuCode).toLowerCase())
+);
+
+// ── Tabs ──────────────────────────────────────────────────────
+const TABS = ['generator', 'mapping', 'pricing', 'purchase', 'returns'];
+function setTab(name) {
+  for (const t of TABS) {
+    el(`tab-${t}`).classList.toggle('hidden', t !== name);
+    el(`tabbtn-${t}`).classList.toggle('is-active', t === name);
+  }
+  sessionStorage.setItem('zm_myntra_tab', name);
+  if (location.hash.slice(1) !== name) history.replaceState(null, '', `#${name}`);
+}
+for (const t of TABS) el(`tabbtn-${t}`).addEventListener('click', () => setTab(t));
+
+const initialTab = TABS.includes(location.hash.slice(1))
+  ? location.hash.slice(1)
+  : (TABS.includes(sessionStorage.getItem('zm_myntra_tab')) ? sessionStorage.getItem('zm_myntra_tab') : 'generator');
+setTab(initialTab);
+
+// ── KPI strip ─────────────────────────────────────────────────
+function renderKpis() {
+  const active = state.mappings.filter(m => isActive(m.sellerSkuCode)).length;
+  const deactive = state.mappings.length - active;
+  const returns = returnsTab?.getReturns() ?? [];
+  const returnPcs = returns.reduce((s, r) => s + (Number(r.qty) || 0), 0);
+  const bills = purchaseTab?.getBills() ?? [];
+  const lastBill = bills[0];
+
+  const tile = (icon, color, value, label) => `
+    <div class="kpi-tile">
+      <div class="kpi-tile-icon" style="background:${color}1A;border:1px solid ${color}33">
+        <i data-lucide="${icon}" class="w-4 h-4" style="color:${color}"></i>
+      </div>
+      <div class="min-w-0">
+        <p class="kpi-tile-value truncate">${value}</p>
+        <p class="kpi-tile-label truncate">${label}</p>
+      </div>
+    </div>`;
+
+  el('kpi-strip').innerHTML =
+    tile('shopping-bag', '#EC4899', state.mappings.length, 'Mapped SKUs') +
+    tile('check-circle', '#10B981', active, 'Active on Myntra') +
+    tile('x-circle', '#EF4444', deactive, 'Deactivated') +
+    tile('indian-rupee', '#F59E0B', state.pricing.length, 'Priced Styles') +
+    tile('undo-2', '#F87171', returnPcs, 'Returned Pcs') +
+    tile('receipt', '#3B82F6', lastBill ? '₹' + formatINR(lastBill.totals?.grandRounded ?? 0, 0) : '—', 'Last Bill');
+
+  el('tabcount-mapping').textContent = state.mappings.length || '';
+  el('tabcount-pricing').textContent = state.pricing.length || '';
+  el('tabcount-purchase').textContent = purchaseTab?.getCartCount() || '';
+  el('tabcount-returns').textContent = returns.length || '';
+
+  if (window.lucide) lucide.createIcons();
+}
+
 function gapNote() {
-  const gap = getMyntraGapThreshold();
-  const percent = getMyntraTakePercent();
-  document.getElementById('gap-rule-note').textContent =
-    `Rule: colour stock more than ${gap} → take ${percent}% (rounded down), otherwise 0. Gap is in Settings.`;
+  el('gap-rule-note').textContent =
+    `Rule: colour stock more than ${getMyntraGapThreshold()} → take ${getMyntraTakePercent()}% (rounded down), otherwise 0. Gap is in Settings.`;
 }
 
 async function load() {
   try {
-    [ctx, mappings] = await Promise.all([loadMyntraStockContext(), getAllMyntraMappings()]);
-    document.getElementById('stock-date-label').textContent =
+    const [ctx, mappings, pricing, skuStatus, purchaseSettings] = await Promise.all([
+      loadMyntraStockContext(),
+      getAllMyntraMappings(),
+      getAllMyntraPricing(),
+      getAllMyntraSkuStatus(),
+      getPurchaseSettings()
+    ]);
+    state.ctx = ctx;
+    state.mappings = mappings;
+    state.pricing = pricing;
+    state.skuStatus = skuStatus;
+    state.purchaseSettings = purchaseSettings;
+
+    el('stock-date-label').textContent =
       ctx.latestDate ? `Stock as of ${formatDateDisplay(ctx.latestDate)}` : 'No stock uploaded yet';
     gapNote();
     populateColourFilter();
     renderMappings();
-  } catch(e) {
+
+    // Mount the three module-backed tabs
+    pricingTab = initPricingTab(state);
+    purchaseTab = initPurchaseTab(state);
+    returnsTab = initReturnsTab(state);
+
+    renderPartiesLine();
+    pricingTab.render();
+    purchaseTab.render();
+    await Promise.all([purchaseTab.refreshBills(), returnsTab.refresh()]);
+    renderKpis();
+  } catch (e) {
     console.error(e);
     notify.error('Failed to load Myntra data.');
   }
 }
 
+function renderPartiesLine() {
+  const s = state.purchaseSettings;
+  el('pur-parties-line').textContent =
+    `From ${s.sellerName || '—'} → ${s.buyerName || '—'}${s.buyerBrand ? ` (${s.buyerBrand})` : ''}`;
+}
+
 // ═════════════ MAPPING TAB ═════════════
 
 function mappingRows() {
-  return mappings.map(m => {
-    const { stock, kuntalCode } = resolveStock(m.zmCode, ctx);
+  const priceIdx = pricingIndex(state.pricing);
+  return state.mappings.map(m => {
+    const { stock, kuntalCode } = resolveStock(m.zmCode, state.ctx);
     const qty = stock ? findColourQty(stock, m.colourName) : null;
-    return { ...m, kuntalCode: kuntalCode || '', productName: stock?.name || '', qty, hasStock: !!stock };
+    const p = priceIdx.get(normZmCode(m.zmCode));
+    return {
+      ...m,
+      kuntalCode: p?.kuntalCode || kuntalCode || '',
+      productName: stock?.name || '',
+      qty,
+      hasStock: !!stock,
+      active: isActive(m.sellerSkuCode),
+      kuntalSellingPrice: p?.kuntalSellingPrice ?? null,
+      myntraMrp: p?.myntraMrp ?? null,
+      myntraIsp: p?.myntraIsp ?? null,
+      hasPrice: !!p
+    };
   }).sort((a,b) => String(a.sellerSkuCode).localeCompare(String(b.sellerSkuCode), undefined, { numeric: true }));
 }
 
 function mapMatchesStatus(r, s) {
   switch (s) {
     case 'all':              return true;
+    case 'active':           return r.active;
+    case 'deactive':         return !r.active;
     case 'matched':          return r.hasStock && r.qty !== null;
     case 'in_stock':         return r.hasStock && r.qty !== null && r.qty > 0;
     case 'out_of_stock':     return r.hasStock && r.qty === 0;
     case 'colour_not_found': return r.hasStock && r.qty === null;
     case 'no_stock_item':    return !r.hasStock;
+    case 'no_price':         return !r.hasPrice;
     case 'problems':         return !r.hasStock || r.qty === null;
     default:                 return true;
   }
@@ -279,10 +809,10 @@ function stockChip(r) {
 const stockText = r => !r.hasStock ? 'no stock item' : (r.qty === null ? 'colour not found' : r.qty);
 
 function populateColourFilter() {
-  const sel = document.getElementById('map-colour-filter');
+  const sel = el('map-colour-filter');
   const current = sel.value || 'all';
   const seen = new Map();
-  for (const m of mappings) {
+  for (const m of state.mappings) {
     const key = normColorKey(m.colourName);
     if (key && !seen.has(key)) seen.set(key, m.colourName);
   }
@@ -292,29 +822,35 @@ function populateColourFilter() {
   sel.value = [...seen.keys()].includes(current) ? current : 'all';
 }
 
+function renderBulkBar() {
+  const bar = el('map-bulkbar');
+  bar.classList.toggle('hidden', mapSelection.size === 0);
+  el('map-selected-count').textContent = `${mapSelection.size} SKU(s) selected`;
+}
+
 function renderMappings() {
   const rows = mappingRows();
   const matched = rows.filter(r => r.hasStock && r.qty !== null).length;
   const problems = rows.filter(r => !r.hasStock || r.qty === null).length;
+  const active = rows.filter(r => r.active).length;
 
-  // Clickable chips (Total / Matched / Problems) + info chip
-  const summaryEl = document.getElementById('map-summary');
+  // Clickable chips
+  const summaryEl = el('map-summary');
   summaryEl.classList.toggle('hidden', rows.length === 0);
   const chip = (status, label, value, color) => {
-    const active = mapView.status === status;
-    return `<button data-status="${status}" class="bg-gradient-to-br ${color} border rounded-2xl p-3 text-center transition ${active ? 'ring-2 ring-emerald-400/60' : 'hover:brightness-125'}">
+    const on = mapView.status === status;
+    return `<button data-status="${status}" class="bg-gradient-to-br ${color} border rounded-2xl p-3 text-center transition ${on ? 'ring-2 ring-emerald-400/60' : 'hover:brightness-125'}">
       <p class="text-xl font-bold text-white">${value}</p>
       <p class="text-slate-500 text-xs mt-0.5">${label}</p>
     </button>`;
   };
   summaryEl.innerHTML =
     chip('all', 'Total Mappings', rows.length, 'from-blue-500/10 border-blue-500/20') +
-    chip('matched', 'Matched to Stock', matched, 'from-emerald-500/10 border-emerald-500/20') +
-    chip('problems', 'No Stock / Colour', problems, 'from-red-500/10 border-red-500/20') +
-    `<div class="bg-gradient-to-br from-purple-500/10 border-purple-500/20 border rounded-2xl p-3 text-center">
-      <p class="text-xl font-bold text-white">${new Set(rows.map(r=>r.zmCode)).size}</p>
-      <p class="text-slate-500 text-xs mt-0.5">ZM Codes</p>
-    </div>`;
+    chip('active', 'Active', active, 'from-emerald-500/10 border-emerald-500/20') +
+    chip('deactive', 'Deactivated', rows.length - active, 'from-red-500/10 border-red-500/20') +
+    chip('matched', 'Matched to Stock', matched, 'from-teal-500/10 border-teal-500/20') +
+    chip('problems', 'No Stock / Colour', problems, 'from-amber-500/10 border-amber-500/20') +
+    chip('no_price', 'Not Priced', rows.filter(r => !r.hasPrice).length, 'from-purple-500/10 border-purple-500/20');
 
   // Filter + sort
   let f = rows.filter(r => mapMatchesStatus(r, mapView.status));
@@ -325,97 +861,203 @@ function renderMappings() {
     String(r.zmCode).toLowerCase().includes(q) ||
     String(r.colourName).toLowerCase().includes(q) ||
     String(r.styleId).toLowerCase().includes(q) ||
+    String(r.kuntalCode).toLowerCase().includes(q) ||
     String(r.productName).toLowerCase().includes(q));
-  f = applySort(f, mapView, (r, k) => k === 'qty' ? (r.qty ?? -1) : String(r[k] ?? ''));
+  f = applySort(f, mapView, (r, k) => {
+    if (k === 'qty') return r.qty ?? -1;
+    if (k === 'active') return r.active ? 1 : 0;
+    if (['kuntalSellingPrice','myntraMrp','myntraIsp'].includes(k)) return r[k] ?? -1;
+    return String(r[k] ?? '');
+  });
 
-  document.getElementById('map-count').textContent = rows.length ? `${f.length} of ${rows.length} mappings` : '';
+  el('map-count').textContent = rows.length ? `${f.length} of ${rows.length} mappings` : '';
+  renderBulkBar();
 
   if (!rows.length) {
-    document.getElementById('map-table').innerHTML =
+    el('map-table').innerHTML =
       `<p class="text-slate-500 text-sm text-center py-6">No Myntra mappings yet — upload the mapping file above.</p>`;
     return;
   }
   if (!f.length) {
-    document.getElementById('map-table').innerHTML =
+    el('map-table').innerHTML =
       `<p class="text-slate-500 text-sm text-center py-6">No mappings match the current filters.</p>`;
     return;
   }
-  document.getElementById('map-table').innerHTML = `
+
+  const allShownSelected = f.every(r => mapSelection.has(r.sellerSkuCode));
+  el('map-table').innerHTML = `
     <table class="w-full text-sm">
       <thead class="sticky top-0 z-10 bg-slate-900"><tr class="text-slate-500 text-xs uppercase tracking-wide border-b border-white/5">
+        <th class="px-3 py-2.5 text-left"><input type="checkbox" id="map-select-all" ${allShownSelected ? 'checked' : ''} class="accent-emerald-500" title="Select all filtered"></th>
+        ${thSort(mapView,'active','Live')}
         ${thSort(mapView,'sellerSkuCode','SellerSkuCode')}
         ${thSort(mapView,'zmCode','ZM Code')}
         ${thSort(mapView,'colourName','Colour')}
-        ${thSort(mapView,'styleId','Style Id')}
         ${thSort(mapView,'kuntalCode','Item No.')}
         ${thSort(mapView,'productName','Product')}
         ${thSort(mapView,'qty',"Today's Stock")}
+        ${thSort(mapView,'kuntalSellingPrice','Kuntal Selling Price', true)}
+        ${thSort(mapView,'myntraMrp','Myntra MRP', true)}
+        ${thSort(mapView,'myntraIsp','Myntra ISP', true)}
       </tr></thead>
       <tbody>${f.map(r=>`
-        <tr class="border-b border-white/5 hover:bg-white/[0.02]">
+        <tr class="border-b border-white/5 hover:bg-white/[0.02] ${r.active ? '' : 'opacity-60'}">
+          <td class="px-3 py-2.5"><input type="checkbox" data-select="${esc(r.sellerSkuCode)}" ${mapSelection.has(r.sellerSkuCode) ? 'checked' : ''} class="accent-emerald-500"></td>
+          <td class="px-4 py-2.5">
+            <label class="zm-toggle" title="${r.active ? 'Active on Myntra' : 'Deactivated — excluded from the inventory update'}">
+              <input type="checkbox" data-active="${esc(r.sellerSkuCode)}" ${r.active ? 'checked' : ''}>
+              <span class="zm-toggle-track"></span>
+            </label>
+          </td>
           <td class="px-4 py-2.5 text-slate-200 font-medium whitespace-nowrap">${esc(r.sellerSkuCode)}</td>
           <td class="px-4 py-2.5 text-slate-400 whitespace-nowrap">${esc(r.zmCode)}</td>
           <td class="px-4 py-2.5 text-slate-300">${esc(r.colourName)}</td>
-          <td class="px-4 py-2.5 text-slate-500">${esc(r.styleId)}</td>
           <td class="px-4 py-2.5 text-slate-400">${esc(r.kuntalCode) || '—'}</td>
-          <td class="px-4 py-2.5 text-slate-400 max-w-[220px] truncate">${esc(r.productName) || '—'}</td>
+          <td class="px-4 py-2.5 text-slate-400 max-w-[200px] truncate">${esc(r.productName) || '—'}</td>
           <td class="px-4 py-2.5">${stockChip(r)}</td>
+          <td class="px-4 py-2.5 text-right ${r.kuntalSellingPrice === null ? 'text-slate-600' : 'text-emerald-300 font-semibold'}">${money(r.kuntalSellingPrice)}</td>
+          <td class="px-4 py-2.5 text-right text-slate-300">${money(r.myntraMrp)}</td>
+          <td class="px-4 py-2.5 text-right text-slate-300">${money(r.myntraIsp)}</td>
         </tr>`).join('')}
       </tbody>
     </table>`;
 }
 
 // Mapping controls
-document.getElementById('map-search').addEventListener('input', debounce(e => { mapView.q = e.target.value.trim(); renderMappings(); }));
-document.getElementById('map-status-filter').addEventListener('change', e => { mapView.status = e.target.value; renderMappings(); });
-document.getElementById('map-colour-filter').addEventListener('change', e => { mapView.colour = e.target.value; renderMappings(); });
-document.getElementById('map-summary').addEventListener('click', e => {
+el('map-search').addEventListener('input', debounce(e => { mapView.q = e.target.value.trim(); renderMappings(); }));
+el('map-status-filter').addEventListener('change', e => { mapView.status = e.target.value; renderMappings(); });
+el('map-colour-filter').addEventListener('change', e => { mapView.colour = e.target.value; renderMappings(); });
+el('map-summary').addEventListener('click', e => {
   const btn = e.target.closest('button[data-status]');
   if (!btn) return;
   mapView.status = btn.dataset.status;
-  document.getElementById('map-status-filter').value = mapView.status;
+  el('map-status-filter').value = mapView.status;
   renderMappings();
 });
-document.getElementById('map-table').addEventListener('click', e => {
+
+el('map-table').addEventListener('click', e => {
   const th = e.target.closest('th[data-sort]');
   if (th) { toggleSort(mapView, th.dataset.sort); renderMappings(); }
 });
 
-// Export mappings (full table, with today's stock)
-const MAP_EXPORT_COLUMNS = [
-  { key: 'sellerSkuCode', label: 'SellerSkuCode' },
-  { key: 'zmCode',        label: 'ZM Code' },
-  { key: 'colourName',    label: 'Colour' },
-  { key: 'styleId',       label: 'Style Id' },
-  { key: 'articleType',   label: 'Article Type' },
-  { key: 'kuntalCode',    label: 'Item No.' },
-  { key: 'productName',   label: 'Product' },
-  { key: 'stock',         label: "Today's Stock" },
-];
-const mapExportRows = () => mappingRows().map(r => ({ ...r, stock: stockText(r) }));
-const stamp = () => new Date().toISOString().slice(0,10);
-
-document.getElementById('map-export-csv').addEventListener('click', () => {
-  if (!mappings.length) { notify.warning('No mappings to export'); return; }
-  downloadFile(toCSV(mapExportRows(), MAP_EXPORT_COLUMNS), `myntra_mappings_${stamp()}.csv`, 'text/csv;charset=utf-8;');
-  notify.success(`Exported ${mappings.length} mappings (CSV)`);
+el('map-table').addEventListener('change', async e => {
+  // Row selection
+  const sel = e.target.closest('input[data-select]');
+  if (sel) {
+    if (sel.checked) mapSelection.add(sel.dataset.select);
+    else mapSelection.delete(sel.dataset.select);
+    renderBulkBar();
+    return;
+  }
+  // Select-all (filtered)
+  if (e.target.id === 'map-select-all') {
+    const shown = visibleMappingSkus();
+    if (e.target.checked) shown.forEach(s => mapSelection.add(s));
+    else shown.forEach(s => mapSelection.delete(s));
+    renderMappings();
+    return;
+  }
+  // Active toggle — optimistic, reverted if the write fails
+  const tog = e.target.closest('input[data-active]');
+  if (!tog) return;
+  const sku = tog.dataset.active;
+  const next = tog.checked;
+  tog.disabled = true;
+  const previous = state.skuStatus[sku];
+  state.skuStatus[sku] = { sellerSkuCode: sku, active: next };
+  renderKpis();
+  try {
+    await setMyntraSkuActive(sku, next);
+    notify.success(`${sku} ${next ? 'activated' : 'deactivated'} on Myntra`);
+  } catch (err) {
+    if (previous) state.skuStatus[sku] = previous; else delete state.skuStatus[sku];
+    tog.checked = !next;
+    notify.error('Could not save status: ' + err.message);
+    renderKpis();
+  } finally {
+    tog.disabled = false;
+    renderMappings();
+  }
 });
-document.getElementById('map-export-xlsx').addEventListener('click', () => {
-  if (!mappings.length) { notify.warning('No mappings to export'); return; }
+
+/** SellerSkuCodes currently passing the mapping filters. */
+function visibleMappingSkus() {
+  let f = mappingRows().filter(r => mapMatchesStatus(r, mapView.status));
+  if (mapView.colour !== 'all') f = f.filter(r => normColorKey(r.colourName) === mapView.colour);
+  const q = mapView.q.toLowerCase();
+  if (q) f = f.filter(r =>
+    String(r.sellerSkuCode).toLowerCase().includes(q) ||
+    String(r.zmCode).toLowerCase().includes(q) ||
+    String(r.colourName).toLowerCase().includes(q) ||
+    String(r.styleId).toLowerCase().includes(q) ||
+    String(r.kuntalCode).toLowerCase().includes(q) ||
+    String(r.productName).toLowerCase().includes(q));
+  return f.map(r => r.sellerSkuCode);
+}
+
+async function bulkSetActive(active) {
+  const skus = [...mapSelection];
+  if (!skus.length) return;
+  const btns = [el('map-bulk-activate'), el('map-bulk-deactivate')];
+  btns.forEach(b => b.disabled = true);
+  try {
+    await setMyntraSkuActiveBulk(skus, active);
+    for (const sku of skus) state.skuStatus[sku] = { sellerSkuCode: sku, active };
+    mapSelection.clear();
+    renderMappings();
+    renderKpis();
+    notify.success(`${skus.length} SKU(s) ${active ? 'activated' : 'deactivated'}`);
+  } catch (err) {
+    notify.error('Bulk update failed: ' + err.message);
+  } finally {
+    btns.forEach(b => b.disabled = false);
+  }
+}
+el('map-bulk-activate').addEventListener('click', () => bulkSetActive(true));
+el('map-bulk-deactivate').addEventListener('click', () => bulkSetActive(false));
+el('map-bulk-clear').addEventListener('click', () => { mapSelection.clear(); renderMappings(); });
+
+// Export mappings (full table, with today's stock + price columns)
+const MAP_EXPORT_COLUMNS = [
+  { key: 'sellerSkuCode',      label: 'SellerSkuCode' },
+  { key: 'liveStatus',         label: 'Myntra Status' },
+  { key: 'zmCode',             label: 'ZM Code' },
+  { key: 'colourName',         label: 'Colour' },
+  { key: 'styleId',            label: 'Style Id' },
+  { key: 'articleType',        label: 'Article Type' },
+  { key: 'kuntalCode',         label: 'Item No.' },
+  { key: 'productName',        label: 'Product' },
+  { key: 'stock',              label: "Today's Stock" },
+  { key: 'kuntalSellingPrice', label: 'Kuntal Selling Price' },
+  { key: 'myntraMrp',          label: 'Myntra MRP' },
+  { key: 'myntraIsp',          label: 'Myntra ISP' },
+];
+const mapExportRows = () => mappingRows().map(r => ({
+  ...r,
+  stock: stockText(r),
+  liveStatus: r.active ? 'Active' : 'Deactivated'
+}));
+
+el('map-export-csv').addEventListener('click', () => {
+  if (!state.mappings.length) { notify.warning('No mappings to export'); return; }
+  downloadFile(toCSV(mapExportRows(), MAP_EXPORT_COLUMNS), `myntra_mappings_${stamp()}.csv`, 'text/csv;charset=utf-8;');
+  notify.success(`Exported ${state.mappings.length} mappings (CSV)`);
+});
+el('map-export-xlsx').addEventListener('click', () => {
+  if (!state.mappings.length) { notify.warning('No mappings to export'); return; }
   if (!window.XLSX) { notify.error('Excel library not loaded'); return; }
   const aoa = [MAP_EXPORT_COLUMNS.map(c => c.label), ...mapExportRows().map(r => MAP_EXPORT_COLUMNS.map(c => r[c.key]))];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [22, 10, 14, 12, 14, 12, 28, 14].map(w => ({ wch: w }));
+  ws['!cols'] = [22, 14, 10, 14, 12, 14, 12, 28, 14, 20, 14, 14].map(w => ({ wch: w }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Myntra Mappings');
   XLSX.writeFile(wb, `myntra_mappings_${stamp()}.xlsx`);
-  notify.success(`Exported ${mappings.length} mappings (Excel)`);
+  notify.success(`Exported ${state.mappings.length} mappings (Excel)`);
 });
 
 // Mapping upload
-const mapDrop = document.getElementById('map-drop');
-const mapFile = document.getElementById('map-file');
-bindDrop(mapDrop, mapFile, handleMappingFile);
+const mapDrop = el('map-drop');
+bindDrop(mapDrop, el('map-file'), handleMappingFile);
 
 async function handleMappingFile(file) {
   mapDrop.innerHTML = `<div class="flex flex-col items-center gap-2 py-2"><div class="spinner"></div><p class="text-slate-400 text-xs">Parsing ${esc(file.name)}…</p></div>`;
@@ -430,26 +1072,32 @@ async function handleMappingFile(file) {
       <i data-lucide="check-circle" class="w-7 h-7 text-emerald-400 mx-auto"></i>
       <p class="text-emerald-400 text-sm font-semibold">${esc(file.name)}</p>
       <p class="text-slate-400 text-xs">${parsed.length} mappings saved${invalid.length ? ` · ${invalid.length} invalid SKU skipped` : ''}${skippedBlank ? ` · ${skippedBlank} blank rows skipped` : ''}</p>
-      <button onclick="resetMapDrop()" class="text-xs text-slate-500 hover:text-slate-300 mt-1">Upload another</button>
+      <button type="button" id="map-drop-reset" class="text-xs text-slate-500 hover:text-slate-300 mt-1">Upload another</button>
     </div>`;
     if (window.lucide) lucide.createIcons();
+    el('map-drop-reset')?.addEventListener('click', ev => {
+      ev.stopPropagation();
+      resetDrop(mapDrop, 'Myntra mapping .csv / .xlsx');
+    });
     notify.success(`${parsed.length} Myntra mappings saved`);
     if (invalid.length) notify.warning(`Skipped ${invalid.length} SKU(s) not matching ZM-<no>-<colour>: ${invalid.slice(0,3).join(', ')}${invalid.length>3?'…':''}`);
-    mappings = await getAllMyntraMappings();
+    state.mappings = await getAllMyntraMappings();
+    mapSelection.clear();
     populateColourFilter();
     renderMappings();
+    renderKpis();
+    pricingTab?.render();
+    purchaseTab?.render();
   } catch(err) {
     notify.error('Failed: ' + err.message);
     resetDrop(mapDrop, 'Myntra mapping .csv / .xlsx');
   }
 }
-window.resetMapDrop = () => resetDrop(mapDrop, 'Myntra mapping .csv / .xlsx');
 
 // ═════════════ INVENTORY UPDATE TAB ═════════════
 
-const invDrop = document.getElementById('inv-drop');
-const invFile = document.getElementById('inv-file');
-bindDrop(invDrop, invFile, handleInventoryFile);
+const invDrop = el('inv-drop');
+bindDrop(invDrop, el('inv-file'), handleInventoryFile);
 
 const STATUS_CHIPS = {
   ok:               { cls: 'level-high',     label: 'OK' },
@@ -458,6 +1106,7 @@ const STATUS_CHIPS = {
   no_zm_mapping:    { cls: 'level-low',      label: 'No ZM mapping' },
   no_stock_item:    { cls: 'level-low',      label: 'No stock item' },
   colour_not_found: { cls: 'level-low',      label: 'Colour not found' },
+  inactive:         { cls: 'level-sold_out', label: 'Deactivated (excluded)' },
   duplicate:        { cls: 'level-sold_out', label: 'Duplicate (skipped)' },
 };
 const MISSING_STATUSES = ['invalid_sku', 'no_zm_mapping', 'no_stock_item', 'colour_not_found'];
@@ -471,20 +1120,28 @@ function genMatchesStatus(r, s) {
 
 function resetGenView() {
   genView.q = ''; genView.status = 'all'; genView.sortKey = null; genView.sortDir = 1;
-  document.getElementById('inv-search').value = '';
-  document.getElementById('inv-status-filter').value = 'all';
+  el('inv-search').value = '';
+  el('inv-status-filter').value = 'all';
 }
 
 function runGeneration(skus, sourceLabel) {
   lastSkus = skus;
-  genResult = generateInventoryUpdate(skus, ctx, getMyntraGapThreshold(), getMyntraTakePercent());
+  genResult = generateInventoryUpdate(
+    skus, state.ctx, getMyntraGapThreshold(), getMyntraTakePercent(),
+    { inactiveSkus: inactiveSkuSet() }
+  );
   resetGenView();
   renderGenResult();
-  notify.success(`${sourceLabel}: ${genResult.summary.filled} SKUs filled, ${genResult.summary.total - genResult.summary.filled - genResult.summary.duplicates} set to 0`);
+  const s = genResult.summary;
+  const zeroed = s.total - s.filled - s.duplicates - s.inactive;
+  notify.success(
+    `${sourceLabel}: ${s.filled} SKUs filled, ${zeroed} set to 0` +
+    (s.inactive ? `, ${s.inactive} deactivated SKU(s) excluded` : '')
+  );
 }
 
 // ── Take % control ────────────────────────────────────────────
-const takePercentEl = document.getElementById('take-percent');
+const takePercentEl = el('take-percent');
 takePercentEl.value = getMyntraTakePercent();
 takePercentEl.addEventListener('change', () => {
   const p = Math.min(100, Math.max(1, Math.floor(Number(takePercentEl.value) || 50)));
@@ -501,7 +1158,7 @@ takePercentEl.addEventListener('change', () => {
 async function handleInventoryFile(file) {
   invDrop.innerHTML = `<div class="flex flex-col items-center gap-2 py-2"><div class="spinner"></div><p class="text-slate-400 text-xs">Processing ${esc(file.name)}…</p></div>`;
   try {
-    if (!ctx?.latestDate) { notify.error('No stock data uploaded yet — upload today\'s stock first.'); resetInvDropUI(); return; }
+    if (!state.ctx?.latestDate) { notify.error('No stock data uploaded yet — upload today\'s stock first.'); resetInvDropUI(); return; }
     const rows = await readExcelFile(file);
     const { skus, hasQuantityColumn } = parseInventoryFile(rows);
     if (!skus.length) { notify.error('No sellerSkuCode values found in file'); resetInvDropUI(); return; }
@@ -511,32 +1168,32 @@ async function handleInventoryFile(file) {
       <i data-lucide="check-circle" class="w-7 h-7 text-emerald-400 mx-auto"></i>
       <p class="text-emerald-400 text-sm font-semibold">${esc(file.name)}</p>
       <p class="text-slate-400 text-xs">${genResult.summary.total} SKUs processed — results below</p>
-      <button onclick="resetInvDropGlobal()" class="text-xs text-slate-500 hover:text-slate-300 mt-1">Upload another</button>
+      <button type="button" id="inv-drop-reset" class="text-xs text-slate-500 hover:text-slate-300 mt-1">Upload another</button>
     </div>`;
     if (window.lucide) lucide.createIcons();
+    el('inv-drop-reset')?.addEventListener('click', ev => { ev.stopPropagation(); resetInvDropUI(); });
   } catch(err) {
     notify.error('Failed: ' + err.message);
     resetInvDropUI();
   }
 }
 function resetInvDropUI() { resetDrop(invDrop, 'sellerSkuCode,quantity — .csv / .xlsx'); }
-window.resetInvDropGlobal = resetInvDropUI;
 
 // Generate for all saved mappings — no file needed
-document.getElementById('gen-from-mapping').addEventListener('click', () => {
-  if (!ctx?.latestDate) { notify.error('No stock data uploaded yet — upload today\'s stock first.'); return; }
-  if (!mappings.length) {
+el('gen-from-mapping').addEventListener('click', () => {
+  if (!state.ctx?.latestDate) { notify.error('No stock data uploaded yet — upload today\'s stock first.'); return; }
+  if (!state.mappings.length) {
     notify.error('No Myntra mappings saved yet — open the Mapping tab and upload the mapping file first.');
     setTab('mapping');
     return;
   }
-  const skus = mappings.map(m => m.sellerSkuCode)
+  const skus = state.mappings.map(m => m.sellerSkuCode)
     .sort((a,b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
   runGeneration(skus, `Generated from ${skus.length} saved mappings`);
 });
 
 function renderGenResult() {
-  document.getElementById('inv-toolbar').classList.remove('hidden');
+  el('inv-toolbar').classList.remove('hidden');
   renderGenSummary();
   renderGenTable();
 }
@@ -544,20 +1201,21 @@ function renderGenResult() {
 function renderGenSummary() {
   const rows = genResult.rows;
   const count = s => rows.filter(r => genMatchesStatus(r, s)).length;
-  const s = document.getElementById('inv-summary');
+  const s = el('inv-summary');
   s.classList.remove('hidden');
   const chip = (status, label, value, color) => {
-    const active = genView.status === status;
-    return `<button data-status="${status}" class="bg-gradient-to-br ${color} border rounded-2xl p-3 text-center transition ${active ? 'ring-2 ring-emerald-400/60' : 'hover:brightness-125'}">
+    const on = genView.status === status;
+    return `<button data-status="${status}" class="bg-gradient-to-br ${color} border rounded-2xl p-3 text-center transition ${on ? 'ring-2 ring-emerald-400/60' : 'hover:brightness-125'}">
       <p class="text-xl font-bold text-white">${value}</p>
       <p class="text-slate-500 text-xs mt-0.5">${label}</p>
     </button>`;
   };
   s.innerHTML =
     chip('all', 'Total SKUs', rows.length, 'from-blue-500/10 border-blue-500/20') +
-    chip('ok', 'Filled (half)', count('ok'), 'from-emerald-500/10 border-emerald-500/20') +
+    chip('ok', 'Filled', count('ok'), 'from-emerald-500/10 border-emerald-500/20') +
     chip('below_gap', 'Below Gap → 0', count('below_gap'), 'from-amber-500/10 border-amber-500/20') +
     chip('missing', 'Missing → 0', count('missing'), 'from-red-500/10 border-red-500/20') +
+    chip('inactive', 'Deactivated', count('inactive'), 'from-slate-500/10 border-slate-500/20') +
     chip('duplicate', 'Duplicates', count('duplicate'), 'from-slate-500/10 border-slate-500/20') +
     chip('edited', 'Edited', count('edited'), 'from-purple-500/10 border-purple-500/20');
 }
@@ -574,14 +1232,14 @@ function renderGenTable() {
   f = applySort(f, genView, (r, k) =>
     (k === 'stockQty' || k === 'quantity') ? (r[k] ?? -1) : String(r[k] ?? ''));
 
-  document.getElementById('inv-count').textContent = `${f.length} of ${all.length} SKUs`;
+  el('inv-count').textContent = `${f.length} of ${all.length} SKUs · ${all.filter(isExportable).length} will be downloaded`;
 
   if (!f.length) {
-    document.getElementById('inv-table').innerHTML =
+    el('inv-table').innerHTML =
       `<p class="text-slate-500 text-sm text-center py-6">No SKUs match the current filters.</p>`;
     return;
   }
-  document.getElementById('inv-table').innerHTML = `
+  el('inv-table').innerHTML = `
     <table class="w-full text-sm">
       <thead class="sticky top-0 z-10 bg-slate-900"><tr class="text-slate-500 text-xs uppercase tracking-wide border-b border-white/5">
         ${thSort(genView,'sellerSkuCode','sellerSkuCode')}
@@ -594,16 +1252,16 @@ function renderGenTable() {
       </tr></thead>
       <tbody>${f.map(r => {
         const chip = STATUS_CHIPS[r.status] || STATUS_CHIPS.invalid_sku;
-        const isDup = r.status === 'duplicate';
-        return `<tr class="border-b border-white/5 hover:bg-white/[0.02]">
+        const locked = !isExportable(r);
+        return `<tr class="border-b border-white/5 hover:bg-white/[0.02] ${locked ? 'opacity-60' : ''}">
           <td class="px-4 py-2 text-slate-200 font-medium whitespace-nowrap">${esc(r.sellerSkuCode)}</td>
           <td class="px-4 py-2 text-slate-400">${esc(r.kuntalCode) || '—'}</td>
           <td class="px-4 py-2 text-slate-400 max-w-[220px] truncate">${esc(r.productName) || '—'}</td>
           <td class="px-4 py-2 text-slate-300">${esc(r.colourName) || '—'}</td>
           <td class="px-4 py-2 text-right text-slate-300">${r.stockQty ?? '—'}</td>
           <td class="px-4 py-2 text-right">
-            <input type="number" min="0" value="${r.quantity}" data-idx="${r._idx}" ${isDup ? 'disabled' : ''}
-              class="w-20 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-right text-sm font-bold focus:outline-none focus:border-emerald-500/40 ${isDup ? 'opacity-40 cursor-not-allowed' : ''} ${r.edited ? 'ring-2 ring-amber-400/60 text-amber-300' : (r.quantity > 0 ? 'text-emerald-400' : 'text-slate-500')}">
+            <input type="number" min="0" value="${r.quantity}" data-idx="${r._idx}" ${locked ? 'disabled' : ''}
+              class="w-20 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-right text-sm font-bold focus:outline-none focus:border-emerald-500/40 ${locked ? 'opacity-40 cursor-not-allowed' : ''} ${r.edited ? 'ring-2 ring-amber-400/60 text-amber-300' : (r.quantity > 0 ? 'text-emerald-400' : 'text-slate-500')}">
           </td>
           <td class="px-4 py-2"><span class="${chip.cls} text-xs">${chip.label}${r.edited ? ' · edited' : ''}</span></td>
         </tr>`;
@@ -613,17 +1271,17 @@ function renderGenTable() {
 }
 
 // Generator controls
-document.getElementById('inv-search').addEventListener('input', debounce(e => { genView.q = e.target.value.trim(); if (genResult) renderGenTable(); }));
-document.getElementById('inv-status-filter').addEventListener('change', e => { genView.status = e.target.value; if (genResult) { renderGenSummary(); renderGenTable(); } });
-document.getElementById('inv-summary').addEventListener('click', e => {
+el('inv-search').addEventListener('input', debounce(e => { genView.q = e.target.value.trim(); if (genResult) renderGenTable(); }));
+el('inv-status-filter').addEventListener('change', e => { genView.status = e.target.value; if (genResult) { renderGenSummary(); renderGenTable(); } });
+el('inv-summary').addEventListener('click', e => {
   const btn = e.target.closest('button[data-status]');
   if (!btn || !genResult) return;
   genView.status = btn.dataset.status;
-  document.getElementById('inv-status-filter').value = genView.status;
+  el('inv-status-filter').value = genView.status;
   renderGenSummary();
   renderGenTable();
 });
-const invTableEl = document.getElementById('inv-table');
+const invTableEl = el('inv-table');
 invTableEl.addEventListener('click', e => {
   const th = e.target.closest('th[data-sort]');
   if (th && genResult) { toggleSort(genView, th.dataset.sort); renderGenTable(); }
@@ -634,7 +1292,7 @@ invTableEl.addEventListener('input', e => {
   const inp = e.target.closest('input[data-idx]');
   if (!inp || !genResult) return;
   const row = genResult.rows[+inp.dataset.idx];
-  if (!row || row.status === 'duplicate') return;
+  if (!row || !isExportable(row)) return;
   row.quantity = Math.max(0, Math.floor(Number(inp.value) || 0));
   if (!row.edited) {
     row.edited = true;
@@ -649,14 +1307,14 @@ const OUT_COLUMNS = [
   { key: 'sellerSkuCode', label: 'sellerSkuCode' },
   { key: 'quantity',      label: 'quantity' },
 ];
-const exportRows = () => genResult.rows.filter(r => r.status !== 'duplicate');
+const exportRows = () => genResult.rows.filter(isExportable);
 
-document.getElementById('dl-csv').addEventListener('click', () => {
+el('dl-csv').addEventListener('click', () => {
   if (!genResult) { notify.warning('Generate the inventory update first'); return; }
   downloadFile(toCSV(exportRows(), OUT_COLUMNS), `myntra_inventory_update_${stamp()}.csv`, 'text/csv;charset=utf-8;');
   notify.success(`Downloaded ${exportRows().length} SKUs (CSV)`);
 });
-document.getElementById('dl-xlsx').addEventListener('click', () => {
+el('dl-xlsx').addEventListener('click', () => {
   if (!genResult) { notify.warning('Generate the inventory update first'); return; }
   if (!window.XLSX) { notify.error('Excel library not loaded'); return; }
   const aoa = [OUT_COLUMNS.map(c => c.label), ...exportRows().map(r => [r.sellerSkuCode, r.quantity])];
@@ -668,26 +1326,17 @@ document.getElementById('dl-xlsx').addEventListener('click', () => {
   notify.success(`Downloaded ${exportRows().length} SKUs (Excel)`);
 });
 
-// ── Shared dropzone helpers ───────────────────────────────────
-function bindDrop(zone, input, handler) {
-  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
-  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
-  zone.addEventListener('drop', e => {
-    e.preventDefault(); zone.classList.remove('drag-over');
-    if (e.dataTransfer.files[0]) handler(e.dataTransfer.files[0]);
-  });
-  input.addEventListener('change', () => {
-    if (input.files[0]) handler(input.files[0]);
-    input.value = '';
-  });
-}
+// Secondary modal-close buttons + Esc
+el('parties-cancel-2').addEventListener('click', () => el('parties-modal').classList.add('hidden'));
+el('ret-add-cancel-2').addEventListener('click', () => el('ret-add-modal').classList.add('hidden'));
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  for (const id of ['parties-modal', 'bill-preview-modal', 'ret-add-modal']) el(id).classList.add('hidden');
+});
 
-function resetDrop(zone, hint) {
-  zone.innerHTML = `<i data-lucide="upload-cloud" class="w-7 h-7 text-slate-600 mx-auto mb-2"></i>
-    <p class="text-slate-400 text-sm font-medium">Drop file here or click</p>
-    <p class="text-slate-600 text-xs mt-1">${hint}</p>`;
-  if (window.lucide) lucide.createIcons();
-}
+// Keep the parties line in sync after the modal saves
+const partiesSaveBtn = el('parties-save');
+partiesSaveBtn.addEventListener('click', () => setTimeout(renderPartiesLine, 300));
 
 load();
 </script>

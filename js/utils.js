@@ -69,6 +69,86 @@ export const normItemNo = (s) => String(s ?? '').trim().replace(/[.\s]+$/, '').t
 export const itemStitchType = (s) => /\(\s*UNST\s*\)/i.test(String(s ?? '')) ? 'unstitched' : 'stitched';
 
 /**
+ * Canonical ZM code — drops zero padding and normalises the separator so the
+ * pricing file's "ZM-01" joins the mapping's "ZM-1". Anything that isn't
+ * ZM-<digits> falls through as trimmed uppercase (unchanged behaviour).
+ */
+export const normZmCode = (s) => {
+  const m = /^\s*zm\s*[-_ ]?\s*0*(\d+)\s*$/i.exec(String(s ?? ''));
+  return m ? `ZM-${m[1]}` : String(s ?? '').trim().toUpperCase();
+};
+
+/**
+ * Parse a spreadsheet money/number cell. Strips ₹, commas and spaces.
+ * Blank/unparseable → null (NOT 0 — a missing Myntra MRP must stay missing).
+ */
+export function toNum(v) {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  const cleaned = String(v).replace(/[₹,\s]/g, '').trim();
+  if (!cleaned) return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Round to 2 decimals without float drift (0.615 → 0.62). */
+export const round2 = (n) => Math.round((Number(n) || 0) * 100 + Number.EPSILON) / 100;
+
+/** Indian-grouped money string: 123456.5 → "1,23,456.50" */
+export function formatINR(n, decimals = 2) {
+  const num = Number(n) || 0;
+  const neg = num < 0;
+  const fixed = Math.abs(num).toFixed(decimals);
+  const [int, dec] = fixed.split('.');
+  // Last 3 digits, then groups of 2 (Indian numbering)
+  const last3 = int.slice(-3);
+  const rest = int.slice(0, -3);
+  const grouped = rest ? rest.replace(/\B(?=(\d{2})+(?!\d))/g, ',') + ',' + last3 : last3;
+  return `${neg ? '-' : ''}${grouped}${dec ? '.' + dec : ''}`;
+}
+
+const WORDS_ONES = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+  'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+const WORDS_TENS = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+function twoDigitWords(n) {
+  if (n < 20) return WORDS_ONES[n];
+  const t = WORDS_TENS[Math.floor(n / 10)];
+  const o = WORDS_ONES[n % 10];
+  return o ? `${t} ${o}` : t;
+}
+
+/**
+ * Amount in words, Indian scale (Crore / Lakh / Thousand / Hundred).
+ * 31824 → "Rupees Thirty One Thousand Eight Hundred Twenty Four Only"
+ */
+export function amountInWords(amount) {
+  const num = Math.abs(Number(amount) || 0);
+  const rupees = Math.floor(num);
+  const paise = Math.round((num - rupees) * 100);
+
+  const chunk = (n) => {
+    const parts = [];
+    const crore = Math.floor(n / 10000000);
+    const lakh = Math.floor((n % 10000000) / 100000);
+    const thousand = Math.floor((n % 100000) / 1000);
+    const hundred = Math.floor((n % 1000) / 100);
+    const rest = n % 100;
+    if (crore) parts.push(`${chunk(crore)} Crore`);
+    if (lakh) parts.push(`${twoDigitWords(lakh)} Lakh`);
+    if (thousand) parts.push(`${twoDigitWords(thousand)} Thousand`);
+    if (hundred) parts.push(`${WORDS_ONES[hundred]} Hundred`);
+    if (rest) parts.push(twoDigitWords(rest));
+    return parts.join(' ');
+  };
+
+  const rupeeWords = rupees ? chunk(rupees) : 'Zero';
+  let out = `Rupees ${rupeeWords}`;
+  if (paise) out += ` and ${twoDigitWords(paise)} Paise`;
+  return `${out} Only`;
+}
+
+/**
  * Merge duplicate color entries, summing quantities
  */
 export function mergeColors(colorsArray) {
