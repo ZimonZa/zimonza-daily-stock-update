@@ -16,11 +16,17 @@ export function formatDate(date) {
 }
 
 /**
- * Format date to display string: "16 May 2026"
+ * Format a YYYY-MM-DD string for display as dd/mm/yyyy ("2026-05-16" → "16/05/2026").
+ * Returns '' for anything unparseable so callers' `|| raw` fallbacks work —
+ * never the string "Invalid Date".
  */
 export function formatDateDisplay(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00');
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
+  const s = String(dateStr ?? '').trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+  const d = new Date(s);
+  if (isNaN(d)) return '';
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 }
 
 /**

@@ -126,7 +126,33 @@ One page (`myntra.html`), five sections:
 | **Mapping** | Every SellerSkuCode with its colour, today's stock, live status toggle, and price columns. Bulk activate / deactivate. |
 | **Pricing** | Upload `Myntra Pricing.xlsx`. Flags mapped styles that have no price (those cannot be billed). |
 | **Purchase** | Cart → GST bill → PDF. Saved, auto-numbered, re-downloadable. |
-| **Returns & RTO** | Register of goods coming back. **Never counted into stock**, but a label can be filled from it. |
+| **Returns & RTO** | Register of goods coming back, with a stock summary. **Never counted into stock**, but a label can be filled from it. |
+
+### Returns & RTO file
+
+The upload accepts the register's own export straight back in:
+
+| Type | SellerSkuCode | ZM Code | Kuntal Code | Colour | Qty | Date | Condition | Reason | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| RTO | ZM-10-Pink | ZM-10 | 4144 | Pink | 1 | 20-08-2026 | good | | |
+
+- **Headers are matched however they are written.** Cells are stripped to letters and digits before comparing, so `Kuntal Code`, `KUNTALCODE`, `kuntal_code` and `Item No` all land on the same field, and the columns may be in any order. `Reason` is resolved before `Notes` so "Remark" cannot steal it.
+- **Colour spelling is corrected.** The mapping wins for a SKU it knows; otherwise the known-colour list is consulted by Levenshtein distance. Corrections are never silent — the review table shows `↻ rustt` next to the corrected value, and the row can still be unticked.
+- **Dates are read day-first.** `20-08-2026`, `20/08/2026`, ISO, and genuine Excel date cells (stored as serial numbers) all work. `01/02/2026` is **1 February**, not 2 January — JavaScript's own date parser is deliberately not used for separator dates. An unreadable date is flagged in the review rather than silently blanked.
+- Order ID and AWB are not read or stored.
+
+Rows can be **selected in bulk and deleted**, or **edited** individually through the same form used to add them.
+
+### Stock in Returns & RTO
+
+Above the rows table, a summary of what the register is actually holding — SKUs, colours, ZM codes, total pieces, and **usable** pieces (what a label can pull, so Damaged and Missing excluded) — with a breakdown by ZM code listing each colour and its pieces. It follows the filters above it, and exports to CSV or Excel.
+
+```
+ SKUs 24   Colours 31   ZM Codes 18   Total 46   Usable 41   Held Back 5
+────────────────────────────────────────────────────────────────────────
+ ZM-42   3102   Rani 4 · Black 2 · Red 2      3    8      8
+ ZM-43   3095   Chiku 3 · Pyazi 2             2    5      3
+```
 
 ### Fulfil from label.pdf
 
@@ -239,6 +265,7 @@ Drag and drop the project folder onto [netlify.com/drop](https://netlify.com/dro
 | Background | Slate `#0F172A` |
 | Font | Inter (Google Fonts) |
 | Radius | `rounded-2xl` (16px) |
+| Dates | `dd/mm/yyyy` throughout |
 | Cards | Glassmorphism + `rgba(255,255,255,0.04)` |
 
 ---

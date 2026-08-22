@@ -441,7 +441,7 @@
         <div id="ret-summary" class="grid grid-cols-2 sm:grid-cols-5 gap-3 hidden"></div>
 
         <div class="flex flex-wrap gap-3 items-center">
-          <input id="ret-search" type="text" placeholder="Search SKU, colour, order ID, reason…" class="zm-input w-60">
+          <input id="ret-search" type="text" placeholder="Search SKU, ZM code, Kuntal code, colour, reason…" class="zm-input w-60">
           <select id="ret-type-filter" class="zm-input w-44">
             <option value="all">All Types</option>
             <option value="customer_return">Customer Return</option>
@@ -460,6 +460,33 @@
             <input id="ret-to" type="date" class="zm-input w-36" title="To date">
           </div>
           <span id="ret-count" class="text-slate-500 text-xs ml-auto"></span>
+        </div>
+
+        <!-- What the register is holding -->
+        <div id="ret-stock" class="hidden space-y-3 p-4 rounded-xl border border-white/10 bg-white/[0.02]">
+          <div class="flex flex-wrap items-center gap-3">
+            <div class="flex-1 min-w-0">
+              <p class="text-white text-sm font-semibold">Stock in Returns &amp; RTO</p>
+              <p class="text-slate-500 text-xs">Grouped by ZM code — follows the filters above</p>
+            </div>
+            <button id="ret-stock-csv" class="btn-secondary text-xs py-1.5 px-2.5">
+              <i data-lucide="download" class="w-3.5 h-3.5 inline-block mr-1"></i> CSV
+            </button>
+            <button id="ret-stock-xlsx" class="btn-secondary text-xs py-1.5 px-2.5">
+              <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 inline-block mr-1"></i> Excel
+            </button>
+          </div>
+          <div id="ret-stock-tiles" class="grid grid-cols-3 sm:grid-cols-6 gap-3"></div>
+          <div id="ret-stock-table" class="max-h-[40vh] overflow-auto"></div>
+        </div>
+
+        <!-- Bulk selection -->
+        <div id="ret-bulkbar" class="zm-bulkbar hidden">
+          <span id="ret-selected-count" class="text-emerald-300 text-sm font-semibold"></span>
+          <button id="ret-bulk-delete" class="btn-secondary text-xs py-2 px-3 hover:!text-red-400">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5 inline-block mr-1"></i> Delete selected
+          </button>
+          <button id="ret-bulk-clear" class="text-slate-400 hover:text-slate-200 text-xs ml-auto">Clear selection</button>
         </div>
 
         <div id="ret-table" class="max-h-[60vh] overflow-auto">
@@ -552,7 +579,7 @@
   <div class="modal-box max-h-[90vh] overflow-y-auto">
     <div class="flex items-start justify-between gap-3 mb-5">
       <div>
-        <h3 class="text-white font-bold text-lg">Add Return / RTO</h3>
+        <h3 id="ret-modal-title" class="text-white font-bold text-lg">Add Return / RTO</h3>
         <p class="text-slate-400 text-sm">Recorded separately — never added to stock</p>
       </div>
       <button id="ret-add-cancel" class="text-slate-500 hover:text-white text-xl leading-none flex-shrink-0">×</button>
@@ -593,20 +620,15 @@
           <input id="ret-add-date" type="date" class="zm-input w-full mt-1">
         </div>
       </div>
-      <div class="grid grid-cols-2 gap-2.5">
-        <div>
-          <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Condition</label>
-          <select id="ret-add-condition" class="zm-input w-full mt-1">
-            <option value="">Not set</option>
-            <option value="good">Good</option>
-            <option value="damaged">Damaged</option>
-            <option value="missing">Missing</option>
-          </select>
-        </div>
-        <div>
-          <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Order ID</label>
-          <input id="ret-add-order" class="zm-input w-full mt-1">
-        </div>
+      <div>
+        <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Condition</label>
+        <select id="ret-add-condition" class="zm-input w-full mt-1">
+          <option value="">Not set</option>
+          <option value="good">Good</option>
+          <option value="damaged">Damaged</option>
+          <option value="missing">Missing</option>
+        </select>
+        <p class="text-slate-600 text-[11px] mt-1">Damaged and Missing stock is held back — a label will not pull it.</p>
       </div>
       <div>
         <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Notes</label>

@@ -661,6 +661,27 @@ body {
 /* A row that cannot be billed until a rate is typed */
 .ful-row-bad { background: rgba(239,68,68,0.05); }
 
+/* ─── Returns / RTO stock summary ──────────────────────── */
+.ret-colour-chip {
+  display: inline-block; font-size: 11px; padding: 2px 8px;
+  border-radius: 999px; margin: 2px 4px 2px 0; white-space: nowrap;
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+  color: #CBD5E1;
+}
+.ret-colour-chip b { color: #34D399; font-weight: 700; margin-left: 2px; }
+
+/* "spelling was corrected" marker in the upload review */
+.ret-fix-chip {
+  display: inline-block; font-size: 10px; font-weight: 600;
+  padding: 1px 6px; border-radius: 999px; white-space: nowrap;
+  background: rgba(139,92,246,0.15); color: #C4B5FD; border: 1px solid rgba(139,92,246,0.3);
+  text-decoration: line-through;
+}
+
+.light-mode .ret-colour-chip { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.1); color: #334155; }
+.light-mode .ret-colour-chip b { color: #059669; }
+.light-mode .ret-fix-chip { background: rgba(139,92,246,0.12); color: #6D28D9; }
+
 .light-mode .ful-flag-warn { background: rgba(245,158,11,0.12); color: #B45309; }
 .light-mode .ful-flag-bad  { background: rgba(239,68,68,0.10);  color: #B91C1C; }
 .light-mode .ful-flag-info { background: rgba(100,116,139,0.10); color: #475569; }

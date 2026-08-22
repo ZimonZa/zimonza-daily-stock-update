@@ -216,6 +216,14 @@ export async function deleteMyntraReturn(id) {
   await deleteDoc(doc(db, COLLECTIONS.MYNTRA_RETURNS, id));
 }
 
+/** Delete many return/RTO rows at once (chunked) */
+export async function deleteMyntraReturns(ids) {
+  const operations = (ids || []).map(id => (batch) => {
+    batch.delete(doc(db, COLLECTIONS.MYNTRA_RETURNS, id));
+  });
+  await runChunkedBatch(operations);
+}
+
 // ─── Purchase Bills ─────────────────────────────────────────────
 
 const billId = (billNo) => String(billNo).replace(/[\/\\#?\s]+/g, '_');
