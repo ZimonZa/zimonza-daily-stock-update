@@ -68,6 +68,7 @@ Visit `http://localhost:8080`
 ├── upload.html             ← Excel file upload & processing center
 ├── stock-analysis.html     ← Full inventory table with filters
 ├── zm-panel.html           ← ZM product code & upload status manager
+├── pdf-to-excel.html       ← PDF → Excel converter + PDF sorter/merger
 ├── myntra.html             ← Myntra hub: inventory update, mapping, pricing,
 │                             purchase billing, returns & RTO
 ├── new-arrivals.html       ← Newly detected SKUs
@@ -98,6 +99,7 @@ Visit `http://localhost:8080`
 │   ├── myntra-returns.js   ← Customer returns & RTO register
 │   ├── invoice-pdf.js      ← GST bill PDF, pick slip PDF + previews
 │   ├── myntra-labels.js    ← label.pdf reader (one page = one piece)
+│   ├── pdf-merge.js        ← PDF sorter & merger (label/invoice grouping)
 │   ├── myntra-fulfilment.js← Label → RTO stock first, then purchase
 │   ├── skip-manager.js     ← Skip list management
 │   ├── history-manager.js  ← Calendar & history logic
@@ -113,6 +115,30 @@ Visit `http://localhost:8080`
 ├── firebase.json           ← Firebase Hosting config
 └── .env.example            ← Environment variables template
 ```
+
+---
+
+## 📄 PDF Sorter & Merger
+
+Second tab on the **PDF → Excel** page. Drop in any number of PDFs — `Label.pdf`, `Label (1).pdf`, `invoice.pdf`, anything — and get back **one merged PDF per document type**. Everything happens in the browser; no file is ever uploaded, which matters because labels carry customer addresses.
+
+**How it decides what goes where.** Three signals, weighted and summed rather than tried in order:
+
+| Signal | Example |
+|---|---|
+| Filename | `Label (1).pdf`, `Label-2.pdf`, `label_copy.pdf` all reduce to `label` |
+| Content | *invoice* — `tax invoice`, `gstin`, `hsn`, `cgst` · *label* — `awb`, `ship to`, `courier` |
+| Page size | 4×6 in thermal ≈ label · A4 / Letter ≈ invoice |
+
+Because they are combined, a file called `8s7d6f.pdf` is still placed correctly by its content and size, and a **scanned label with no text at all** is still placed by its name and size. Where the signals contradict each other — a file named `Label.pdf` whose pages are plainly A4 invoices — the conflict shows up as **low confidence** with the reason spelled out, rather than a confident wrong answer. Every file has a dropdown to override the guess.
+
+**Mixed PDFs are split.** Myntra sometimes ships one file with labels and invoices alternating. Each page is classified separately, and a file whose pages disagree is marked *Mixed — split* and its pages routed individually.
+
+**Order and date.** Files sort naturally — the original first, then its copies in numeric order (`Label.pdf`, `Label (2).pdf`, `Label (10).pdf`) — and can be dragged. A **batch date** picker names the output, so a batch prepared for the 20th still produces `Label_merged_20-08-2026.pdf` when merged on the 22nd.
+
+**Why pdf-lib and not jsPDF.** jsPDF would rasterise each page into an image, and a re-rendered **barcode is unreliable under a scanner**. pdf-lib copies page objects intact, so barcodes and text survive untouched. It is loaded lazily, only when the Merge tab is actually used.
+
+Anything the signals cannot place lands in **Unsorted** — never silently dropped. An encrypted or corrupt PDF is marked unreadable and skipped; the rest of the batch still merges.
 
 ---
 

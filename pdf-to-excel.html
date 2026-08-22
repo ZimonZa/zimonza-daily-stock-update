@@ -18,9 +18,9 @@
   <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
     <div>
       <h1 class="text-2xl font-bold text-white">PDF → Excel</h1>
-      <p id="page-subtitle" class="text-slate-400 text-sm mt-0.5">Convert a text-based stock PDF into a clean, styled Excel table</p>
+      <p id="page-subtitle" class="text-slate-400 text-sm mt-0.5">Convert a stock PDF to Excel, or sort and merge a pile of PDFs</p>
     </div>
-    <div class="flex items-center gap-2 flex-wrap">
+    <div id="convert-actions" class="flex items-center gap-2 flex-wrap">
       <button id="export-xlsx-btn" class="btn-primary text-sm py-2 px-4 hidden">
         <i data-lucide="file-spreadsheet" class="w-4 h-4 inline-block mr-1"></i> Download Excel
       </button>
@@ -32,6 +32,14 @@
       </button>
     </div>
   </div>
+
+  <!-- Tabs -->
+  <div class="zm-tabbar border-b border-white/10">
+    <button id="tabbtn-convert" class="zm-tab"><i data-lucide="file-spreadsheet" class="w-4 h-4"></i> Stock PDF → Excel</button>
+    <button id="tabbtn-merge" class="zm-tab"><i data-lucide="layers" class="w-4 h-4"></i> Merge PDFs <span id="tabcount-merge" class="zm-tab-count"></span></button>
+  </div>
+
+ <div id="tab-convert" class="space-y-6">
 
   <!-- Upload Zone -->
   <div id="upload-section">
@@ -101,6 +109,53 @@
     </div>
   </div>
 
+ </div><!-- /tab-convert -->
+
+ <!-- ════════ TAB: Merge PDFs ════════ -->
+ <div id="tab-merge" class="hidden space-y-5">
+
+  <div class="glass-card overflow-hidden">
+    <div class="flex flex-wrap items-center gap-3 px-6 py-4 border-b border-white/5">
+      <div class="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center flex-shrink-0">
+        <i data-lucide="layers" class="w-5 h-5 text-emerald-400"></i>
+      </div>
+      <div class="flex-1 min-w-0">
+        <h3 class="text-white font-semibold text-sm">Sort &amp; Merge PDFs</h3>
+        <p class="text-slate-400 text-xs">Labels merge with labels, invoices with invoices. Nothing leaves this browser.</p>
+      </div>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <label for="mrg-date" class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Batch date</label>
+        <input id="mrg-date" type="date" class="zm-input w-40 text-sm">
+      </div>
+      <button id="mrg-clear" class="btn-secondary text-xs py-2 px-3 flex-shrink-0">Clear</button>
+    </div>
+
+    <div class="p-6 space-y-4">
+      <div id="mrg-drop" class="drop-zone p-6 text-center cursor-pointer"
+        onclick="document.getElementById('mrg-file').click()">
+        <i data-lucide="upload-cloud" class="w-7 h-7 text-slate-600 mx-auto mb-2"></i>
+        <p class="text-slate-400 text-sm font-medium">Drop any number of PDFs here or click</p>
+        <p class="text-slate-600 text-xs mt-1">Label.pdf, invoice.pdf, anything — they get sorted automatically</p>
+      </div>
+      <input type="file" id="mrg-file" accept=".pdf,application/pdf" multiple class="hidden">
+
+      <p id="mrg-progress" class="hidden text-slate-400 text-xs flex items-center gap-2"></p>
+
+      <div id="mrg-files-wrap" class="hidden space-y-2">
+        <div class="flex items-center gap-3">
+          <p class="text-white text-sm font-semibold">Files</p>
+          <span id="mrg-count" class="text-slate-500 text-xs"></span>
+          <span class="text-slate-600 text-xs ml-auto">Drag to reorder · change any group by hand</span>
+        </div>
+        <div id="mrg-files" class="max-h-[42vh] overflow-auto rounded-xl border border-white/5"></div>
+      </div>
+
+      <div id="mrg-groups" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+    </div>
+  </div>
+
+ </div><!-- /tab-merge -->
+
  </div>
 </div>
 
@@ -109,6 +164,10 @@ import { requireAuth } from './js/auth.js';
 import { renderShell } from './js/ui-components.js';
 import notify from './js/notifications.js';
 import { convertPdfToGrid } from './js/pdf-to-excel.js';
+import {
+  describePdf, classifyPdf, buildGroups, mergeGroup, mergedFileName,
+  downloadPdfBytes, groupLabel, byFileName, GROUPS, UNSORTED
+} from './js/pdf-merge.js';
 
 await requireAuth();
 renderShell('pdf-to-excel');
@@ -452,6 +511,242 @@ resetBtn.addEventListener('click', () => {
 function esc(str) {
   return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
+// ═══════════════════════════════════════════════════════════════
+// TAB: Merge PDFs
+// ═══════════════════════════════════════════════════════════════
+
+const el = id => document.getElementById(id);
+
+// ─── Tabs ─────────────────────────────────────────────────────
+const TABS = ['convert', 'merge'];
+function setTab(name) {
+  for (const t of TABS) {
+    el(`tab-${t}`).classList.toggle('hidden', t !== name);
+    el(`tabbtn-${t}`).classList.toggle('is-active', t === name);
+  }
+  // The header export buttons belong to the converter only
+  el('convert-actions').classList.toggle('hidden', name !== 'convert');
+  sessionStorage.setItem('zm_pdf_tab', name);
+  if (location.hash.slice(1) !== name) history.replaceState(null, '', `#${name}`);
+}
+for (const t of TABS) el(`tabbtn-${t}`).addEventListener('click', () => setTab(t));
+setTab(TABS.includes(location.hash.slice(1)) ? location.hash.slice(1)
+  : (TABS.includes(sessionStorage.getItem('zm_pdf_tab')) ? sessionStorage.getItem('zm_pdf_tab') : 'convert'));
+
+// ─── State ────────────────────────────────────────────────────
+let mrgFiles = [];        // described PDFs, in merge order
+let mrgGroups = [];
+let dragFrom = null;
+
+el('mrg-date').value = new Date().toISOString().slice(0, 10);
+el('mrg-date').addEventListener('change', renderGroups);
+
+// ─── Intake ───────────────────────────────────────────────────
+const mrgDrop = el('mrg-drop');
+const mrgInput = el('mrg-file');
+
+mrgDrop.addEventListener('dragover', e => { e.preventDefault(); mrgDrop.classList.add('drag-over'); });
+mrgDrop.addEventListener('dragleave', () => mrgDrop.classList.remove('drag-over'));
+mrgDrop.addEventListener('drop', e => {
+  e.preventDefault(); mrgDrop.classList.remove('drag-over');
+  addFiles([...(e.dataTransfer?.files || [])]);
+});
+mrgInput.addEventListener('change', () => { addFiles([...mrgInput.files]); mrgInput.value = ''; });
+
+async function addFiles(fileList) {
+  const pdfs = fileList.filter(f => /\.pdf$/i.test(f.name) || f.type === 'application/pdf');
+  if (!pdfs.length) { notify.error('No PDFs in that drop'); return; }
+
+  const progress = el('mrg-progress');
+  progress.classList.remove('hidden');
+  let done = 0;
+
+  for (const file of pdfs) {
+    progress.innerHTML = `<span class="spinner spinner-sm"></span> Reading ${esc(file.name)} — ${++done} of ${pdfs.length}…`;
+    const described = await describePdf(file);
+    described.decision = described.unreadable ? null : classifyPdf(described);
+    described.override = '';
+    mrgFiles.push(described);
+  }
+
+  progress.classList.add('hidden');
+  mrgFiles.sort(byFileName);
+
+  const bad = mrgFiles.filter(f => f.unreadable).length;
+  notify.success(`${pdfs.length} PDF(s) added${bad ? ` · ${bad} unreadable` : ''}`);
+  renderAll();
+}
+
+el('mrg-clear').addEventListener('click', () => {
+  if (!mrgFiles.length) return;
+  if (!confirm(`Clear all ${mrgFiles.length} file(s)?`)) return;
+  mrgFiles = [];
+  renderAll();
+});
+
+// ─── File list interactions ───────────────────────────────────
+const filesEl = el('mrg-files');
+
+filesEl.addEventListener('change', e => {
+  const sel = e.target.closest('select[data-override]');
+  if (!sel) return;
+  const file = mrgFiles[+sel.dataset.override];
+  if (file) { file.override = sel.value; renderAll(); }
+});
+
+filesEl.addEventListener('click', e => {
+  const rm = e.target.closest('button[data-remove]');
+  if (!rm) return;
+  mrgFiles.splice(+rm.dataset.remove, 1);
+  renderAll();
+});
+
+filesEl.addEventListener('dragstart', e => {
+  const row = e.target.closest('[data-row]');
+  if (!row) return;
+  dragFrom = +row.dataset.row;
+  row.classList.add('mrg-dragging');
+  e.dataTransfer.effectAllowed = 'move';
+});
+filesEl.addEventListener('dragend', e => {
+  e.target.closest('[data-row]')?.classList.remove('mrg-dragging');
+  filesEl.querySelectorAll('.mrg-drop-target').forEach(r => r.classList.remove('mrg-drop-target'));
+});
+filesEl.addEventListener('dragover', e => {
+  const row = e.target.closest('[data-row]');
+  if (!row || dragFrom === null) return;
+  e.preventDefault();
+  filesEl.querySelectorAll('.mrg-drop-target').forEach(r => r.classList.remove('mrg-drop-target'));
+  row.classList.add('mrg-drop-target');
+});
+filesEl.addEventListener('drop', e => {
+  const row = e.target.closest('[data-row]');
+  if (!row || dragFrom === null) return;
+  e.preventDefault();
+  const to = +row.dataset.row;
+  if (to !== dragFrom) {
+    const [moved] = mrgFiles.splice(dragFrom, 1);
+    mrgFiles.splice(to, 0, moved);
+  }
+  dragFrom = null;
+  renderAll();
+});
+
+// ─── Merge + download ─────────────────────────────────────────
+el('mrg-groups').addEventListener('click', async e => {
+  const btn = e.target.closest('button[data-merge]');
+  if (!btn) return;
+  const group = mrgGroups.find(g => g.id === btn.dataset.merge);
+  if (!group) return;
+
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner spinner-sm"></span> Merging…';
+  try {
+    const { bytes, pageCount, skippedFiles } = await mergeGroup(group.pages, mrgFiles);
+    if (!pageCount) { notify.error('Nothing could be merged from this group'); return; }
+    const name = mergedFileName(group.id, el('mrg-date').value);
+    downloadPdfBytes(bytes, name);
+    notify.success(`${name} — ${pageCount} page(s)`);
+    if (skippedFiles.length) {
+      notify.warning(`${skippedFiles.length} file(s) could not be read and were left out: ${skippedFiles.map(i => mrgFiles[i]?.fileName).filter(Boolean).slice(0, 3).join(', ')}`);
+    }
+  } catch (err) {
+    notify.error('Merge failed: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = original;
+    if (window.lucide) lucide.createIcons();
+  }
+});
+
+// ─── Render ───────────────────────────────────────────────────
+function renderAll() { renderFiles(); renderGroups(); }
+
+function groupOptions(selected) {
+  const ids = [...new Set([...Object.keys(GROUPS), ...mrgGroups.map(g => g.id), UNSORTED])];
+  return `<option value="">Auto</option>` +
+    ids.map(id => `<option value="${esc(id)}" ${selected === id ? 'selected' : ''}>${esc(groupLabel(id))}</option>`).join('');
+}
+
+function renderFiles() {
+  el('mrg-files-wrap').classList.toggle('hidden', mrgFiles.length === 0);
+  el('tabcount-merge').textContent = mrgFiles.length || '';
+  if (!mrgFiles.length) { filesEl.innerHTML = ''; return; }
+
+  const pages = mrgFiles.reduce((s, f) => s + (f.pages?.length || 0), 0);
+  el('mrg-count').textContent = `${mrgFiles.length} file(s) · ${pages} page(s)`;
+
+  filesEl.innerHTML = mrgFiles.map((f, i) => {
+    const d = f.decision;
+    const detected = f.override ? groupLabel(f.override) : (d ? groupLabel(d.group) : '—');
+    const low = !f.override && d && d.confidence < 0.5;
+    return `
+    <div data-row="${i}" draggable="true" class="mrg-row flex items-center gap-3 px-3 py-2 border-b border-white/5 ${f.unreadable ? 'mrg-row-bad' : ''}">
+      <span class="mrg-handle text-slate-600" title="Drag to reorder">⠿</span>
+      <div class="min-w-0 flex-1">
+        <p class="text-slate-200 text-sm font-medium truncate">${esc(f.fileName)}</p>
+        <p class="text-slate-500 text-xs truncate">
+          ${f.unreadable
+            ? `<span class="text-red-400">unreadable — ${esc(f.error || 'could not be opened')}</span>`
+            : `${f.pages.length} page(s) · ${esc(d?.why || 'no clear signal')}${d?.mixed ? '' : ''}`}
+        </p>
+      </div>
+      ${d?.mixed && !f.override ? '<span class="mrg-badge mrg-badge-split">Mixed — split</span>' : ''}
+      ${low && !d?.mixed ? '<span class="mrg-badge mrg-badge-low">low confidence</span>' : ''}
+      <span class="text-slate-500 text-xs whitespace-nowrap hidden sm:inline">${esc(detected)}</span>
+      <select data-override="${i}" class="zm-input text-xs w-28 py-1" ${f.unreadable ? 'disabled' : ''}>
+        ${groupOptions(f.override)}
+      </select>
+      <button data-remove="${i}" class="text-slate-600 hover:text-red-400 transition" title="Remove"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+    </div>`;
+  }).join('');
+  if (window.lucide) lucide.createIcons();
+}
+
+function renderGroups() {
+  mrgGroups = buildGroups(mrgFiles);
+  const box = el('mrg-groups');
+
+  if (!mrgFiles.length) {
+    box.innerHTML = `<p class="text-slate-500 text-sm text-center py-6 sm:col-span-2">Drop some PDFs above — they will be sorted into groups here.</p>`;
+    return;
+  }
+  if (!mrgGroups.length) {
+    box.innerHTML = `<p class="text-slate-500 text-sm text-center py-6 sm:col-span-2">Nothing readable to merge.</p>`;
+    return;
+  }
+
+  const date = el('mrg-date').value;
+  box.innerHTML = mrgGroups.map(g => {
+    const icon = GROUPS[g.id]?.icon || (g.id === UNSORTED ? 'help-circle' : 'file');
+    // Full class strings, not interpolated fragments — a generated name like
+    // `bg-${tone}-500/10` is not guaranteed to exist in the stylesheet.
+    const unsorted = g.id === UNSORTED;
+    const chipCls = unsorted
+      ? 'bg-amber-500/10 border-amber-500/20'
+      : 'bg-emerald-500/10 border-emerald-500/20';
+    const iconCls = unsorted ? 'text-amber-400' : 'text-emerald-400';
+    return `
+    <div class="mrg-group-card">
+      <div class="w-9 h-9 rounded-xl ${chipCls} border flex items-center justify-center flex-shrink-0">
+        <i data-lucide="${icon}" class="w-5 h-5 ${iconCls}"></i>
+      </div>
+      <div class="min-w-0 flex-1">
+        <p class="text-white text-sm font-semibold">${esc(g.label)}</p>
+        <p class="text-slate-500 text-xs">${g.fileCount} file(s) · ${g.pageCount} page(s)</p>
+        <p class="text-slate-600 text-[11px] truncate mt-0.5">${esc(mergedFileName(g.id, date))}</p>
+      </div>
+      <button data-merge="${esc(g.id)}" class="btn-primary text-xs py-2 px-3 flex-shrink-0">
+        <i data-lucide="download" class="w-3.5 h-3.5 inline-block mr-1"></i> Download
+      </button>
+    </div>`;
+  }).join('');
+  if (window.lucide) lucide.createIcons();
+}
+
+renderAll();
 </script>
 </body>
 </html>
