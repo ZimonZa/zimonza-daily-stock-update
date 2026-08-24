@@ -16,6 +16,7 @@ import {
   normZmCode, round2, formatINR, debounce, today, formatDateDisplay
 } from './utils.js';
 import { resolveStock, findColourQty } from './myntra.js';
+import { swatchDot } from './swatches.js';
 import notify from './notifications.js';
 
 const CART_KEY = 'zm_purchase_cart';
@@ -569,7 +570,7 @@ export function initPurchaseTab(state) {
           <p class="text-slate-200 text-sm font-medium truncate">${esc(r.sellerSkuCode)}</p>
           <p class="text-slate-500 text-xs truncate">
             ${esc(r.kuntalCode) || '<span class="text-red-400">no Kuntal code</span>'} ·
-            ${esc(r.colourName)}${r.category ? ' · ' + esc(r.category) : ''}${r.stockQty !== null && r.stockQty !== undefined ? ` · ${r.stockQty} in stock` : ''}
+            ${swatchDot(r.colourName)} ${esc(r.colourName)}${r.category ? ' · ' + esc(r.category) : ''}${r.stockQty !== null && r.stockQty !== undefined ? ` · ${r.stockQty} in stock` : ''}
           </p>
         </div>
         <p class="text-xs whitespace-nowrap ${noRate ? 'text-red-400' : 'text-slate-300'}">${noRate ? 'no rate' : '₹ ' + formatINR(r.rate, 0)}</p>
@@ -617,7 +618,7 @@ export function initPurchaseTab(state) {
           <tr class="border-b border-white/5">
             <td class="px-2 py-2 text-slate-500">${l.srNo}</td>
             <td class="px-2 py-2 text-slate-200 font-medium whitespace-nowrap">${esc(l.kuntalCode) || '<span class="text-red-400 text-xs">missing</span>'}</td>
-            <td class="px-2 py-2 text-slate-300 max-w-[120px] truncate" title="${esc(l.sellerSkuCode)}">${esc(l.colourName)}</td>
+            <td class="px-2 py-2 text-slate-300 max-w-[120px] truncate" title="${esc(l.sellerSkuCode)}">${swatchDot(l.colourName)} ${esc(l.colourName)}</td>
             <td class="px-2 py-2"><input type="text" value="${esc(l.hsn)}" data-line="${l.id}" data-field="hsn" placeholder="—" class="w-16 bg-white/5 border border-white/10 rounded-lg px-1.5 py-1 text-xs focus:outline-none focus:border-emerald-500/40"></td>
             <td class="px-2 py-2 text-right"><input type="number" min="1" value="${l.qty}" data-line="${l.id}" data-field="qty" class="w-14 bg-white/5 border border-white/10 rounded-lg px-1.5 py-1 text-right text-sm font-semibold focus:outline-none focus:border-emerald-500/40"></td>
             <td class="px-2 py-2 text-right"><input type="number" min="0" step="0.01" value="${l.rate}" data-line="${l.id}" data-field="rate" class="w-20 bg-white/5 border border-white/10 rounded-lg px-1.5 py-1 text-right text-sm ${l.rate <= 0 ? 'ring-2 ring-red-400/60 text-red-300' : ''} focus:outline-none focus:border-emerald-500/40"></td>

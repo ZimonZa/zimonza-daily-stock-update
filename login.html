@@ -5,40 +5,50 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sign In — Zimonza Stock Update</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="css/custom.css">
   <link rel="stylesheet" href="css/animations.css">
+  <link rel="stylesheet" href="css/zari.css">
   <style>
-    body { background: #0F172A; }
+    /* The first screen anyone sees — the foil gets to be loud here. */
+    body { background: var(--void); }
     .bg-mesh {
       background-image:
-        radial-gradient(at 40% 20%, rgba(16,185,129,0.12) 0px, transparent 50%),
-        radial-gradient(at 80% 0%, rgba(59,130,246,0.08) 0px, transparent 50%),
-        radial-gradient(at 0% 50%, rgba(139,92,246,0.07) 0px, transparent 50%);
+        radial-gradient(at 30% 12%, rgba(217,164,65,0.16) 0px, transparent 55%),
+        radial-gradient(at 82% 4%,  rgba(242,208,138,0.09) 0px, transparent 50%),
+        radial-gradient(at 4% 62%,  rgba(120,88,200,0.07) 0px, transparent 50%);
+    }
+    .login-card {
+      border: 1px solid rgba(217,164,65,0.28) !important;
+      box-shadow: 0 40px 90px -40px #000, 0 0 80px -40px var(--zari-glow) !important;
     }
   </style>
+  <script defer src="js/zari-fx.js"></script>
 </head>
 <body class="min-h-screen bg-mesh flex items-center justify-center p-4">
 
   <!-- Decorative orbs -->
   <div class="fixed inset-0 overflow-hidden pointer-events-none">
-    <div class="absolute -top-40 -right-40 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl"></div>
-    <div class="absolute -bottom-40 -left-40 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl"></div>
+    <div class="absolute -top-40 -right-40 w-96 h-96 rounded-full blur-3xl" style="background:rgba(217,164,65,0.07)"></div>
+    <div class="absolute -bottom-40 -left-40 w-96 h-96 rounded-full blur-3xl" style="background:rgba(242,208,138,0.05)"></div>
   </div>
 
   <div class="w-full max-w-md animate-scale-in">
 
     <!-- Card -->
-    <div class="bg-slate-800/60 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl">
+    <div class="login-card glass-card p-8">
 
       <!-- Logo + Title -->
       <div class="flex flex-col items-center mb-8">
-        <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-xl shadow-emerald-500/25 mb-4">
-          <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div class="zm-logo w-16 h-16 rounded-2xl flex items-center justify-center mb-4">
+          <svg class="w-8 h-8" style="color:#17120A" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10"/>
           </svg>
         </div>
-        <h1 class="text-2xl font-bold text-white">ZIMONZA</h1>
-        <p class="text-slate-400 text-sm mt-1">Daily Stock Update — Admin Portal</p>
+        <h1 class="zm-wordmark" style="font-size:1.9rem;letter-spacing:.1em">ZIMONZA</h1>
+        <p class="zm-eyebrow mt-3" style="justify-content:center">Daily stock update</p>
       </div>
 
       <!-- Login Form -->

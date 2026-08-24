@@ -1,0 +1,754 @@
+/* ═══════════════════════════════════════════════════════════════
+   ZIMONZA — MIDNIGHT ZARI
+   Black and gold, built on the metallic thread woven through the
+   textiles this business actually sells.
+
+   Loaded LAST. Two jobs:
+     1. Define the design system.
+     2. Remap the ~830 hardcoded Tailwind colour utilities already in
+        the pages onto it, so all 15 pages change without their markup
+        being rewritten.
+
+   Utility overrides double the class name (.text-slate-500.text-slate-500)
+   for specificity 0-2-0. The Tailwind Play CDN injects its <style> at
+   runtime, after this file's <link>, so a plain single-class rule would
+   lose the cascade. Doubling wins it without a single !important.
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Ground ── */
+  --void:        #07070A;
+  --ink:         #0E0E14;
+  --ink-raised:  #15151E;
+  --ink-line:    rgba(217, 164, 65, 0.14);
+  --ink-line-soft: rgba(255, 255, 255, 0.06);
+
+  /* ── Zari: the gold thread ── */
+  --zari-deep:   #6B4A12;
+  --zari:        #D9A441;
+  --zari-lite:   #F2D08A;
+  --zari-glow:   rgba(217, 164, 65, 0.30);
+
+  /* ── Text ── */
+  --silk:        #EDE7DA;   /* primary — warm, not #FFF */
+  --silk-2:      #B9B2A4;   /* secondary */
+  --silk-3:      #8A8477;   /* muted */
+  --silk-4:      #7C7566;   /* faint — 4.2:1 on ink; #5E594F was 2.76 and failed */
+
+  /* ── Status, retuned warm so they live inside the gold world ── */
+  --ok:          #3DBE8B;
+  --warn:        #E0A42B;
+  --bad:         #E5565B;
+  --info:        #5A9BE0;
+  --calm:        #9B8FD4;
+
+  --foil: linear-gradient(135deg,
+    var(--zari-deep) 0%, var(--zari) 30%, var(--zari-lite) 48%,
+    var(--zari) 62%, var(--zari-deep) 100%);
+
+  /* Same metal, floored so dark text stays legible across the whole sweep.
+     The display foil above is only ever used for fills and text, never as a
+     ground for type. */
+  --foil-button: linear-gradient(135deg,
+    #B8862B 0%, var(--zari) 28%, var(--zari-lite) 50%,
+    var(--zari) 72%, #B8862B 100%);
+
+  --radius:      16px;
+  --radius-sm:   10px;
+
+  --font-display: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif;
+  --font-body:    'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --font-mono:    'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+/* ═══════════════ Ground ═══════════════ */
+
+html { background: var(--void); }
+
+body {
+  font-family: var(--font-body);
+  background: var(--void);
+  color: var(--silk);
+  letter-spacing: 0.005em;
+}
+
+/* Ambient gold drifting behind everything. Fixed and painted once —
+   it never triggers layout, and it sits under all content. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: -30vmax;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    radial-gradient(38vmax 38vmax at 18% 12%, rgba(217,164,65,0.11), transparent 62%),
+    radial-gradient(32vmax 32vmax at 84% 78%, rgba(217,164,65,0.07), transparent 62%),
+    radial-gradient(26vmax 26vmax at 62% 26%, rgba(120, 88, 200, 0.05), transparent 60%);
+  animation: zari-drift 42s ease-in-out infinite alternate;
+  animation-play-state: var(--zari-ambient-play, running);
+  will-change: transform;
+}
+
+/* Nothing animates while the tab is in the background */
+body.zm-hidden-tab::before,
+body.zm-hidden-tab .zm-foil-text,
+body.zm-hidden-tab .zm-logo,
+body.zm-hidden-tab .zm-wordmark { animation-play-state: paused; }
+
+/* A woven texture, barely there — the fabric under the gold */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image:
+    repeating-linear-gradient(45deg,  rgba(255,255,255,0.6) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(-45deg, rgba(255,255,255,0.4) 0 1px, transparent 1px 5px);
+}
+
+@keyframes zari-drift {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(2%, -1.5%, 0) scale(1.06); }
+  100% { transform: translate3d(-1.5%, 2%, 0) scale(1.02); }
+}
+
+::selection { background: var(--zari-glow); color: var(--silk); }
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--zari-deep), rgba(217,164,65,0.35));
+  border-radius: 10px;
+  border: 2px solid var(--void);
+}
+::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, var(--zari), var(--zari-deep)); }
+
+/* ═══════════════ Type ═══════════════ */
+
+h1, h2, h3, .zm-display {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+h1 { font-size: clamp(1.6rem, 1.2rem + 1.4vw, 2.4rem); line-height: 1.05; }
+
+/* Codes, money and anything that has to line up in a column */
+.zm-mono, .font-mono,
+td[class*="font-mono"], .zm-code {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* Foil-filled text, for the one number that matters on a page */
+.zm-foil-text {
+  background: var(--foil);
+  background-size: 220% 220%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: zari-sheen 7s ease-in-out infinite;
+}
+
+@keyframes zari-sheen {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+
+/* Page title — display face, tight, with a foil underline that anchors it */
+.zm-page-title {
+  position: relative;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(1.75rem, 1.3rem + 1.6vw, 2.5rem);
+  line-height: 1;
+  letter-spacing: -0.035em;
+  color: var(--silk);
+  padding-bottom: 10px;
+  margin: 0;
+}
+.zm-page-title::after {
+  content: '';
+  position: absolute;
+  left: 0; bottom: 0;
+  width: 56px; height: 3px;
+  border-radius: 3px;
+  background: var(--foil);
+  background-size: 200% 200%;
+  animation: zari-sheen 6s ease-in-out infinite;
+}
+
+/* Section eyebrow — small, spaced, gold */
+.zm-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--zari);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.zm-eyebrow::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--ink-line), transparent);
+}
+
+/* ═══════════════ Utility remap (doubled for specificity) ═══════════════ */
+
+.bg-slate-950.bg-slate-950 { background-color: var(--void); }
+.bg-slate-900.bg-slate-900 { background-color: var(--ink); }
+.bg-slate-800.bg-slate-800 { background-color: var(--ink-raised); }
+.bg-slate-700.bg-slate-700 { background-color: #1E1E2A; }
+.bg-slate-600.bg-slate-600 { background-color: #2A2A38; }
+
+.bg-slate-900\/95.bg-slate-900\/95 { background-color: rgba(14,14,20,0.95); }
+.bg-slate-800\/50.bg-slate-800\/50 { background-color: rgba(21,21,30,0.60); }
+.bg-slate-700\/50.bg-slate-700\/50 { background-color: rgba(30,30,42,0.60); }
+
+.text-white.text-white     { color: var(--silk); }
+.text-slate-200.text-slate-200 { color: var(--silk); }
+.text-slate-300.text-slate-300 { color: var(--silk-2); }
+.text-slate-400.text-slate-400 { color: var(--silk-2); }
+.text-slate-500.text-slate-500 { color: var(--silk-3); }
+.text-slate-600.text-slate-600 { color: var(--silk-4); }
+.text-slate-700.text-slate-700 { color: #48443C; }
+
+/* Accents across the app become gold or the retuned status colours */
+.text-emerald-400.text-emerald-400,
+.text-emerald-300.text-emerald-300 { color: var(--zari); }
+.text-amber-400.text-amber-400,  .text-amber-300.text-amber-300  { color: var(--warn); }
+.text-red-400.text-red-400,      .text-red-300.text-red-300      { color: var(--bad); }
+.text-blue-400.text-blue-400,    .text-blue-300.text-blue-300    { color: var(--info); }
+.text-purple-400.text-purple-400,.text-purple-300.text-purple-300{ color: var(--calm); }
+.text-pink-400.text-pink-400 { color: #E36AA8; }
+
+.border-white\/5.border-white\/5   { border-color: var(--ink-line-soft); }
+.border-white\/10.border-white\/10 { border-color: var(--ink-line); }
+.border-white\/15.border-white\/15 { border-color: rgba(217,164,65,0.22); }
+.border-slate-600.border-slate-600 { border-color: rgba(217,164,65,0.28); }
+.border-slate-800\/50.border-slate-800\/50 { border-color: var(--ink-line-soft); }
+
+.bg-white\/3.bg-white\/3   { background-color: rgba(255,255,255,0.022); }
+.bg-white\/5.bg-white\/5   { background-color: rgba(255,255,255,0.035); }
+.bg-white\/8.bg-white\/8   { background-color: rgba(255,255,255,0.055); }
+.bg-white\/10.bg-white\/10 { background-color: rgba(255,255,255,0.075); }
+
+.bg-emerald-500\/10.bg-emerald-500\/10 { background-color: rgba(217,164,65,0.10); }
+.bg-emerald-500\/15.bg-emerald-500\/15 { background-color: rgba(217,164,65,0.15); }
+.bg-emerald-500\/20.bg-emerald-500\/20 { background-color: rgba(217,164,65,0.20); }
+.border-emerald-500\/20.border-emerald-500\/20 { border-color: rgba(217,164,65,0.26); }
+.border-emerald-500\/30.border-emerald-500\/30 { border-color: rgba(217,164,65,0.38); }
+
+/* ═══════════════ Surfaces ═══════════════ */
+
+.glass-card,
+.pur-panel,
+.kpi-tile,
+.mrg-group-card {
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.012)),
+    var(--ink);
+  border: 1px solid var(--ink-line);
+  border-radius: var(--radius);
+  box-shadow:
+    0 1px 0 0 rgba(255,255,255,0.05) inset,
+    0 18px 40px -24px rgba(0,0,0,0.9);
+  transition: border-color .28s ease, transform .28s ease, box-shadow .28s ease;
+}
+
+/* The sheen: a diagonal highlight that sweeps once on hover, then rests. */
+.glass-card::after,
+.pur-panel::after,
+.kpi-tile::after,
+.mrg-group-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(105deg,
+    transparent 35%, rgba(242,208,138,0.16) 48%, transparent 61%);
+  background-size: 260% 100%;
+  background-position: 120% 0;
+  transition: opacity .2s ease;
+}
+
+.glass-card:hover,
+.pur-panel:hover,
+.kpi-tile:hover,
+.mrg-group-card:hover {
+  border-color: rgba(217,164,65,0.42);
+  transform: translateY(-2px);
+  box-shadow:
+    0 1px 0 0 rgba(255,255,255,0.07) inset,
+    0 0 0 1px rgba(217,164,65,0.10),
+    0 26px 60px -28px rgba(0,0,0,1),
+    0 0 42px -14px var(--zari-glow);
+}
+
+.glass-card:hover::after,
+.pur-panel:hover::after,
+.kpi-tile:hover::after,
+.mrg-group-card:hover::after {
+  opacity: 1;
+  animation: zari-wipe .9s ease-out;
+}
+
+@keyframes zari-wipe {
+  from { background-position: 120% 0; }
+  to   { background-position: -40% 0; }
+}
+
+/* ═══════════════ Buttons ═══════════════ */
+
+.btn-primary {
+  position: relative;
+  overflow: hidden;
+  font-family: var(--font-body);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #17120A;
+  background: var(--foil-button);
+  background-size: 200% 200%;
+  background-position: 0% 50%;
+  border: 1px solid rgba(242,208,138,0.5);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.35) inset, 0 8px 22px -12px rgba(217,164,65,0.7);
+  transition: background-position .5s ease, transform .16s ease, box-shadow .28s ease;
+}
+.btn-primary:hover:not(:disabled) {
+  background-position: 100% 50%;
+  transform: translateY(-1px);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.45) inset, 0 14px 32px -12px rgba(217,164,65,0.85);
+}
+.btn-primary:active:not(:disabled) { transform: translateY(0) scale(0.985); }
+.btn-primary:disabled { opacity: 0.45; filter: grayscale(0.5); }
+
+.btn-secondary {
+  font-family: var(--font-body);
+  font-weight: 500;
+  color: var(--silk-2);
+  background: rgba(255,255,255,0.035);
+  border: 1px solid var(--ink-line);
+  border-radius: var(--radius-sm);
+  transition: color .2s ease, border-color .2s ease, background .2s ease, transform .16s ease;
+}
+.btn-secondary:hover:not(:disabled) {
+  color: var(--zari-lite);
+  background: rgba(217,164,65,0.09);
+  border-color: rgba(217,164,65,0.40);
+  transform: translateY(-1px);
+}
+.btn-secondary:active:not(:disabled) { transform: translateY(0) scale(0.985); }
+
+/* One visible, consistent focus ring everywhere */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--zari);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ═══════════════ Inputs ═══════════════ */
+
+.zm-input {
+  font-family: var(--font-body);
+  background: rgba(255,255,255,0.035);
+  border: 1px solid var(--ink-line-soft);
+  border-radius: var(--radius-sm);
+  color: var(--silk);
+  transition: border-color .2s ease, box-shadow .2s ease, background .2s ease;
+}
+.zm-input:hover { border-color: rgba(217,164,65,0.26); }
+.zm-input:focus {
+  outline: none;
+  border-color: var(--zari);
+  background: rgba(217,164,65,0.055);
+  box-shadow: 0 0 0 3px rgba(217,164,65,0.16);
+}
+.zm-input::placeholder { color: var(--silk-4); }
+input[type="date"].zm-input { color-scheme: dark; }
+
+/* Number and code inputs align in a column */
+input[type="number"], .zm-input[type="number"] {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ═══════════════ Drop zones ═══════════════ */
+
+.drop-zone {
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(217,164,65,0.045), transparent),
+    var(--ink);
+  border: 1.5px dashed rgba(217,164,65,0.32);
+  border-radius: var(--radius);
+  transition: border-color .25s ease, background .25s ease, transform .25s ease;
+}
+.drop-zone:hover, .drop-zone.drag-over {
+  border-color: var(--zari);
+  background: linear-gradient(180deg, rgba(217,164,65,0.10), transparent), var(--ink-raised);
+  transform: translateY(-2px);
+}
+.drop-zone.drag-over { box-shadow: 0 0 0 4px rgba(217,164,65,0.14), 0 0 50px -14px var(--zari-glow); }
+
+/* ═══════════════ Tables ═══════════════ */
+/* Dense data. Hover response only — nothing here may move on its own. */
+
+table { border-collapse: separate; border-spacing: 0; }
+
+thead th {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--silk-3);
+  background: linear-gradient(180deg, var(--ink-raised), var(--ink));
+  border-bottom: 1px solid var(--ink-line);
+}
+
+tbody tr { transition: background .14s ease; }
+tbody tr:hover { background: rgba(217,164,65,0.05); }
+
+/* Gold edge marks the row under the cursor */
+tbody tr td:first-child { position: relative; }
+tbody tr:hover td:first-child::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--foil);
+}
+
+/* Codes and figures set in mono wherever they land */
+td:first-child, .zm-code-cell { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+td.text-right, th.text-right { font-variant-numeric: tabular-nums; }
+
+/* Long tables: keep ambient animation from repainting hundreds of rows */
+.max-h-\[65vh\], .max-h-\[60vh\], .max-h-\[58vh\],
+.max-h-\[45vh\], .max-h-\[42vh\], .max-h-\[40vh\], .max-h-\[38vh\] {
+  contain: paint;
+}
+
+/* ═══════════════ The colour chip — the signature ═══════════════ */
+
+.zm-dot {
+  display: inline-block;
+  border-radius: 50%;
+  flex-shrink: 0;
+  vertical-align: -1px;
+  box-shadow:
+    0 0 0 1px rgba(217,164,65,0.45),
+    0 0 0 2.5px var(--ink),
+    0 0 10px -2px currentColor;
+}
+/* A near-black swatch would vanish; give it a brighter ring instead */
+.zm-dot-dark { box-shadow: 0 0 0 1.5px var(--zari), 0 0 0 3px var(--ink); }
+
+.zm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px 2px 6px;
+  margin: 2px 5px 2px 0;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--ink-line-soft);
+  font-size: 11.5px;
+  color: var(--silk-2);
+  white-space: nowrap;
+  transition: border-color .2s ease, background .2s ease;
+}
+.zm-chip:hover { border-color: rgba(217,164,65,0.35); background: rgba(217,164,65,0.07); }
+.zm-chip-name { line-height: 1.4; }
+.zm-chip b { font-family: var(--font-mono); color: var(--zari); font-weight: 600; }
+.zm-muted { color: var(--silk-4); }
+
+/* ═══════════════ Status chips ═══════════════ */
+
+.level-high, .level-medium, .level-low, .level-sold_out,
+.status-uploaded, .status-pending, .status-skipped, .status-not_uploaded,
+.change-new, .change-sold, .change-restock, .change-soldout {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+.level-high     { background: rgba(61,190,139,0.13); color: var(--ok);   border: 1px solid rgba(61,190,139,0.30); }
+.level-medium   { background: rgba(224,164,43,0.13); color: var(--warn); border: 1px solid rgba(224,164,43,0.30); }
+.level-low      { background: rgba(229,86,91,0.13);  color: var(--bad);  border: 1px solid rgba(229,86,91,0.30); }
+.level-sold_out { background: rgba(255,255,255,0.05); color: var(--silk-3); border: 1px solid var(--ink-line-soft); }
+
+.status-uploaded    { background: rgba(61,190,139,0.13); color: var(--ok);   border: 1px solid rgba(61,190,139,0.30); }
+.status-pending     { background: rgba(224,164,43,0.13); color: var(--warn); border: 1px solid rgba(224,164,43,0.30); }
+.status-skipped     { background: rgba(255,255,255,0.05); color: var(--silk-3); border: 1px solid var(--ink-line-soft); }
+.status-not_uploaded{ background: rgba(229,86,91,0.13);  color: var(--bad);  border: 1px solid rgba(229,86,91,0.30); }
+
+.change-new     { background: rgba(90,155,224,0.13); color: var(--info); border: 1px solid rgba(90,155,224,0.30); }
+.change-sold    { background: rgba(229,86,91,0.13);  color: var(--bad);  border: 1px solid rgba(229,86,91,0.30); }
+.change-restock { background: rgba(61,190,139,0.13); color: var(--ok);   border: 1px solid rgba(61,190,139,0.30); }
+.change-soldout { background: rgba(255,255,255,0.05); color: var(--silk-3); border: 1px solid var(--ink-line-soft); }
+
+/* ═══════════════ Tabs ═══════════════ */
+
+.zm-tabbar { border-bottom: 1px solid var(--ink-line); gap: 4px; }
+
+.zm-tab {
+  position: relative;
+  font-family: var(--font-body);
+  font-weight: 500;
+  color: var(--silk-3);
+  border-bottom: none;
+  margin-bottom: -1px;
+  transition: color .22s ease;
+}
+.zm-tab::after {
+  content: '';
+  position: absolute;
+  left: 12px; right: 12px; bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--foil);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform .32s cubic-bezier(.4,0,.2,1);
+}
+.zm-tab:hover { color: var(--silk); }
+.zm-tab.is-active { color: var(--zari-lite); }
+.zm-tab.is-active::after { transform: scaleX(1); }
+
+.zm-tab-count {
+  font-family: var(--font-mono);
+  background: rgba(255,255,255,0.06);
+  color: var(--silk-3);
+  border: 1px solid var(--ink-line-soft);
+}
+.zm-tab.is-active .zm-tab-count {
+  background: rgba(217,164,65,0.16);
+  color: var(--zari-lite);
+  border-color: rgba(217,164,65,0.34);
+}
+
+/* ═══════════════ KPI tiles ═══════════════ */
+
+.kpi-tile-value {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+  color: var(--silk);
+}
+.kpi-tile-label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  color: var(--silk-3);
+}
+.kpi-tile-icon { border-radius: 12px; }
+
+/* ═══════════════ Modals ═══════════════ */
+
+.modal-overlay {
+  background: rgba(3,3,6,0.78);
+  backdrop-filter: blur(10px) saturate(0.9);
+  animation: zari-fade .22s ease;
+}
+.modal-box {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.012)),
+    var(--ink);
+  border: 1px solid rgba(217,164,65,0.30);
+  border-radius: 20px;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.07) inset,
+    0 50px 100px -40px #000,
+    0 0 70px -30px var(--zari-glow);
+  animation: zari-modal .3s cubic-bezier(.16,1,.3,1);
+}
+@keyframes zari-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes zari-modal {
+  from { opacity: 0; transform: translateY(14px) scale(.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ═══════════════ Sidebar & topbar ═══════════════ */
+
+#app-sidebar {
+  background: linear-gradient(180deg, rgba(217,164,65,0.05), transparent 26%), var(--ink) !important;
+  border-right: 1px solid var(--ink-line) !important;
+}
+#app-topbar {
+  background: rgba(14,14,20,0.82) !important;
+  backdrop-filter: blur(16px) saturate(1.1);
+  border-bottom: 1px solid var(--ink-line) !important;
+}
+
+.nav-item {
+  position: relative;
+  font-family: var(--font-body);
+  transition: color .2s ease, background .2s ease;
+}
+.nav-item::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 50%;
+  width: 3px; height: 0;
+  border-radius: 0 3px 3px 0;
+  background: var(--foil);
+  transform: translateY(-50%);
+  transition: height .3s cubic-bezier(.4,0,.2,1);
+}
+.nav-item:hover::before { height: 40%; }
+
+/* The sidebar marks the active page with a gold rail and a soft bloom */
+#app-sidebar a[data-nav].bg-emerald-500\/15 {
+  background: linear-gradient(90deg, rgba(217,164,65,0.16), rgba(217,164,65,0.03)) !important;
+  border-color: rgba(217,164,65,0.34) !important;
+  color: var(--zari-lite) !important;
+  box-shadow: 0 0 26px -12px var(--zari-glow);
+}
+#app-sidebar a[data-nav].bg-emerald-500\/15::before { height: 62%; }
+#app-sidebar a[data-nav].bg-emerald-500\/15 span.absolute { background: var(--zari) !important; }
+
+/* The mark: foil, with a slow sheen that says "metal" without moving much */
+.zm-logo {
+  background: var(--foil);
+  background-size: 200% 200%;
+  box-shadow: 0 4px 16px -4px var(--zari-glow), 0 1px 0 rgba(255,255,255,0.4) inset;
+  animation: zari-sheen 9s ease-in-out infinite;
+}
+.zm-logo svg { color: #17120A; }
+
+.zm-wordmark {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  background: var(--foil);
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.zm-wordmark-sub {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  color: var(--silk-4);
+}
+
+.zm-avatar {
+  background: linear-gradient(135deg, var(--zari-deep), var(--zari));
+  color: #17120A;
+  box-shadow: 0 2px 10px -3px var(--zari-glow);
+}
+.zm-avatar span { color: #17120A !important; font-weight: 700; }
+
+.zm-crumb {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--silk);
+  letter-spacing: -0.01em;
+}
+
+/* ═══════════════ Toasts ═══════════════ */
+
+.toast, .notification, #toast-container > * {
+  font-family: var(--font-body);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ink-line);
+  background: linear-gradient(180deg, var(--ink-raised), var(--ink));
+  box-shadow: 0 20px 46px -22px #000, 0 0 34px -18px var(--zari-glow);
+}
+
+/* ═══════════════ Spinner ═══════════════ */
+
+.spinner {
+  border-color: rgba(217,164,65,0.20) !important;
+  border-top-color: var(--zari) !important;
+}
+
+/* ═══════════════ Reveal on scroll ═══════════════ */
+
+.zm-reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity .6s cubic-bezier(.16,1,.3,1), transform .6s cubic-bezier(.16,1,.3,1);
+}
+.zm-reveal.is-in { opacity: 1; transform: none; }
+
+/* Page-load cascade */
+.animate-fade-in > * { animation: zari-rise .55s cubic-bezier(.16,1,.3,1) backwards; }
+.animate-fade-in > *:nth-child(1) { animation-delay: .02s; }
+.animate-fade-in > *:nth-child(2) { animation-delay: .07s; }
+.animate-fade-in > *:nth-child(3) { animation-delay: .12s; }
+.animate-fade-in > *:nth-child(4) { animation-delay: .17s; }
+.animate-fade-in > *:nth-child(5) { animation-delay: .22s; }
+.animate-fade-in > *:nth-child(n+6) { animation-delay: .26s; }
+
+@keyframes zari-rise {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ═══════════════ Light mode ═══════════════ */
+/* This direction is built for the dark. Light mode stays legible —
+   parchment rather than a second full theme — so the toggle never
+   lands anyone on an unreadable page. */
+
+.light-mode {
+  --void:       #F7F3EA;
+  --ink:        #FFFDF8;
+  --ink-raised: #F2ECDF;
+  --ink-line:   rgba(107, 74, 18, 0.22);
+  --ink-line-soft: rgba(0,0,0,0.08);
+  --silk:       #221C10;
+  --silk-2:     #4A4133;
+  --silk-3:     #6E6553;
+  --silk-4:     #9A917F;
+  --zari:       #8A6516;
+  --zari-lite:  #A87F26;
+  --zari-glow:  rgba(138, 101, 22, 0.22);
+}
+.light-mode body::before { opacity: 0.5; }
+.light-mode body::after  { opacity: 0.02; }
+.light-mode .btn-primary { color: #FFF8E8; }
+.light-mode thead th { background: linear-gradient(180deg, #F2ECDF, #FFFDF8); }
+.light-mode .zm-dot { box-shadow: 0 0 0 1px rgba(107,74,18,0.5), 0 0 0 2.5px var(--ink); }
+
+/* ═══════════════ Login ═══════════════ */
+
+/* The eyebrow's trailing rule makes no sense centred under a logo */
+.login-card .zm-eyebrow::after { display: none; }
+.login-card .zm-eyebrow { justify-content: center; }
+
+/* ═══════════════ Reduced motion ═══════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  body::before { animation: none; }
+  .zm-foil-text { animation: none; }
+  .animate-fade-in > * { animation: none; }
+  .zm-reveal { opacity: 1; transform: none; transition: none; }
+  .glass-card:hover::after, .pur-panel:hover::after,
+  .kpi-tile:hover::after, .mrg-group-card:hover::after { animation: none; opacity: 0; }
+  .glass-card, .pur-panel, .kpi-tile, .mrg-group-card,
+  .btn-primary, .btn-secondary, .drop-zone { transition: none; }
+  .glass-card:hover, .pur-panel:hover, .kpi-tile:hover,
+  .mrg-group-card:hover, .btn-primary:hover, .btn-secondary:hover,
+  .drop-zone:hover { transform: none; }
+  .modal-overlay, .modal-box { animation: none; }
+  .zm-tab::after { transition: none; }
+  * { scroll-behavior: auto; }
+}

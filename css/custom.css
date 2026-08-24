@@ -2,7 +2,7 @@
    ZIMONZA — Custom Styles
    ═══════════════════════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+/* Fonts are loaded in each page head — see css/zari.css for the type system. */
 
 :root {
   --color-primary: #10B981;
@@ -699,13 +699,7 @@ body {
 .light-mode .mrg-badge-low   { background: rgba(245,158,11,0.12); color: #B45309; }
 
 /* ─── Returns / RTO stock summary ──────────────────────── */
-.ret-colour-chip {
-  display: inline-block; font-size: 11px; padding: 2px 8px;
-  border-radius: 999px; margin: 2px 4px 2px 0; white-space: nowrap;
-  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
-  color: #CBD5E1;
-}
-.ret-colour-chip b { color: #34D399; font-weight: 700; margin-left: 2px; }
+/* .ret-colour-chip retired — colours now render through js/swatches.js */
 
 /* "spelling was corrected" marker in the upload review */
 .ret-fix-chip {
@@ -715,8 +709,6 @@ body {
   text-decoration: line-through;
 }
 
-.light-mode .ret-colour-chip { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.1); color: #334155; }
-.light-mode .ret-colour-chip b { color: #059669; }
 .light-mode .ret-fix-chip { background: rgba(139,92,246,0.12); color: #6D28D9; }
 
 .light-mode .ful-flag-warn { background: rgba(245,158,11,0.12); color: #B45309; }

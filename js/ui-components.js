@@ -90,14 +90,14 @@ function injectSidebar(activePageId) {
   sidebar.innerHTML = `
     <!-- Logo -->
     <div class="flex items-center gap-3 px-4 py-5 border-b border-white/5 flex-shrink-0">
-      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-emerald-500/20">
+      <div class="zm-logo w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0">
         <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10"/>
         </svg>
       </div>
       <div class="flex flex-col ${sidebarCollapsed ? 'hidden' : ''}">
-        <span class="text-white font-bold text-sm leading-tight">ZIMONZA</span>
-        <span class="text-slate-500 text-[10px] font-medium uppercase tracking-wider">Stock Update</span>
+        <span class="zm-wordmark text-sm leading-tight">ZIMONZA</span>
+        <span class="zm-wordmark-sub text-[10px] uppercase">Stock Update</span>
       </div>
     </div>
 
@@ -109,7 +109,7 @@ function injectSidebar(activePageId) {
     <!-- User section -->
     <div class="border-t border-white/5 p-3 flex-shrink-0">
       <div class="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-white/5 transition cursor-default">
-        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center flex-shrink-0">
+        <div class="zm-avatar w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0">
           <span class="text-white text-xs font-bold" id="user-initials">ZM</span>
         </div>
         <div class="flex flex-col min-w-0 ${sidebarCollapsed ? 'hidden' : ''}">
@@ -168,7 +168,7 @@ function injectTopbar(activePageId) {
       <div class="flex items-center gap-2 text-sm">
         <span class="text-slate-500">Zimonza</span>
         <i data-lucide="chevron-right" class="w-4 h-4 text-slate-600"></i>
-        <span class="text-slate-200 font-semibold">${pageLabel}</span>
+        <span class="zm-crumb">${pageLabel}</span>
       </div>
     </div>
 

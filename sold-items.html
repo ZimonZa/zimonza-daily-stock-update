@@ -5,9 +5,14 @@
   <title>Sold Items — Zimonza</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="css/custom.css">
   <link rel="stylesheet" href="css/animations.css">
   <link rel="stylesheet" href="css/theme.css">
+  <link rel="stylesheet" href="css/zari.css">
+  <script defer src="js/zari-fx.js"></script>
 </head>
 <body class="bg-slate-950 min-h-screen">
 <div id="page-content" class="ml-64 pt-16 transition-all duration-300">
@@ -15,7 +20,8 @@
 
   <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
     <div>
-      <h1 class="text-2xl font-bold text-white">Sold Items</h1>
+      <p class="zm-eyebrow mb-2">Counts that went down</p>
+      <h1 class="zm-page-title">Sold Items</h1>
       <p class="text-slate-400 text-sm mt-0.5">Stock decreases detected against previous upload</p>
     </div>
     <div class="flex items-center gap-2">

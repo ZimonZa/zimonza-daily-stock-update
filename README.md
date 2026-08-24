@@ -82,9 +82,10 @@ Visit `http://localhost:8080`
 ├── settings.html           ← Theme, thresholds, Firebase config
 │
 ├── css/
-│   ├── custom.css          ← Core styles, layout, glassmorphism
-│   ├── animations.css      ← Framer-like animations
-│   └── theme.css           ← Dark/light mode, badges, chips
+│   ├── custom.css          ← Core layout + legacy components
+│   ├── animations.css      ← Keyframes
+│   ├── theme.css           ← Badges, chips, page-specific bits
+│   └── zari.css            ← 🎨 Midnight Zari design system (loaded last)
 │
 ├── js/
 │   ├── firebase-config.js  ← ⚙️ YOUR FIREBASE CREDENTIALS GO HERE
@@ -115,6 +116,35 @@ Visit `http://localhost:8080`
 ├── firebase.json           ← Firebase Hosting config
 └── .env.example            ← Environment variables template
 ```
+
+---
+
+## 🎨 Midnight Zari
+
+The interface is built on *zari* — the metallic thread woven through the textiles this business sells.
+
+| Token | Value | Role |
+|---|---|---|
+| `--void` | `#07070A` | page ground |
+| `--ink` | `#0E0E14` | panels |
+| `--zari` | `#D9A441` | the gold thread |
+| `--silk` | `#EDE7DA` | text — warm off-white, never `#FFF` |
+
+**Type.** Bricolage Grotesque for display, IBM Plex Sans for UI, **IBM Plex Mono for every code and figure** — `ZM-42-Morpichh` and `8,990.00` only line up in a tabular face. Deliberately not a high-contrast serif: black + gold + didone is the reflex luxury pairing and would make an operations tool read as a perfume advert.
+
+**The colour chip.** Every colour name renders in its real colour ([js/swatches.js](js/swatches.js)) — Morpichh peacock, Rani magenta, Firozi turquoise, Chiku sapota brown. Unknown names get a deterministic hashed colour, pinned above a luminance floor so none can vanish on a near-black page. It is how you find one row in four hundred.
+
+**How it reaches 15 pages.** The pages carry 830+ hardcoded Tailwind colour utilities. Rather than rewrite that markup, [css/zari.css](css/zari.css) remaps them:
+
+```css
+.text-slate-500.text-slate-500 { color: var(--silk-3); }
+```
+
+The doubled class gives specificity `0-2-0`, which beats the Tailwind Play CDN rules injected at runtime after our own stylesheet link — without a single `!important`. One stylesheet, every page, no markup churn.
+
+**Motion** lives in the chrome — ambient drift, sheen sweeps on hover, count-up KPIs, a sliding gold tab rail. Inside a 400-row table it is hover response only. All of it stops under `prefers-reduced-motion`, and the ambient animation pauses when the tab is hidden.
+
+**Contrast, measured rather than assumed.** Every foreground was checked against the ink ground. Two failures turned up and were fixed: faint text at 2.76:1, now 4.21; and dark button text over the dark end of the foil ramp at 2.32:1 — buttons now use a floored ramp that never drops below 5.75:1.
 
 ---
 

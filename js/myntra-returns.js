@@ -14,6 +14,7 @@ import {
 } from './firestore-service.js';
 import { pricingIndex } from './myntra-pricing.js';
 import { skuKey, keyFromSellerSku } from './myntra-labels.js';
+import { swatchChip, swatchDot } from './swatches.js';
 import {
   normZmCode, normItemNo, normColorKey, debounce, toCSV, downloadFile,
   formatDate, formatDateDisplay, today, titleCase,
@@ -564,7 +565,7 @@ export function initReturnsTab(state) {
             <td class="px-3 py-1.5"><input type="checkbox" data-keep="${i}" ${r._keep ? 'checked' : ''} class="accent-emerald-500"></td>
             <td class="px-3 py-1.5"><span class="${r.type === RETURN_TYPES.RTO ? 'level-medium' : 'level-low'} text-xs">${esc(RETURN_TYPE_LABELS[r.type])}</span></td>
             <td class="px-3 py-1.5 text-slate-200">${esc(r.sellerSkuCode)}</td>
-            <td class="px-3 py-1.5 text-slate-400">${esc(r.colourName) || '—'}${
+            <td class="px-3 py-1.5">${r.colourName ? swatchChip(r.colourName) : '<span class="zm-muted">—</span>'}${
               r.colourCorrected ? ` <span class="ret-fix-chip" title="Spelling corrected">↻ ${esc(r.colourCorrected.from)}</span>` : ''}</td>
             <td class="px-3 py-1.5 text-right text-slate-300">${r.qty}</td>
             <td class="px-3 py-1.5 text-slate-500">${esc(r.kuntalCode) || '—'}</td>
@@ -903,7 +904,7 @@ export function initReturnsTab(state) {
             <td class="px-4 py-2 text-slate-200 font-medium whitespace-nowrap">${esc(r.sellerSkuCode)}</td>
             <td class="px-4 py-2 text-slate-400 whitespace-nowrap">${esc(normZmCode(r.zmCode)) || '—'}</td>
             <td class="px-4 py-2 text-slate-400">${esc(r.kuntalCode) || '—'}</td>
-            <td class="px-4 py-2 text-slate-300">${esc(r.colourName) || '—'}</td>
+            <td class="px-4 py-2">${r.colourName ? swatchChip(r.colourName) : '<span class="zm-muted">—</span>'}</td>
             <td class="px-4 py-2 text-right text-slate-200 font-semibold">${r.qty}</td>
             <td class="px-4 py-2 text-slate-500 whitespace-nowrap">${esc(formatDateDisplay(r.date) || r.date) || '—'}</td>
             <td class="px-4 py-2">
@@ -969,7 +970,7 @@ export function initReturnsTab(state) {
             <td class="px-4 py-2.5 text-slate-200 font-medium whitespace-nowrap">${esc(c.zmCode)}</td>
             <td class="px-4 py-2.5 text-slate-400">${esc(c.kuntalCode) || '—'}</td>
             <td class="px-4 py-2.5">${c.colours.map(col =>
-              `<span class="ret-colour-chip">${esc(col.name)} <b>${col.pcs}</b></span>`).join('')}</td>
+              swatchChip(col.name, col.pcs)).join('')}</td>
             <td class="px-4 py-2.5 text-right text-slate-400">${c.colourCount}</td>
             <td class="px-4 py-2.5 text-right text-slate-200 font-semibold">${c.pcs}</td>
             <td class="px-4 py-2.5 text-right font-semibold ${c.usable < c.pcs ? 'text-amber-300' : 'text-emerald-300'}">${c.usable}</td>

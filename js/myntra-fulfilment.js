@@ -12,6 +12,7 @@ import { availableReturnStock, allocateFromReturns } from './myntra-returns.js';
 import { computeLine, computeTotals } from './myntra-purchase.js';
 import { pricingIndex } from './myntra-pricing.js';
 import { resolveStock } from './myntra.js';
+import { swatchDot } from './swatches.js';
 import { exportBillPDF, exportPickSlipPDF, renderBillPreviewHTML, renderSlipPreviewHTML } from './invoice-pdf.js';
 import {
   savePickSlip, getAllPickSlips, deletePickSlip, nextSlipNumber,
@@ -408,7 +409,7 @@ export function initFulfilmentPanel(state, tabs) {
           return `<tr class="border-b border-white/5 ${r.include ? '' : 'opacity-45'} ${needsRate && r.include ? 'ful-row-bad' : ''}">
             <td class="px-3 py-2"><input type="checkbox" data-ful-include="${esc(r.key)}" ${r.include ? 'checked' : ''} class="accent-emerald-500"></td>
             <td class="px-3 py-2 text-slate-200 font-medium whitespace-nowrap" title="pages ${r.pages.join(', ')}">${esc(r.sellerSkuCode)}</td>
-            <td class="px-3 py-2 text-slate-300">${esc(r.colourName) || '—'}</td>
+            <td class="px-3 py-2 text-slate-300">${r.colourName ? swatchDot(r.colourName) + ' ' + esc(r.colourName) : '—'}</td>
             <td class="px-3 py-2 text-slate-400">${esc(r.kuntalCode) || '—'}</td>
             <td class="px-3 py-2 text-right text-slate-200 font-semibold">${r.need}</td>
             <td class="px-3 py-2 text-right ${r.available ? 'text-amber-300' : 'text-slate-600'}">${r.available}</td>

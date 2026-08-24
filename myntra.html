@@ -7,9 +7,14 @@
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="css/custom.css">
   <link rel="stylesheet" href="css/animations.css">
   <link rel="stylesheet" href="css/theme.css">
+  <link rel="stylesheet" href="css/zari.css">
+  <script defer src="js/zari-fx.js"></script>
 </head>
 <body class="bg-slate-950 min-h-screen">
 <div id="page-content" class="ml-64 pt-16 transition-all duration-300">
@@ -17,7 +22,8 @@
 
   <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
     <div>
-      <h1 class="text-2xl font-bold text-white">Myntra</h1>
+      <p class="zm-eyebrow mb-2">Price · list · buy · take back</p>
+      <h1 class="zm-page-title">Myntra</h1>
       <p class="text-slate-400 text-sm mt-0.5">Pricing · mapping · purchase billing · inventory · returns</p>
     </div>
     <span id="stock-date-label" class="text-slate-500 text-xs"></span>
@@ -666,6 +672,7 @@ import { initPricingTab, pricingIndex } from './js/myntra-pricing.js';
 import { initPurchaseTab } from './js/myntra-purchase.js';
 import { initReturnsTab } from './js/myntra-returns.js';
 import { initFulfilmentPanel } from './js/myntra-fulfilment.js';
+import { swatchChip, swatchDot } from './js/swatches.js';
 
 await requireAuth();
 renderShell('myntra');
@@ -1003,7 +1010,7 @@ function renderMappings() {
           </td>
           <td class="px-4 py-2.5 text-slate-200 font-medium whitespace-nowrap">${esc(r.sellerSkuCode)}</td>
           <td class="px-4 py-2.5 text-slate-400 whitespace-nowrap">${esc(r.zmCode)}</td>
-          <td class="px-4 py-2.5 text-slate-300">${esc(r.colourName)}</td>
+          <td class="px-4 py-2.5">${swatchChip(r.colourName)}</td>
           <td class="px-4 py-2.5 text-slate-400">${esc(r.kuntalCode) || '—'}</td>
           <td class="px-4 py-2.5 text-slate-400 max-w-[200px] truncate">${esc(r.productName) || '—'}</td>
           <td class="px-4 py-2.5">${stockChip(r)}</td>
@@ -1349,7 +1356,7 @@ function renderGenTable() {
           <td class="px-4 py-2 text-slate-200 font-medium whitespace-nowrap">${esc(r.sellerSkuCode)}</td>
           <td class="px-4 py-2 text-slate-400">${esc(r.kuntalCode) || '—'}</td>
           <td class="px-4 py-2 text-slate-400 max-w-[220px] truncate">${esc(r.productName) || '—'}</td>
-          <td class="px-4 py-2 text-slate-300">${esc(r.colourName) || '—'}</td>
+          <td class="px-4 py-2">${r.colourName ? swatchChip(r.colourName) : '<span class="zm-muted">—</span>'}</td>
           <td class="px-4 py-2 text-right text-slate-300">${r.stockQty ?? '—'}</td>
           <td class="px-4 py-2 text-right">
             <input type="number" min="0" value="${r.quantity}" data-idx="${r._idx}" ${locked ? 'disabled' : ''}
