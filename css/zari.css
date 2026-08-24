@@ -246,6 +246,38 @@ td[class*="font-mono"], .zm-code {
 .border-emerald-500\/20.border-emerald-500\/20 { border-color: rgba(217,164,65,0.26); }
 .border-emerald-500\/30.border-emerald-500\/30 { border-color: rgba(217,164,65,0.38); }
 
+/* The remaining greens and teals scattered through the pages. Left alone
+   they read as leftovers from the old palette in an otherwise gold app. */
+.bg-emerald-400.bg-emerald-400   { background-color: var(--zari-lite); }
+.bg-emerald-500.bg-emerald-500   { background-color: var(--zari); }
+.bg-emerald-600.bg-emerald-600   { background-color: var(--zari-deep); color: var(--zari-lite); }
+.bg-teal-500.bg-teal-500         { background-color: var(--zari); }
+
+.text-emerald-500.text-emerald-500 { color: var(--zari); }
+.text-emerald-600.text-emerald-600 { color: var(--zari); }
+.text-teal-300.text-teal-300,
+.text-teal-400.text-teal-400       { color: var(--zari-lite); }
+
+.border-emerald-400.border-emerald-400 { border-color: var(--zari); }
+.border-emerald-500.border-emerald-500 { border-color: var(--zari); }
+.border-teal-500.border-teal-500       { border-color: var(--zari); }
+
+.ring-emerald-400.ring-emerald-400,
+.ring-emerald-500.ring-emerald-500 { --tw-ring-color: var(--zari); }
+.ring-emerald-400\/60.ring-emerald-400\/60 { --tw-ring-color: rgba(217,164,65,0.6); }
+
+/* Gradient stops (the from-/to- pairs on logo marks and pills) */
+.from-emerald-500.from-emerald-500, .from-teal-500.from-teal-500 { --tw-gradient-from: var(--zari-deep); }
+.to-emerald-500.to-emerald-500,   .to-emerald-600.to-emerald-600 { --tw-gradient-to: var(--zari); }
+
+/* Selected chips across the app ring in gold, not green */
+.ring-2.ring-emerald-400\/60 { box-shadow: 0 0 0 2px rgba(217,164,65,0.6); }
+
+/* Hover states too — a green flash on hover gives the old palette away */
+.hover\:border-emerald-500:hover.hover\:border-emerald-500 { border-color: var(--zari); }
+.hover\:text-emerald-300:hover.hover\:text-emerald-300,
+.hover\:text-emerald-400:hover.hover\:text-emerald-400 { color: var(--zari-lite); }
+
 /* ═══════════════ Surfaces ═══════════════ */
 
 .glass-card,
