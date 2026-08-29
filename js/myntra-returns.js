@@ -254,15 +254,23 @@ export const isPullable = (r) =>
   (Number(r.qty) || 0) > 0;
 
 /**
- * Index the pullable rows by SKU identity.
+ * Index the register by SKU identity.
  * Rows come out oldest-first so allocation is FIFO — the piece that has been
  * sitting longest goes out first.
+ *
+ * `includeHeldBack` is the difference between the two ways stock leaves here.
+ * A label must never ship a damaged piece, so the default excludes them. A
+ * Goods Return is the opposite case: damaged stock is the first thing you send
+ * back to the supplier. The default is unchanged, so the label path is
+ * untouched by this option existing.
+ *
  * @returns {Map<string, { total:number, rows:Array }>}
  */
-export function availableReturnStock(returns) {
+export function availableReturnStock(returns, { includeHeldBack = false } = {}) {
   const index = new Map();
   for (const r of returns || []) {
-    if (!isPullable(r)) continue;
+    const usable = includeHeldBack ? (Number(r.qty) || 0) > 0 : isPullable(r);
+    if (!usable) continue;
     const key = keyFromSellerSku(r.sellerSkuCode) || skuKey(r.zmCode, r.colourName);
     if (!key || key === '|') continue;
     if (!index.has(key)) index.set(key, { total: 0, rows: [] });
@@ -302,7 +310,9 @@ export function allocateFromReturns(key, need, index) {
       date: row.date || '',
       sellerSkuCode: row.sellerSkuCode,
       colourName: row.colourName,
-      kuntalCode: row.kuntalCode || ''
+      kuntalCode: row.kuntalCode || '',
+      // Carried so a Goods Return can print WHY each piece went back
+      condition: row.condition || ''
     });
     left -= take;
   }

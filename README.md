@@ -119,6 +119,29 @@ Visit `http://localhost:8080`
 
 ---
 
+## ↩️ GR — Goods Return / Credit Note
+
+A fourth document type in the Purchase tab, for stock you bought and no longer want.
+
+Selecting **Goods Return (Credit Note)** flips the tab into return mode:
+
+- **Lines come only from the Returns & RTO register.** Never the mapping catalogue, never a fresh purchase, never another supplier. A GR is dead stock going back where it came from.
+- **Damaged and missing pieces are included** — they are the first thing you would send back. The condition prints on each line so Kuntal can see why.
+- **Quantities are capped** at what the register actually holds, in the picker and on edit.
+- **Two separate carts.** Purchase and GR persist under different keys, so switching document type never mixes lines from two different sources.
+
+The document flips with it: parties become **RETURNED BY** (you) → **RETURNED TO** (Kuntal Antique ART), the header carries your name, a **Condition** column appears, and the totals bar reads **CREDIT DUE**. A purchase bill is untouched — the column set is built from the lines, and every difference hangs off one `isReturn` flag.
+
+GST is the same arithmetic: a credit note reverses tax at the rate it was charged, so a GR and the equivalent purchase produce identical numbers. The wording carries the direction, not a negative sign.
+
+**Saving** follows the same order as a label run — allocate against the register as it stands *now* (a cart left open while stock moved cannot over-draw), write the document, and only then decrement. Paperwork before stock, so a failure leaves a visible document rather than pieces that quietly vanished.
+
+Saved GRs sit in **Saved Bills**, badged and tinted, with the running credit raised shown alongside the count.
+
+The **Fulfil from Label** flow excludes GR from its "Buy as" list — a label sends goods out to a customer and can never raise a return.
+
+---
+
 ## 🎨 Midnight Zari
 
 The interface is built on *zari* — the metallic thread woven through the textiles this business sells.

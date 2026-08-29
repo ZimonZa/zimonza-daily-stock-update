@@ -6,7 +6,7 @@
 // stock, a purchase bill for the part that had to be bought.
 // ═══════════════════════════════════════════════════════════════
 
-import { PURCHASE_DOC_TYPES } from './constants.js';
+import { PURCHASE_DOC_TYPES, PURCHASE_ONLY_DOC_TYPES } from './constants.js';
 import { parseLabelPdf } from './myntra-labels.js';
 import { availableReturnStock, allocateFromReturns } from './myntra-returns.js';
 import { computeLine, computeTotals } from './myntra-purchase.js';
@@ -87,7 +87,8 @@ export function initFulfilmentPanel(state, tabs) {
   let busy = false;
 
   const docTypeSel = el('ful-doctype');
-  docTypeSel.innerHTML = PURCHASE_DOC_TYPES.map(t => `<option value="${t.id}">${esc(t.label)}</option>`).join('');
+  // Only the buying types: a label fulfils an order, it never returns goods
+  docTypeSel.innerHTML = PURCHASE_ONLY_DOC_TYPES.map(t => `<option value="${t.id}">${esc(t.label)}</option>`).join('');
   docTypeSel.value = localStorage.getItem('zm_fulfil_doctype') || 'purchase_order';
   docTypeSel.addEventListener('change', () => localStorage.setItem('zm_fulfil_doctype', docTypeSel.value));
 

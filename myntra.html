@@ -248,6 +248,10 @@
           <i data-lucide="settings-2" class="w-3.5 h-3.5 inline-block mr-1"></i> Parties &amp; GST
         </button>
       </div>
+      <p id="pur-mode-note" class="hidden mx-6 mt-4 -mb-1 px-3 py-2 rounded-xl text-xs pur-note-gr">
+        <strong>Goods Return.</strong> Lines come only from the Returns &amp; RTO register — damaged pieces included.
+        Saving reduces the register and raises a credit note against the supplier.
+      </p>
       <div class="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <div>
           <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Document</label>
@@ -839,6 +843,10 @@ async function load() {
     purchaseTab = initPurchaseTab(state);
     returnsTab = initReturnsTab(state);
     fulfilPanel = initFulfilmentPanel(state, { returnsTab, purchaseTab });
+
+    // Goods Return draws its lines from the register, and reduces it on save
+    state.getReturns = () => returnsTab.getReturns();
+    state.refreshReturns = () => returnsTab.refresh();
 
     renderPartiesLine();
     pricingTab.render();

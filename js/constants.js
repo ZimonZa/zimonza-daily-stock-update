@@ -77,11 +77,20 @@ export const GST_RATE_FALLBACK = 18;
 // Default HSN per category — blank until the user fills them in.
 export const HSN_DEFAULTS = { lehnga: '', saree: '' };
 
+// `isReturn` is the one flag the whole Goods Return path keys off: it flips
+// the picker's source, the parties on the document, and the totals wording.
 export const PURCHASE_DOC_TYPES = [
-  { id: 'tax_invoice',    label: 'Tax Invoice',      prefix: 'INV' },
-  { id: 'purchase_order', label: 'Purchase Order',   prefix: 'PO'  },
-  { id: 'proforma',       label: 'Proforma Invoice', prefix: 'PI'  }
+  { id: 'tax_invoice',    label: 'Tax Invoice',            prefix: 'INV' },
+  { id: 'purchase_order', label: 'Purchase Order',         prefix: 'PO'  },
+  { id: 'proforma',       label: 'Proforma Invoice',       prefix: 'PI'  },
+  { id: 'goods_return',   label: 'Goods Return (Credit Note)', prefix: 'GR', isReturn: true }
 ];
+
+/** The three types that buy goods. A label run can never raise a return. */
+export const PURCHASE_ONLY_DOC_TYPES = PURCHASE_DOC_TYPES.filter(t => !t.isReturn);
+
+export const isReturnDocType = (id) =>
+  !!PURCHASE_DOC_TYPES.find(t => t.id === id)?.isReturn;
 
 // Party defaults — all editable and persisted in settings/purchase
 export const DEFAULT_PARTIES = {

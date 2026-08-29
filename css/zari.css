@@ -760,6 +760,42 @@ td.text-right, th.text-right { font-variant-numeric: tabular-nums; }
 .light-mode thead th { background: linear-gradient(180deg, #F2ECDF, #FFFDF8); }
 .light-mode .zm-dot { box-shadow: 0 0 0 1px rgba(107,74,18,0.5), 0 0 0 2.5px var(--ink); }
 
+/* ═══════════════ Goods Return ═══════════════ */
+/* Returns run the other way to a purchase, so they read in a cooler tone
+   rather than the gold used for money going out. */
+
+.pur-note-gr {
+  background: rgba(155, 143, 212, 0.10);
+  border: 1px solid rgba(155, 143, 212, 0.30);
+  color: #C7BFEC;
+}
+
+.pur-badge-gr {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  vertical-align: 1px;
+  margin-right: 6px;
+  background: rgba(155, 143, 212, 0.16);
+  color: var(--calm);
+  border: 1px solid rgba(155, 143, 212, 0.34);
+}
+
+.pur-row-gr { background: rgba(155, 143, 212, 0.045); }
+.pur-row-gr:hover { background: rgba(155, 143, 212, 0.085); }
+.pur-credit { color: var(--calm); }
+
+/* How many pieces the register actually holds, in the picker */
+.pur-avail { color: var(--zari-lite); font-weight: 600; }
+
+.light-mode .pur-note-gr { background: rgba(93, 78, 160, 0.09); color: #4A3E80; border-color: rgba(93,78,160,0.28); }
+.light-mode .pur-badge-gr { background: rgba(93, 78, 160, 0.12); color: #4A3E80; }
+.light-mode .pur-row-gr { background: rgba(93, 78, 160, 0.05); }
+
 /* ═══════════════ Login ═══════════════ */
 
 /* The eyebrow's trailing rule makes no sense centred under a logo */

@@ -34,6 +34,24 @@ const COLS = [
   { key: 'amount',     label: 'Amount',  x: 158, w: 38, align: 'right' }
 ];
 
+// A Goods Return prints WHY each piece went back, so it needs one more
+// column. Widths are re-laid rather than squeezed, and a purchase bill keeps
+// the layout above untouched.
+const COLS_WITH_CONDITION = [
+  { key: 'srNo',       label: 'Sr',        x: 14,  w: 10, align: 'left'  },
+  { key: 'kuntalCode', label: 'Kuntal',    x: 24,  w: 22, align: 'left'  },
+  { key: 'colourName', label: 'Colour',    x: 46,  w: 34, align: 'left'  },
+  { key: 'condition',  label: 'Condition', x: 80,  w: 24, align: 'left'  },
+  { key: 'hsn',        label: 'HSN',       x: 104, w: 16, align: 'left'  },
+  { key: 'qty',        label: 'Qty',       x: 120, w: 12, align: 'right' },
+  { key: 'rate',       label: 'Rate',      x: 132, w: 26, align: 'right' },
+  { key: 'amount',     label: 'Amount',    x: 158, w: 38, align: 'right' }
+];
+
+/** Condition only earns a column when a line actually carries one. */
+const columnsFor = (bill) =>
+  (bill.lines || []).some(l => l.condition) ? COLS_WITH_CONDITION : COLS;
+
 const docTypeOf = id => PURCHASE_DOC_TYPES.find(t => t.id === id) || PURCHASE_DOC_TYPES[0];
 
 // jsPDF's built-in Helvetica is WinAnsi-encoded and has no ₹ (U+20B9) glyph —
@@ -74,14 +92,17 @@ function drawHeader(d, bill, s, continued) {
   setText(d, INK);
   d.setFont('helvetica', 'bold');
   d.setFontSize(17);
-  d.text(fit(d, s.sellerName || 'Supplier', 110).toUpperCase(), M, 16);
+  const issuerName  = bill.isReturn ? (s.buyerName  || 'Buyer')  : (s.sellerName || 'Supplier');
+  const issuerGstin = bill.isReturn ? s.buyerGstin : s.sellerGstin;
+  const issuerState = bill.isReturn ? s.buyerState : s.sellerState;
+  d.text(fit(d, issuerName, 110).toUpperCase(), M, 16);
 
   d.setFont('helvetica', 'normal');
   d.setFontSize(8);
   setText(d, MUTED);
   let sy = 21;
-  if (s.sellerGstin) { d.text(`GSTIN: ${s.sellerGstin}`, M, sy); sy += 4; }
-  if (s.sellerState) d.text(`State: ${s.sellerState}`, M, sy);
+  if (issuerGstin) { d.text(`GSTIN: ${issuerGstin}`, M, sy); sy += 4; }
+  if (issuerState) d.text(`State: ${issuerState}`, M, sy);
 
   // Document title pill (right)
   const type = docTypeOf(bill.docType);
@@ -129,18 +150,27 @@ function drawParties(d, bill, s) {
     }
   };
 
-  card(M, 'FROM (SUPPLIER)', [
+  const supplierCard = [
     [s.sellerName || '—', true, INK],
     [s.sellerAddress || '', false, MUTED],
     [s.sellerGstin ? `GSTIN: ${s.sellerGstin}` : '', false, MUTED]
-  ].filter(l => l[0]));
+  ].filter(l => l[0]);
 
-  card(M + cardW + 6, 'BILL TO (BUYER)', [
+  const buyerCard = [
     [s.buyerName || '—', true, INK],
     [s.buyerBrand ? `Brand: ${s.buyerBrand}` : '', false, BRAND_DARK],
     [s.buyerAddress || '', false, MUTED],
     [s.buyerGstin ? `GSTIN: ${s.buyerGstin}` : '', false, MUTED]
-  ].filter(l => l[0]));
+  ].filter(l => l[0]);
+
+  if (bill.isReturn) {
+    // Goods flow the other way: you are sending them back to the supplier.
+    card(M, 'RETURNED BY', buyerCard);
+    card(M + cardW + 6, 'RETURNED TO', supplierCard);
+  } else {
+    card(M, 'FROM (SUPPLIER)', supplierCard);
+    card(M + cardW + 6, 'BILL TO (BUYER)', buyerCard);
+  }
 
   // Meta strip
   const my = top + h + 5;
@@ -169,13 +199,13 @@ function drawParties(d, bill, s) {
   return my + 15;
 }
 
-function drawTableHead(d, y) {
+function drawTableHead(d, y, cols) {
   setFill(d, INK);
   d.rect(M, y - 5, CONTENT_W, 8, 'F');
   d.setFont('helvetica', 'bold');
   d.setFontSize(7.5);
   setText(d, [255, 255, 255]);
-  for (const col of COLS) cellText(d, col.label, col, y);
+  for (const col of cols) cellText(d, col.label, col, y);
   return y + 7;
 }
 
@@ -203,9 +233,11 @@ export function exportBillPDF(bill, settings) {
   const d = new jsPDF({ unit: 'mm', format: 'a4' });
   const s = settings || {};
 
+  const cols = columnsFor(bill);
+
   drawHeader(d, bill, s, false);
   let y = drawParties(d, bill, s);
-  y = drawTableHead(d, y);
+  y = drawTableHead(d, y, cols);
 
   d.setFont('helvetica', 'normal');
   d.setFontSize(7.5);
@@ -218,7 +250,7 @@ export function exportBillPDF(bill, settings) {
       d.text('continued on next page…', PAGE_W - M, y + 2, { align: 'right' });
       d.addPage();
       drawHeader(d, bill, s, true);
-      y = drawTableHead(d, 34);
+      y = drawTableHead(d, 34, cols);
       d.setFont('helvetica', 'normal');
       d.setFontSize(7.5);
     }
@@ -228,16 +260,18 @@ export function exportBillPDF(bill, settings) {
       d.rect(M, y - 4, CONTENT_W, 6.5, 'F');
     }
     setText(d, INK);
+    const byKey = Object.fromEntries(cols.map(c => [c.key, c]));
     const values = {
       srNo: line.srNo,
-      kuntalCode: fit(d, line.kuntalCode || '—', COLS[1].w - 4),
-      colourName: fit(d, line.colourName || '—', COLS[2].w - 4),
-      hsn: fit(d, line.hsn || '—', COLS[3].w - 4),
+      kuntalCode: fit(d, line.kuntalCode || '—', byKey.kuntalCode.w - 4),
+      colourName: fit(d, line.colourName || '—', byKey.colourName.w - 4),
+      condition: byKey.condition ? fit(d, line.condition || '—', byKey.condition.w - 4) : '',
+      hsn: fit(d, line.hsn || '—', byKey.hsn.w - 4),
       qty: line.qty,
       rate: formatINR(line.rate),
       amount: formatINR(line.taxable)
     };
-    for (const col of COLS) cellText(d, values[col.key], col, y);
+    for (const col of cols) cellText(d, values[col.key], col, y);
     y += 6.5;
   });
 
@@ -327,7 +361,7 @@ function drawTotals(d, bill, yStart) {
   d.setFont('helvetica', 'bold');
   d.setFontSize(8);
   setText(d, [255, 255, 255]);
-  d.text('GRAND TOTAL', rightX + 3, y + 8);
+  d.text(bill.isReturn ? 'CREDIT DUE' : 'GRAND TOTAL', rightX + 3, y + 8);
   d.setFontSize(11);
   d.text(`${RS}${formatINR(t.grandRounded, 0)}`, PAGE_W - M - 3, y + 8.3, { align: 'right' });
   y += 16;
@@ -392,7 +426,8 @@ function drawClosing(d, bill, s, yStart) {
   d.setFont('helvetica', 'bold');
   d.setFontSize(7.5);
   setText(d, INK);
-  d.text(fit(d, `For ${s.sellerName || 'Supplier'}`, colW), sx, yStart, { align: 'right' });
+  const signatory = bill.isReturn ? (s.buyerName || 'Buyer') : (s.sellerName || 'Supplier');
+  d.text(fit(d, `For ${signatory}`, colW), sx, yStart, { align: 'right' });
   setDraw(d, RULE);
   d.setLineWidth(0.3);
   d.line(sx - 52, yStart + 18, sx, yStart + 18);
@@ -632,6 +667,22 @@ export function renderBillPreviewHTML(bill, settings) {
   const s = settings || {};
   const t = bill.totals;
   const type = docTypeOf(bill.docType);
+  const ret = !!bill.isReturn;
+  const withCondition = (bill.lines || []).some(l => l.condition);
+  const issuerName = ret ? (s.buyerName || 'Buyer') : (s.sellerName || 'Supplier');
+  const issuerGstin = ret ? s.buyerGstin : s.sellerGstin;
+
+  const supplierLines = [
+    `<p class="bill-party-name">${esc(s.sellerName || '—')}</p>`,
+    s.sellerAddress ? `<p class="bill-sub">${esc(s.sellerAddress)}</p>` : '',
+    s.sellerGstin ? `<p class="bill-sub">GSTIN: ${esc(s.sellerGstin)}</p>` : ''
+  ];
+  const buyerLines = [
+    `<p class="bill-party-name">${esc(s.buyerName || '—')}</p>`,
+    s.buyerBrand ? `<p class="bill-brand">Brand: ${esc(s.buyerBrand)}</p>` : '',
+    s.buyerAddress ? `<p class="bill-sub">${esc(s.buyerAddress)}</p>` : '',
+    s.buyerGstin ? `<p class="bill-sub">GSTIN: ${esc(s.buyerGstin)}</p>` : ''
+  ];
 
   const partyCard = (heading, lines) => `
     <div class="bill-party">
@@ -644,25 +695,17 @@ export function renderBillPreviewHTML(bill, settings) {
     <div class="bill-accent"></div>
     <div class="bill-head">
       <div>
-        <h2 class="bill-seller">${esc(s.sellerName || 'Supplier')}</h2>
-        ${s.sellerGstin ? `<p class="bill-sub">GSTIN: ${esc(s.sellerGstin)}</p>` : ''}
+        <h2 class="bill-seller">${esc(issuerName)}</h2>
+        ${issuerGstin ? `<p class="bill-sub">GSTIN: ${esc(issuerGstin)}</p>` : ''}
         ${s.sellerState ? `<p class="bill-sub">State: ${esc(s.sellerState)}</p>` : ''}
       </div>
       <span class="bill-title-pill">${esc(type.label)}</span>
     </div>
 
     <div class="bill-parties">
-      ${partyCard('FROM (SUPPLIER)', [
-        `<p class="bill-party-name">${esc(s.sellerName || '—')}</p>`,
-        s.sellerAddress ? `<p class="bill-sub">${esc(s.sellerAddress)}</p>` : '',
-        s.sellerGstin ? `<p class="bill-sub">GSTIN: ${esc(s.sellerGstin)}</p>` : ''
-      ])}
-      ${partyCard('BILL TO (BUYER)', [
-        `<p class="bill-party-name">${esc(s.buyerName || '—')}</p>`,
-        s.buyerBrand ? `<p class="bill-brand">Brand: ${esc(s.buyerBrand)}</p>` : '',
-        s.buyerAddress ? `<p class="bill-sub">${esc(s.buyerAddress)}</p>` : '',
-        s.buyerGstin ? `<p class="bill-sub">GSTIN: ${esc(s.buyerGstin)}</p>` : ''
-      ])}
+      ${ret
+        ? partyCard('RETURNED BY', buyerLines) + partyCard('RETURNED TO', supplierLines)
+        : partyCard('FROM (SUPPLIER)', supplierLines) + partyCard('BILL TO (BUYER)', buyerLines)}
     </div>
 
     <div class="bill-meta">
@@ -674,7 +717,7 @@ export function renderBillPreviewHTML(bill, settings) {
 
     <table class="bill-table">
       <thead><tr>
-        <th>Sr</th><th>Kuntal</th><th>Colour</th><th>HSN</th>
+        <th>Sr</th><th>Kuntal</th><th>Colour</th>${withCondition ? '<th>Condition</th>' : ''}<th>HSN</th>
         <th class="r">Qty</th><th class="r">Rate</th><th class="r">Amount</th>
       </tr></thead>
       <tbody>
@@ -682,6 +725,7 @@ export function renderBillPreviewHTML(bill, settings) {
           <td>${l.srNo}</td>
           <td>${esc(l.kuntalCode) || '—'}</td>
           <td>${esc(l.colourName) || '—'}</td>
+          ${withCondition ? `<td>${esc(l.condition) || '—'}</td>` : ''}
           <td>${esc(l.hsn) || '—'}</td>
           <td class="r">${l.qty}</td>
           <td class="r">${formatINR(l.rate)}</td>
@@ -708,7 +752,7 @@ export function renderBillPreviewHTML(bill, settings) {
         <div class="bill-total-row"><span>CGST</span><span>${formatINR(t.cgstTotal)}</span></div>
         <div class="bill-total-row"><span>SGST</span><span>${formatINR(t.sgstTotal)}</span></div>
         <div class="bill-total-row"><span>Round Off</span><span>${t.roundOff < 0 ? '(' + formatINR(Math.abs(t.roundOff)) + ')' : formatINR(t.roundOff)}</span></div>
-        <div class="bill-grand"><span>GRAND TOTAL</span><span>₹ ${formatINR(t.grandRounded, 0)}</span></div>
+        <div class="bill-grand"><span>${ret ? 'CREDIT DUE' : 'GRAND TOTAL'}</span><span>₹ ${formatINR(t.grandRounded, 0)}</span></div>
       </div>
     </div>
 
@@ -724,7 +768,7 @@ export function renderBillPreviewHTML(bill, settings) {
           <p class="bill-terms">${esc(s.terms)}</p>` : ''}
       </div>
       <div class="bill-sign">
-        <p class="bill-sub-dark"><b>For ${esc(s.sellerName || 'Supplier')}</b></p>
+        <p class="bill-sub-dark"><b>For ${esc(issuerName)}</b></p>
         <div class="bill-sign-line"></div>
         <p class="bill-sub">Authorised Signatory</p>
       </div>

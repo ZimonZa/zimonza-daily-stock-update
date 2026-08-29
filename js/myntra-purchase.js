@@ -5,12 +5,15 @@
 // value, CGST and SGST are added on top (each half the total rate).
 // ═══════════════════════════════════════════════════════════════
 
-import { PURCHASE_DOC_TYPES, GST_RATE_FALLBACK } from './constants.js';
+import { PURCHASE_DOC_TYPES, GST_RATE_FALLBACK, isReturnDocType } from './constants.js';
 import {
   getPurchaseSettings, savePurchaseSettings, savePurchaseBill,
-  getAllPurchaseBills, deletePurchaseBill, nextBillNumber, financialYearLabel
+  getAllPurchaseBills, deletePurchaseBill, nextBillNumber, financialYearLabel,
+  applyReturnConsumption
 } from './firestore-service.js';
 import { pricingIndex } from './myntra-pricing.js';
+import { availableReturnStock, allocateFromReturns } from './myntra-returns.js';
+import { keyFromSellerSku } from './myntra-labels.js';
 import { exportBillPDF, renderBillPreviewHTML } from './invoice-pdf.js';
 import {
   normZmCode, round2, formatINR, debounce, today, formatDateDisplay
@@ -19,7 +22,11 @@ import { resolveStock, findColourQty } from './myntra.js';
 import { swatchDot } from './swatches.js';
 import notify from './notifications.js';
 
+// Purchase and Goods Return draw from different sources — the mapping
+// catalogue and the returns register. Keeping one cart each designs out a
+// whole class of bug rather than guarding against it.
 const CART_KEY = 'zm_purchase_cart';
+const GR_CART_KEY = 'zm_gr_cart';
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 // ═══════════════════ Pure GST maths ═══════════════════
@@ -84,7 +91,8 @@ export function computeTotals(lines) {
 export function initPurchaseTab(state) {
   const el = id => document.getElementById(id);
 
-  let cart = loadCart();
+  let cart = loadCart(CART_KEY);
+  let grCart = loadCart(GR_CART_KEY);
   let bills = [];
   let billsQuery = '';
   let pickerQuery = '';
@@ -96,7 +104,26 @@ export function initPurchaseTab(state) {
   docTypeSel.addEventListener('change', () => {
     localStorage.setItem('zm_purchase_doctype', docTypeSel.value);
     updateBillNoPlaceholder();
+    renderModeNotice();
+    render();          // the picker and the cart both change source
   });
+
+  /** Goods Return mode: lines come only from the Returns & RTO register. */
+  const isGR = () => isReturnDocType(docTypeSel.value);
+  const activeCart = () => (isGR() ? grCart : cart);
+  const setActiveCart = (next) => { if (isGR()) grCart = next; else cart = next; };
+  const activeKey = () => (isGR() ? GR_CART_KEY : CART_KEY);
+
+  /** The register, grouped by SKU. Damaged and missing included: sending
+   *  damaged stock back is exactly what a Goods Return is for. */
+  const registerIndex = () =>
+    availableReturnStock(state.getReturns?.() ?? [], { includeHeldBack: true });
+
+  function renderModeNotice() {
+    const note = el('pur-mode-note');
+    if (!note) return;
+    note.classList.toggle('hidden', !isGR());
+  }
 
   el('pur-billdate').value = today();
 
@@ -129,9 +156,9 @@ export function initPurchaseTab(state) {
   el('pur-cart').addEventListener('click', onCartClick);
 
   el('pur-clear').addEventListener('click', () => {
-    if (!cart.length) return;
-    if (!confirm(`Clear all ${cart.length} line(s) from this bill?`)) return;
-    cart = []; persist(); renderCart(); renderPicker();
+    if (!activeCart().length) return;
+    if (!confirm(`Clear all ${activeCart().length} line(s) from this bill?`)) return;
+    setActiveCart([]); persist(); renderCart(); renderPicker();
     notify.info('Bill cleared');
   });
 
@@ -171,15 +198,15 @@ export function initPurchaseTab(state) {
 
   // ═══════════ Cart operations ═══════════
 
-  function loadCart() {
+  function loadCart(key) {
     try {
-      const saved = JSON.parse(localStorage.getItem(CART_KEY));
+      const saved = JSON.parse(localStorage.getItem(key));
       return Array.isArray(saved) ? saved : [];
     } catch { return []; }
   }
   function persist() {
-    try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch {}
-    state.onCartChange?.(cart.length);
+    try { localStorage.setItem(activeKey(), JSON.stringify(activeCart())); } catch {}
+    state.onCartChange?.(activeCart().length);
   }
 
   /** Mapping rows joined with pricing + today's stock, for the picker. */
@@ -212,9 +239,40 @@ export function initPurchaseTab(state) {
     });
   }
 
+  /**
+   * Everything the register is holding, as picker rows.
+   * This is the ONLY source a Goods Return can draw from — never the
+   * mapping catalogue, never a fresh purchase, never another supplier.
+   */
+  function registerRows() {
+    const priceIdx = pricingIndex(state.pricing);
+    const out = [];
+    for (const [, bucket] of registerIndex()) {
+      const first = bucket.rows[0];
+      if (!first) continue;
+      const zm = normZmCode(first.zmCode);
+      const price = priceIdx.get(zm);
+      // Conditions present across the rows, so you can see what you are sending
+      const conditions = [...new Set(bucket.rows.map(r => r.condition || 'good'))];
+      out.push({
+        sellerSkuCode: first.sellerSkuCode,
+        zmCode: zm,
+        colourName: first.colourName,
+        kuntalCode: first.kuntalCode || price?.kuntalCode || '',
+        category: price?.category || '',
+        rate: price?.kuntalSellingPrice ?? null,
+        productName: '',
+        stockQty: null,
+        available: bucket.total,
+        conditions
+      });
+    }
+    return out;
+  }
+
   function pickerRows() {
     const q = pickerQuery.toLowerCase();
-    let rows = catalogue();
+    let rows = isGR() ? registerRows() : catalogue();
     if (q) {
       rows = rows.filter(r =>
         String(r.sellerSkuCode).toLowerCase().includes(q) ||
@@ -228,23 +286,34 @@ export function initPurchaseTab(state) {
   }
 
   function addLine(row, qty = 1, silent = false) {
-    const existing = cart.find(l => l.sellerSkuCode === row.sellerSkuCode);
+    // A Goods Return can never promise more than the register actually holds
+    const cap = isGR() ? (Number(row.available) || 0) : Infinity;
+    if (isGR() && cap <= 0) { if (!silent) notify.warning(`${row.sellerSkuCode} has nothing left in the register`); return; }
+
+    const existing = activeCart().find(l => l.sellerSkuCode === row.sellerSkuCode);
     if (existing) {
-      existing.qty = Math.max(1, (Number(existing.qty) || 0) + qty);
-      if (!silent) notify.info(`${row.sellerSkuCode} → qty ${existing.qty}`);
+      const wanted = (Number(existing.qty) || 0) + qty;
+      existing.qty = Math.max(1, Math.min(wanted, cap));
+      if (!silent) {
+        if (wanted > cap) notify.warning(`${row.sellerSkuCode} capped at ${cap} — that is all the register holds`);
+        else notify.info(`${row.sellerSkuCode} → qty ${existing.qty}`);
+      }
       return;
     }
-    cart.push({
+    activeCart().push({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       sellerSkuCode: row.sellerSkuCode,
       zmCode: row.zmCode,
       kuntalCode: row.kuntalCode,
       colourName: row.colourName,
       category: row.category,
-      qty: Math.max(1, qty),
+      qty: Math.max(1, Math.min(qty, cap)),
       rate: row.rate ?? 0,
       gstRateOverride: null,
-      hsn: state.purchaseSettings.hsnCodes?.[row.category] || ''
+      hsn: state.purchaseSettings.hsnCodes?.[row.category] || '',
+      // Only meaningful on a Goods Return; filled at save time from the
+      // register rows actually consumed.
+      condition: ''
     });
   }
 
@@ -265,10 +334,22 @@ export function initPurchaseTab(state) {
   function onCartInput(e) {
     const inp = e.target.closest('[data-line]');
     if (!inp) return;
-    const line = cart.find(l => l.id === inp.dataset.line);
+    const line = activeCart().find(l => l.id === inp.dataset.line);
     if (!line) return;
     const field = inp.dataset.field;
-    if (field === 'qty') line.qty = Math.max(1, Math.floor(Number(inp.value) || 1));
+    if (field === 'qty') {
+      const wanted = Math.max(1, Math.floor(Number(inp.value) || 1));
+      if (isGR()) {
+        const cap = registerIndex().get(keyFromSellerSku(line.sellerSkuCode))?.total ?? 0;
+        line.qty = Math.max(1, Math.min(wanted, cap || 1));
+        if (wanted > line.qty) {
+          inp.value = line.qty;
+          notify.warning(`Capped at ${line.qty} — that is all the register holds`);
+        }
+      } else {
+        line.qty = wanted;
+      }
+    }
     else if (field === 'rate') line.rate = Math.max(0, Number(inp.value) || 0);
     else if (field === 'gst') line.gstRateOverride = inp.value === '' ? null : Math.max(0, Number(inp.value) || 0);
     else if (field === 'hsn') line.hsn = inp.value.trim();
@@ -287,7 +368,7 @@ export function initPurchaseTab(state) {
   function onCartClick(e) {
     const rm = e.target.closest('button[data-remove]');
     if (!rm) return;
-    cart = cart.filter(l => l.id !== rm.dataset.remove);
+    setActiveCart(activeCart().filter(l => l.id !== rm.dataset.remove));
     persist(); renderCart(); renderPicker();
   }
 
@@ -295,7 +376,7 @@ export function initPurchaseTab(state) {
 
   function computedLines() {
     const rateTable = state.purchaseSettings.gstRates || {};
-    return cart.map((l, i) => computeLine(l, rateTable, i + 1));
+    return activeCart().map((l, i) => computeLine(l, rateTable, i + 1));
   }
 
   /**
@@ -303,7 +384,7 @@ export function initPurchaseTab(state) {
    * `draft: true` means "don't reserve a number yet" — preview and ad-hoc PDF.
    */
   function buildBill({ draft, billNo } = {}) {
-    if (!cart.length) { notify.warning('Add at least one product to the bill'); return null; }
+    if (!activeCart().length) { notify.warning('Add at least one product to the bill'); return null; }
     const lines = computedLines();
     const zeroRate = lines.filter(l => l.rate <= 0);
     if (zeroRate.length) {
@@ -317,6 +398,7 @@ export function initPurchaseTab(state) {
     return {
       docType: docTypeSel.value,
       docTypeLabel: type.label,
+      isReturn: !!type.isReturn,
       billNo: billNo || typed || `${type.prefix}/${financialYearLabel(new Date())}/DRAFT`,
       billDate: el('pur-billdate').value || today(),
       placeOfSupply: el('pur-place').value.trim(),
@@ -338,12 +420,35 @@ export function initPurchaseTab(state) {
   }
 
   async function saveBill() {
-    if (!cart.length) { notify.warning('Add at least one product to the bill'); return; }
+    if (!activeCart().length) { notify.warning('Add at least one product to the bill'); return; }
     const btn = el('pur-save');
     const original = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner spinner-sm"></span> Saving…';
     try {
+      // A Goods Return is checked against the register as it stands NOW —
+      // a cart left open while stock moved must not over-draw.
+      let consumption = [];
+      let conditionBySku = new Map();
+      if (isGR()) {
+        const index = registerIndex();
+        for (const line of activeCart()) {
+          const key = keyFromSellerSku(line.sellerSkuCode);
+          const alloc = allocateFromReturns(key, line.qty, index);
+          if (alloc.taken < line.qty) {
+            notify.error(
+              `${line.sellerSkuCode}: only ${alloc.taken} left in the register, not ${line.qty}. ` +
+              `Adjust the line and try again.`);
+            return;
+          }
+          const conds = [...new Set(alloc.picks.map(x => x.condition || 'good'))];
+          conditionBySku.set(line.sellerSkuCode, conds.join(', '));
+          for (const pick of alloc.picks) {
+            consumption.push({ id: pick.id, remaining: pick.remaining });
+          }
+        }
+      }
+
       const typed = el('pur-billno').value.trim();
       let billNo = typed;
       if (!billNo) {
@@ -352,13 +457,31 @@ export function initPurchaseTab(state) {
       }
       const bill = buildBill({ draft: false, billNo });
       if (!bill) return;
+      if (isGR()) {
+        bill.lines = bill.lines.map(l => ({ ...l, condition: conditionBySku.get(l.sellerSkuCode) || 'good' }));
+      }
 
       await savePurchaseBill(bill);
+
+      // Document exists — now the stock can go
+      if (consumption.length) {
+        try {
+          await applyReturnConsumption(consumption);
+          await state.refreshReturns?.();
+        } catch (err) {
+          notify.error(
+            `${billNo} was saved, but the returns register was NOT reduced: ${err.message}. ` +
+            `Adjust the rows by hand.`);
+        }
+      }
       el('pur-billno').value = billNo;
-      notify.success(`${bill.docTypeLabel} ${billNo} saved — ₹${formatINR(bill.totals.grandRounded, 0)}`);
+      notify.success(
+        bill.isReturn
+          ? `${billNo} raised — ₹${formatINR(bill.totals.grandRounded, 0)} credit due from ${state.purchaseSettings.sellerName || 'the supplier'}`
+          : `${bill.docTypeLabel} ${billNo} saved — ₹${formatINR(bill.totals.grandRounded, 0)}`);
       downloadPDF(bill);
 
-      cart = []; persist();
+      setActiveCart([]); persist();
       el('pur-billno').value = '';
       await refreshBills();
       renderCart(); renderPicker();
@@ -435,7 +558,7 @@ export function initPurchaseTab(state) {
       await savePurchaseSettings(patch);
       state.purchaseSettings = await getPurchaseSettings();
       // Refresh HSN on lines that never had one typed in
-      for (const l of cart) {
+      for (const l of activeCart()) {
         if (!l.hsn) l.hsn = state.purchaseSettings.hsnCodes?.[l.category] || '';
       }
       persist();
@@ -475,7 +598,7 @@ export function initPurchaseTab(state) {
         } catch (err) { notify.error('PDF failed: ' + err.message); }
         break;
       case 'duplicate':
-        cart = (bill.lines || []).map((l, i) => ({
+        setActiveCart((bill.lines || []).map((l, i) => ({
           id: `${Date.now()}-${i}`,
           sellerSkuCode: l.sellerSkuCode,
           zmCode: l.zmCode,
@@ -486,7 +609,7 @@ export function initPurchaseTab(state) {
           rate: l.rate,
           gstRateOverride: l.gstRateAuto ? null : l.gstRate,
           hsn: l.hsn || ''
-        }));
+        })));
         persist(); renderCart(); renderPicker();
         el('pur-billno').value = '';
         notify.success(`${bill.lines.length} line(s) copied from ${bill.billNo} into a new bill`);
@@ -513,7 +636,11 @@ export function initPurchaseTab(state) {
         String(b.docTypeLabel).toLowerCase().includes(billsQuery) ||
         String(b.billDate).includes(billsQuery));
     }
-    el('pur-bills-count').textContent = bills.length ? `${f.length} of ${bills.length} bills` : '';
+    const credit = bills.filter(b => b.isReturn)
+      .reduce((t, b) => t + (b.totals?.grandRounded || 0), 0);
+    el('pur-bills-count').textContent = bills.length
+      ? `${f.length} of ${bills.length} bills` + (credit ? ` · ₹${formatINR(credit, 0)} credit raised` : '')
+      : '';
 
     if (!bills.length) {
       list.innerHTML = `<p class="text-slate-500 text-sm text-center py-6">No bills saved yet.</p>`;
@@ -525,12 +652,12 @@ export function initPurchaseTab(state) {
     }
 
     list.innerHTML = f.map(b => `
-      <div class="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-white/5 hover:bg-white/[0.02]">
+      <div class="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-white/5 hover:bg-white/[0.02] ${b.isReturn ? 'pur-row-gr' : ''}">
         <div class="min-w-0 flex-1">
-          <p class="text-slate-200 text-sm font-semibold truncate">${esc(b.billNo)}</p>
+          <p class="text-slate-200 text-sm font-semibold truncate">${b.isReturn ? '<span class="pur-badge-gr">GR</span> ' : ''}${esc(b.billNo)}</p>
           <p class="text-slate-500 text-xs">${esc(b.docTypeLabel || '')} · ${esc(formatDateDisplay(b.billDate) || b.billDate)} · ${(b.lines || []).length} line(s) · ${b.totals?.totalQty ?? 0} pcs</p>
         </div>
-        <p class="text-emerald-300 font-bold text-sm whitespace-nowrap">₹ ${formatINR(b.totals?.grandRounded ?? 0, 0)}</p>
+        <p class="${b.isReturn ? 'pur-credit' : 'text-emerald-300'} font-bold text-sm whitespace-nowrap" title="${b.isReturn ? 'Credit due from the supplier' : 'Amount payable'}">₹ ${formatINR(b.totals?.grandRounded ?? 0, 0)}</p>
         <div class="flex gap-1.5">
           <button data-bill-action="view" data-bill-id="${esc(b.id)}" class="btn-secondary text-xs py-1.5 px-2.5" title="View"><i data-lucide="eye" class="w-3.5 h-3.5"></i></button>
           <button data-bill-action="pdf" data-bill-id="${esc(b.id)}" class="btn-secondary text-xs py-1.5 px-2.5" title="Download PDF"><i data-lucide="download" class="w-3.5 h-3.5"></i></button>
@@ -545,13 +672,24 @@ export function initPurchaseTab(state) {
 
   function renderPicker() {
     const rows = pickerRows();
-    const inCart = new Set(cart.map(l => l.sellerSkuCode));
-    el('pur-picker-count').textContent = state.mappings.length
-      ? `${rows.length} of ${state.mappings.length} SKUs`
-      : 'No mappings uploaded yet';
+    const inCart = new Set(activeCart().map(l => l.sellerSkuCode));
+    if (isGR()) {
+      const pcs = rows.reduce((t, r) => t + (r.available || 0), 0);
+      el('pur-picker-count').textContent = rows.length
+        ? `${rows.length} SKU(s) · ${pcs} pc(s) in the Returns & RTO register`
+        : 'The Returns & RTO register is empty';
+    } else {
+      el('pur-picker-count').textContent = state.mappings.length
+        ? `${rows.length} of ${state.mappings.length} SKUs`
+        : 'No mappings uploaded yet';
+    }
 
     const box = el('pur-picker');
-    if (!state.mappings.length) {
+    if (isGR() && !rows.length) {
+      box.innerHTML = `<p class="text-slate-500 text-sm text-center py-8">Nothing in the Returns &amp; RTO register to send back.</p>`;
+      return;
+    }
+    if (!isGR() && !state.mappings.length) {
       box.innerHTML = `<p class="text-slate-500 text-sm text-center py-8">Upload the Myntra mapping file first — the Mapping tab feeds this list.</p>`;
       return;
     }
@@ -570,11 +708,15 @@ export function initPurchaseTab(state) {
           <p class="text-slate-200 text-sm font-medium truncate">${esc(r.sellerSkuCode)}</p>
           <p class="text-slate-500 text-xs truncate">
             ${esc(r.kuntalCode) || '<span class="text-red-400">no Kuntal code</span>'} ·
-            ${swatchDot(r.colourName)} ${esc(r.colourName)}${r.category ? ' · ' + esc(r.category) : ''}${r.stockQty !== null && r.stockQty !== undefined ? ` · ${r.stockQty} in stock` : ''}
+            ${swatchDot(r.colourName)} ${esc(r.colourName)}${r.category ? ' · ' + esc(r.category) : ''}${
+              isGR()
+                ? ` · <b class="pur-avail">${r.available} in register</b>` +
+                  (r.conditions?.length ? ` · ${esc(r.conditions.join(', '))}` : '')
+                : (r.stockQty !== null && r.stockQty !== undefined ? ` · ${r.stockQty} in stock` : '')}
           </p>
         </div>
         <p class="text-xs whitespace-nowrap ${noRate ? 'text-red-400' : 'text-slate-300'}">${noRate ? 'no rate' : '₹ ' + formatINR(r.rate, 0)}</p>
-        <input type="number" min="1" value="1" data-qty-for="${esc(r.sellerSkuCode)}" class="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-emerald-500/40">
+        <input type="number" min="1" ${isGR() ? `max="${r.available}"` : ''} value="1" data-qty-for="${esc(r.sellerSkuCode)}" class="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-emerald-500/40">
         <button data-add="${esc(r.sellerSkuCode)}" class="btn-secondary text-xs py-1.5 px-2.5 whitespace-nowrap">
           ${added ? '<i data-lucide="plus" class="w-3.5 h-3.5"></i>' : 'Add'}
         </button>
@@ -587,13 +729,13 @@ export function initPurchaseTab(state) {
 
   function renderCart() {
     const box = el('pur-cart');
-    el('pur-line-count').textContent = cart.length ? `${cart.length} line(s)` : '';
+    el('pur-line-count').textContent = activeCart().length ? `${activeCart().length} line(s)` : '';
 
-    if (!cart.length) {
+    if (!activeCart().length) {
       box.innerHTML = `<div class="text-center py-10 px-4">
         <i data-lucide="shopping-cart" class="w-8 h-8 text-slate-700 mx-auto mb-2"></i>
-        <p class="text-slate-500 text-sm">No products added yet</p>
-        <p class="text-slate-600 text-xs mt-1">Search on the left and hit Add to start the bill.</p>
+        <p class="text-slate-500 text-sm">${isGR() ? 'Nothing on this return yet' : 'No products added yet'}</p>
+        <p class="text-slate-600 text-xs mt-1">${isGR() ? 'Pick pieces from the register on the left.' : 'Search on the left and hit Add to start the bill.'}</p>
       </div>`;
       if (window.lucide) lucide.createIcons();
       renderTotalsOnly();
@@ -634,7 +776,7 @@ export function initPurchaseTab(state) {
 
   function renderTotalsOnly() {
     const box = el('pur-totals');
-    if (!cart.length) {
+    if (!activeCart().length) {
       box.innerHTML = `<p class="text-slate-600 text-xs text-center py-3">Totals appear once the bill has lines.</p>`;
       return;
     }
@@ -654,7 +796,7 @@ export function initPurchaseTab(state) {
       </div>
       <div class="flex justify-between items-center mt-2.5 px-3 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500/15 to-emerald-500/5 border border-emerald-500/25">
         <div>
-          <p class="text-emerald-400 text-[10px] font-bold uppercase tracking-wider">Grand Total</p>
+          <p class="text-emerald-400 text-[10px] font-bold uppercase tracking-wider">${isGR() ? 'Credit Due' : 'Grand Total'}</p>
           <p class="text-slate-500 text-[10px]">${totals.totalQty} pcs · ${lines.length} line(s)</p>
         </div>
         <p class="text-white text-lg font-bold">₹ ${formatINR(totals.grandRounded, 0)}</p>
@@ -662,15 +804,23 @@ export function initPurchaseTab(state) {
   }
 
   function render() {
+    renderModeNotice();
+    const saveLabel = el('pur-save');
+    if (saveLabel) {
+      saveLabel.innerHTML = isGR()
+        ? '<i data-lucide="corner-up-left" class="w-3.5 h-3.5 inline-block mr-1"></i> Raise GR'
+        : '<i data-lucide="save" class="w-3.5 h-3.5 inline-block mr-1"></i> Save Bill';
+    }
     renderPicker();
     renderCart();
     renderBills();
+    if (window.lucide) lucide.createIcons();
   }
 
   return {
     render,
     refreshBills,
     getBills: () => bills,
-    getCartCount: () => cart.length
+    getCartCount: () => activeCart().length
   };
 }
