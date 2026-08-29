@@ -318,8 +318,17 @@ export function initPurchaseTab(state) {
   }
 
   function addBySku(sku, qty) {
-    const row = catalogue().find(r => r.sellerSkuCode === sku);
-    if (!row) { notify.error('SKU not found in mapping'); return; }
+    // Must read the SAME source the picker rendered from. Reading the mapping
+    // catalogue here left GR rows with no `available`, so the cap computed as
+    // 0 and every Add was refused as "nothing left in the register".
+    const source = isGR() ? registerRows() : catalogue();
+    const row = source.find(r => r.sellerSkuCode === sku);
+    if (!row) {
+      notify.error(isGR()
+        ? `${sku} is no longer in the Returns & RTO register`
+        : 'SKU not found in mapping');
+      return;
+    }
     addLine(row, Math.max(1, Math.floor(qty) || 1));
     persist(); renderCart(); renderPicker();
   }
