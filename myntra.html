@@ -39,6 +39,7 @@
     <button id="tabbtn-pricing"   class="zm-tab"><i data-lucide="indian-rupee" class="w-4 h-4"></i> Pricing <span id="tabcount-pricing" class="zm-tab-count"></span></button>
     <button id="tabbtn-purchase"  class="zm-tab"><i data-lucide="shopping-cart" class="w-4 h-4"></i> Purchase <span id="tabcount-purchase" class="zm-tab-count"></span></button>
     <button id="tabbtn-returns"   class="zm-tab"><i data-lucide="undo-2" class="w-4 h-4"></i> Returns &amp; RTO <span id="tabcount-returns" class="zm-tab-count"></span></button>
+    <button id="tabbtn-orders"    class="zm-tab"><i data-lucide="radar" class="w-4 h-4"></i> Orders &amp; Fake Returns <span id="tabcount-orders" class="zm-tab-count"></span></button>
   </div>
 
   <!-- ════════ TAB: Inventory Update ════════ -->
@@ -62,6 +63,18 @@
           <span class="text-slate-500 text-xs">of each colour's stock goes to Myntra — 50 = half, 75 = 75% (stock 100 → 75)</span>
         </div>
 
+        <label class="flex items-start gap-3 p-3 rounded-xl border border-white/10 bg-white/[0.03] cursor-pointer">
+          <input type="checkbox" id="inv-include-returns" class="accent-emerald-500 mt-0.5">
+          <span class="min-w-0">
+            <span class="text-slate-200 text-sm font-medium">Include usable Returns &amp; RTO stock</span>
+            <span class="block text-slate-500 text-xs mt-0.5">
+              Added on top at <strong class="text-slate-400">full quantity</strong> — those pieces are on your shelf, so
+              nothing is held back. Damaged and missing are excluded. This only changes the number told to Myntra;
+              it never consumes the register.
+            </span>
+          </span>
+        </label>
+
         <!-- Action row: upload OR generate from mapping -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -83,7 +96,7 @@
         </div>
 
         <!-- Clickable summary chips -->
-        <div id="inv-summary" class="grid grid-cols-3 sm:grid-cols-7 gap-3 hidden"></div>
+        <div id="inv-summary" class="grid grid-cols-3 sm:grid-cols-8 gap-3 hidden"></div>
 
         <!-- Results toolbar -->
         <div id="inv-toolbar" class="flex flex-wrap gap-3 items-center hidden">
@@ -93,6 +106,7 @@
             <option value="ok">OK (filled)</option>
             <option value="below_gap">Below gap → 0</option>
             <option value="missing">Missing → 0</option>
+            <option value="returns_only">From Returns &amp; RTO</option>
             <option value="inactive">Deactivated</option>
             <option value="duplicate">Duplicates</option>
             <option value="edited">Edited</option>
@@ -269,6 +283,11 @@
           <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Place of Supply</label>
           <input id="pur-place" type="text" placeholder="e.g. 24 - Gujarat" class="zm-input w-full mt-1">
         </div>
+        <div class="sm:col-span-2 lg:col-span-4">
+          <label for="pur-note" class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Note on this document</label>
+          <textarea id="pur-note" rows="2" class="zm-input w-full mt-1 resize-none"
+            placeholder="Printed at the foot of the PDF — e.g. send Rani in the darker shade"></textarea>
+        </div>
       </div>
     </div>
 
@@ -289,12 +308,37 @@
       </div>
 
       <div class="p-6 space-y-4">
-        <div id="ful-idle">
-          <div id="ful-drop" class="drop-zone p-5 text-center cursor-pointer"
-            onclick="document.getElementById('ful-file').click()">
-            <i data-lucide="upload-cloud" class="w-7 h-7 text-slate-600 mx-auto mb-2"></i>
-            <p class="text-slate-400 text-sm font-medium">Drop <strong class="text-slate-400">label.pdf</strong> here or click</p>
-            <p class="text-slate-600 text-xs mt-1">Myntra label.pdf — one page per piece</p>
+        <div id="ful-idle" class="space-y-3">
+          <div class="zm-tabbar" style="border:none">
+            <button id="ful-mode-label" class="zm-tab is-active"><i data-lucide="file-scan" class="w-4 h-4"></i> Drop label.pdf</button>
+            <button id="ful-mode-manual" class="zm-tab"><i data-lucide="pencil-line" class="w-4 h-4"></i> Build by hand</button>
+          </div>
+
+          <div id="ful-label-input">
+            <div id="ful-drop" class="drop-zone p-5 text-center cursor-pointer"
+              onclick="document.getElementById('ful-file').click()">
+              <i data-lucide="upload-cloud" class="w-7 h-7 text-slate-600 mx-auto mb-2"></i>
+              <p class="text-slate-400 text-sm font-medium">Drop <strong class="text-slate-400">label.pdf</strong> here or click</p>
+              <p class="text-slate-600 text-xs mt-1">Myntra label.pdf — one page per piece</p>
+            </div>
+          </div>
+
+          <div id="ful-manual-input" class="hidden">
+            <p class="text-slate-500 text-xs mb-2">Pick what has to go out. Returns &amp; RTO are still used first, and the same two documents come out the other end.</p>
+            <div class="flex flex-wrap items-end gap-2">
+              <div class="flex-1 min-w-[220px]">
+                <label for="ful-manual-sku" class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">SellerSkuCode</label>
+                <input id="ful-manual-sku" list="ful-sku-list" class="zm-input w-full mt-1" placeholder="ZM-11-Purple" autocomplete="off">
+                <datalist id="ful-sku-list"></datalist>
+              </div>
+              <div>
+                <label for="ful-manual-qty" class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Qty</label>
+                <input id="ful-manual-qty" type="number" min="1" value="1" class="zm-input w-24 mt-1">
+              </div>
+              <button id="ful-add-line" class="btn-primary text-sm py-2.5 px-4">
+                <i data-lucide="plus" class="w-4 h-4 inline-block mr-1"></i> Add line
+              </button>
+            </div>
           </div>
         </div>
         <input type="file" id="ful-file" accept=".pdf" class="hidden">
@@ -396,6 +440,83 @@
     </div>
   </div>
 
+  <!-- ════════ TAB: Orders & Fake Returns ════════ -->
+  <div id="tab-orders" class="hidden space-y-5">
+
+    <!-- Repeat offenders -->
+    <div id="ord-offenders" class="glass-card overflow-hidden hidden">
+      <div class="flex flex-wrap items-center gap-3 px-6 py-4 border-b border-white/5">
+        <div class="w-9 h-9 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center flex-shrink-0">
+          <i data-lucide="user-x" class="w-5 h-5 text-red-400"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <h3 class="text-white font-semibold text-sm">Repeat Returners</h3>
+          <p id="ord-offenders-count" class="text-slate-500 text-xs"></p>
+        </div>
+        <p class="text-slate-600 text-xs">Grouped by name where the label prints one, otherwise address, otherwise order</p>
+      </div>
+      <div id="ord-offenders-table" class="max-h-[40vh] overflow-auto"></div>
+    </div>
+
+    <!-- Orders -->
+    <div class="glass-card overflow-hidden">
+      <div class="flex flex-wrap items-center gap-3 px-6 py-4 border-b border-white/5">
+        <div class="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0">
+          <i data-lucide="radar" class="w-5 h-5 text-blue-400"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <h3 class="text-white font-semibold text-sm">Orders Out</h3>
+          <p class="text-slate-400 text-xs">Every label that shipped, found again by the tracking number printed on it</p>
+        </div>
+        <button id="ord-add-btn" class="btn-primary text-xs py-2 px-3">
+          <i data-lucide="plus" class="w-3.5 h-3.5 inline-block mr-1"></i> Add Order
+        </button>
+        <button id="ord-export-csv" class="btn-secondary text-xs py-2 px-3">
+          <i data-lucide="download" class="w-3.5 h-3.5 inline-block mr-1"></i> CSV
+        </button>
+      </div>
+
+      <div class="p-6 space-y-4">
+        <p class="text-slate-500 text-xs">
+          Dispatches are recorded when you drop a label in the <strong class="text-slate-400">Purchase</strong> tab.
+          Anything the label did not print is flagged so you can fill it in — nothing is guessed.
+        </p>
+
+        <!-- Label review before saving -->
+        <div id="ord-confirm" class="hidden rounded-xl border border-emerald-500/25 bg-emerald-500/[0.05] overflow-hidden">
+          <div class="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-white/5">
+            <div class="flex-1 min-w-0">
+              <p class="text-white text-sm font-semibold">Record these dispatches?</p>
+              <p id="ord-confirm-note" class="text-slate-400 text-xs"></p>
+            </div>
+            <button id="ord-confirm-cancel" class="btn-secondary text-xs py-2 px-3">Cancel</button>
+            <button id="ord-confirm-save" class="btn-primary text-xs py-2 px-3">Save selected</button>
+          </div>
+          <div id="ord-confirm-table" class="max-h-[40vh] overflow-auto"></div>
+        </div>
+
+        <div id="ord-summary" class="grid grid-cols-2 sm:grid-cols-5 gap-3 hidden"></div>
+
+        <div class="flex flex-wrap gap-3 items-center">
+          <input id="ord-search" type="text" placeholder="Search a forward tracking ID, customer, SKU…" class="zm-input w-72 max-w-full">
+          <select id="ord-status-filter" class="zm-input w-48">
+            <option value="all">All Orders</option>
+            <option value="shipped">Still out</option>
+            <option value="returned">Came back</option>
+            <option value="fake">Fake returns</option>
+            <option value="unfulfillable">Unfulfillable</option>
+            <option value="incomplete">Needs details</option>
+          </select>
+          <span id="ord-count" class="text-slate-500 text-xs ml-auto"></span>
+        </div>
+
+        <div id="ord-table" class="max-h-[60vh] overflow-auto">
+          <p class="text-slate-500 text-sm text-center py-6">Nothing tracked yet — drop a label in the Purchase tab, or add an order by hand.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ════════ TAB: Returns & RTO ════════ -->
   <div id="tab-returns" class="hidden">
     <div class="glass-card overflow-hidden">
@@ -422,8 +543,9 @@
         <div class="flex items-start gap-2.5 p-3 rounded-xl border border-amber-500/25 bg-amber-500/[0.07]">
           <i data-lucide="shield-alert" class="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5"></i>
           <p class="text-amber-200/90 text-xs">
-            <strong>Recorded here only.</strong> Returns and RTO are never counted into stock and never reach the Myntra inventory update —
-            this register is completely separate from the stock pipeline.
+            <strong>Stock you already hold.</strong> Pieces leave this register only through a pick slip or a Goods Return.
+            The Myntra inventory update can <em>declare</em> them — tick "Include usable Returns &amp; RTO stock" on the
+            Inventory Update tab — but generating a file never consumes anything here.
           </p>
         </div>
 
@@ -584,6 +706,132 @@
   </div>
 </div>
 
+<!-- ════════ MODAL: Record a return against an order ════════ -->
+<div id="ord-return-modal" class="hidden modal-overlay">
+  <div class="modal-box max-h-[90vh] overflow-y-auto">
+    <div class="flex items-start justify-between gap-3 mb-4">
+      <div class="min-w-0">
+        <h3 id="ord-ret-title" class="text-white font-bold text-lg truncate">Return</h3>
+        <p id="ord-ret-sub" class="text-slate-400 text-sm truncate"></p>
+      </div>
+      <button id="ord-ret-cancel" class="text-slate-500 hover:text-white text-xl leading-none flex-shrink-0">×</button>
+    </div>
+
+    <div class="space-y-2.5">
+      <div class="grid grid-cols-2 gap-2.5">
+        <div>
+          <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Return ID</label>
+          <input id="ord-ret-id" class="zm-input w-full mt-1" placeholder="reverse tracking number">
+        </div>
+        <div>
+          <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Date</label>
+          <input id="ord-ret-date" type="date" class="zm-input w-full mt-1">
+        </div>
+      </div>
+      <div>
+        <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">What kind of return</label>
+        <select id="ord-ret-type" class="zm-input w-full mt-1">
+          <option value="customer_return">Customer Return</option>
+          <option value="rto">RTO — never delivered</option>
+          <option value="fake_return">Fake Return — product did not come back</option>
+        </select>
+      </div>
+      <div id="ord-ret-condition-wrap">
+        <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Condition of the piece</label>
+        <select id="ord-ret-condition" class="zm-input w-full mt-1">
+          <option value="">Not set</option>
+          <option value="good">Good</option>
+          <option value="damaged">Damaged</option>
+          <option value="missing">Missing</option>
+        </select>
+      </div>
+      <div id="ord-ret-found-wrap" class="hidden">
+        <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">What was actually inside</label>
+        <input id="ord-ret-found" class="zm-input w-full mt-1" placeholder="empty box, a stone, a different product…">
+      </div>
+      <p id="ord-ret-effect" class="ord-effect ord-effect-ok"></p>
+    </div>
+
+    <div class="flex gap-3 mt-6">
+      <button id="ord-ret-cancel-2" class="btn-secondary flex-1 justify-center">Cancel</button>
+      <button id="ord-ret-save" class="btn-primary flex-1 justify-center">Record return</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ MODAL: Add an order by hand ════════ -->
+<div id="ord-add-modal" class="hidden modal-overlay">
+  <div class="modal-box max-h-[90vh] overflow-y-auto">
+    <div class="flex items-start justify-between gap-3 mb-5">
+      <div>
+        <h3 class="text-white font-bold text-lg">Add Order</h3>
+        <p class="text-slate-400 text-sm">For a parcel that never went through a label PDF</p>
+      </div>
+      <button id="ord-add-cancel" class="text-slate-500 hover:text-white text-xl leading-none flex-shrink-0">×</button>
+    </div>
+
+    <div class="space-y-2.5">
+      <div>
+        <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Forward tracking ID</label>
+        <input id="ord-add-forward" class="zm-input w-full mt-1" placeholder="the number printed under the barcode">
+        <p class="text-slate-600 text-[11px] mt-1">This is how a returning parcel finds its way back to this order.</p>
+      </div>
+      <div class="grid grid-cols-2 gap-2.5">
+        <div>
+          <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">SellerSkuCode</label>
+          <input id="ord-add-sku" list="ord-sku-list" class="zm-input w-full mt-1" autocomplete="off">
+          <datalist id="ord-sku-list"></datalist>
+        </div>
+        <div>
+          <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Qty</label>
+          <input id="ord-add-qty" type="number" min="1" value="1" class="zm-input w-full mt-1">
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-2.5">
+        <div>
+          <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Order ID</label>
+          <input id="ord-add-order" class="zm-input w-full mt-1">
+        </div>
+        <div>
+          <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Dispatched</label>
+          <input id="ord-add-date" type="date" class="zm-input w-full mt-1">
+        </div>
+      </div>
+      <div>
+        <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Customer</label>
+        <input id="ord-add-customer" class="zm-input w-full mt-1" placeholder="leave blank if the label masked it">
+      </div>
+      <div>
+        <label class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Delivery address</label>
+        <input id="ord-add-address" class="zm-input w-full mt-1" placeholder="used to group returns when there is no name">
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-6">
+      <button id="ord-add-cancel-2" class="btn-secondary flex-1 justify-center">Cancel</button>
+      <button id="ord-add-save" class="btn-primary flex-1 justify-center">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ MODAL: Record what arrived ════════ -->
+<div id="receive-modal" class="hidden modal-overlay">
+  <div class="modal-box modal-box-wide max-h-[90vh] overflow-y-auto">
+    <div class="flex items-start justify-between gap-3 mb-4">
+      <div>
+        <h3 id="receive-title" class="text-white font-bold text-lg">Receive</h3>
+        <p class="text-slate-400 text-sm">What actually arrived. The order itself is not changed.</p>
+      </div>
+      <button id="receive-cancel" class="text-slate-500 hover:text-white text-xl leading-none flex-shrink-0">×</button>
+    </div>
+    <div id="receive-body" class="max-h-[52vh] overflow-auto rounded-xl border border-white/5"></div>
+    <div class="flex items-center gap-3 mt-4">
+      <span id="receive-total" class="text-slate-400 text-sm"></span>
+      <button id="receive-save" class="btn-primary ml-auto">Save what arrived</button>
+    </div>
+  </div>
+</div>
+
 <!-- ════════ MODAL: Add return / RTO ════════ -->
 <div id="ret-add-modal" class="hidden modal-overlay">
   <div class="modal-box max-h-[90vh] overflow-y-auto">
@@ -672,10 +920,12 @@ import {
   loadMyntraStockContext, resolveStock, findColourQty, generateInventoryUpdate,
   isExportable
 } from './js/myntra.js';
+import { availableReturnStock } from './js/myntra-returns.js';
 import { initPricingTab, pricingIndex } from './js/myntra-pricing.js';
 import { initPurchaseTab } from './js/myntra-purchase.js';
 import { initReturnsTab } from './js/myntra-returns.js';
 import { initFulfilmentPanel } from './js/myntra-fulfilment.js';
+import { initOrdersTab } from './js/myntra-orders.js';
 import { swatchChip, swatchDot } from './js/swatches.js';
 
 await requireAuth();
@@ -745,10 +995,14 @@ const state = {
   onBillsChange:   () => renderKpis(),
   onReturnsChange: () => renderKpis(),
   onCartChange:    () => renderKpis(),
-  onFulfilmentDone: () => renderKpis()
+  onFulfilmentDone: () => renderKpis(),
+  onOrdersChange:   () => renderKpis(),
+  // The fulfilment panel reads a label once; dispatch tracking uses the
+  // same parse rather than making the user upload it twice.
+  onLabelParsed:    (result, fileName) => ordersTab?.ingestLabel(result, fileName)
 };
 
-let pricingTab = null, purchaseTab = null, returnsTab = null, fulfilPanel = null;
+let pricingTab = null, purchaseTab = null, returnsTab = null, fulfilPanel = null, ordersTab = null;
 
 // ── Active / deactive helpers ─────────────────────────────────
 const isActive = sku => state.skuStatus[sku]?.active !== false;
@@ -759,7 +1013,7 @@ const inactiveSkuSet = () => new Set(
 );
 
 // ── Tabs ──────────────────────────────────────────────────────
-const TABS = ['generator', 'mapping', 'pricing', 'purchase', 'returns'];
+const TABS = ['generator', 'mapping', 'pricing', 'purchase', 'returns', 'orders'];
 function setTab(name) {
   for (const t of TABS) {
     el(`tab-${t}`).classList.toggle('hidden', t !== name);
@@ -807,6 +1061,7 @@ function renderKpis() {
   el('tabcount-pricing').textContent = state.pricing.length || '';
   el('tabcount-purchase').textContent = purchaseTab?.getCartCount() || '';
   el('tabcount-returns').textContent = returns.length || '';
+  el('tabcount-orders').textContent = (ordersTab?.getDispatches() ?? []).length || '';
 
   if (window.lucide) lucide.createIcons();
 }
@@ -843,6 +1098,7 @@ async function load() {
     purchaseTab = initPurchaseTab(state);
     returnsTab = initReturnsTab(state);
     fulfilPanel = initFulfilmentPanel(state, { returnsTab, purchaseTab });
+    ordersTab = initOrdersTab(state);
 
     // Goods Return draws its lines from the register, and reduces it on save
     state.getReturns = () => returnsTab.getReturns();
@@ -852,7 +1108,7 @@ async function load() {
     pricingTab.render();
     purchaseTab.render();
     fulfilPanel.render();
-    await Promise.all([purchaseTab.refreshBills(), returnsTab.refresh(), fulfilPanel.refreshSlips()]);
+    await Promise.all([purchaseTab.refreshBills(), returnsTab.refresh(), fulfilPanel.refreshSlips(), ordersTab.refresh()]);
     renderKpis();
   } catch (e) {
     console.error(e);
@@ -1213,6 +1469,7 @@ const STATUS_CHIPS = {
   no_zm_mapping:    { cls: 'level-low',      label: 'No ZM mapping' },
   no_stock_item:    { cls: 'level-low',      label: 'No stock item' },
   colour_not_found: { cls: 'level-low',      label: 'Colour not found' },
+  returns_only:     { cls: 'level-medium',   label: 'From Returns & RTO' },
   inactive:         { cls: 'level-sold_out', label: 'Deactivated (excluded)' },
   duplicate:        { cls: 'level-sold_out', label: 'Duplicate (skipped)' },
 };
@@ -1235,19 +1492,39 @@ function runGeneration(skus, sourceLabel) {
   lastSkus = skus;
   genResult = generateInventoryUpdate(
     skus, state.ctx, getMyntraGapThreshold(), getMyntraTakePercent(),
-    { inactiveSkus: inactiveSkuSet() }
+    {
+      inactiveSkus: inactiveSkuSet(),
+      // Damaged and missing are already excluded by availableReturnStock
+      returnStock: includeReturnsEl.checked
+        ? availableReturnStock(returnsTab?.getReturns() ?? [])
+        : null
+    }
   );
   resetGenView();
   renderGenResult();
   const s = genResult.summary;
-  const zeroed = s.total - s.filled - s.duplicates - s.inactive;
+  const zeroed = s.total - s.filled - s.duplicates - s.inactive - (s.returnsOnly || 0);
   notify.success(
     `${sourceLabel}: ${s.filled} SKUs filled, ${zeroed} set to 0` +
-    (s.inactive ? `, ${s.inactive} deactivated SKU(s) excluded` : '')
+    (s.inactive ? `, ${s.inactive} deactivated SKU(s) excluded` : '') +
+    (s.returnBoostPcs ? ` · ${s.returnBoostPcs} pc(s) added from Returns & RTO` : '')
   );
 }
 
 // ── Take % control ────────────────────────────────────────────
+// Usable Returns & RTO stock, folded into the generated quantity when asked.
+// Off by default: the file this app has always produced stays the default.
+const includeReturnsEl = el('inv-include-returns');
+includeReturnsEl.checked = localStorage.getItem('zm_inv_include_returns') === '1';
+includeReturnsEl.addEventListener('change', () => {
+  localStorage.setItem('zm_inv_include_returns', includeReturnsEl.checked ? '1' : '');
+  if (genResult && lastSkus) {
+    runGeneration(lastSkus, includeReturnsEl.checked
+      ? 'Recalculated with Returns & RTO stock included'
+      : 'Recalculated without Returns & RTO stock');
+  }
+});
+
 const takePercentEl = el('take-percent');
 takePercentEl.value = getMyntraTakePercent();
 takePercentEl.addEventListener('change', () => {
@@ -1322,6 +1599,7 @@ function renderGenSummary() {
     chip('ok', 'Filled', count('ok'), 'from-emerald-500/10 border-emerald-500/20') +
     chip('below_gap', 'Below Gap → 0', count('below_gap'), 'from-amber-500/10 border-amber-500/20') +
     chip('missing', 'Missing → 0', count('missing'), 'from-red-500/10 border-red-500/20') +
+    chip('returns_only', 'From Returns', count('returns_only'), 'from-amber-500/10 border-amber-500/20') +
     chip('inactive', 'Deactivated', count('inactive'), 'from-slate-500/10 border-slate-500/20') +
     chip('duplicate', 'Duplicates', count('duplicate'), 'from-slate-500/10 border-slate-500/20') +
     chip('edited', 'Edited', count('edited'), 'from-purple-500/10 border-purple-500/20');
@@ -1365,7 +1643,8 @@ function renderGenTable() {
           <td class="px-4 py-2 text-slate-400">${esc(r.kuntalCode) || '—'}</td>
           <td class="px-4 py-2 text-slate-400 max-w-[220px] truncate">${esc(r.productName) || '—'}</td>
           <td class="px-4 py-2">${r.colourName ? swatchChip(r.colourName) : '<span class="zm-muted">—</span>'}</td>
-          <td class="px-4 py-2 text-right text-slate-300">${r.stockQty ?? '—'}</td>
+          <td class="px-4 py-2 text-right text-slate-300">${r.stockQty ?? '—'}${
+            r.returnBoost ? ` <span class="inv-boost" title="added from Returns &amp; RTO at full quantity">+${r.returnBoost}</span>` : ''}</td>
           <td class="px-4 py-2 text-right">
             <input type="number" min="0" value="${r.quantity}" data-idx="${r._idx}" ${locked ? 'disabled' : ''}
               class="w-20 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-right text-sm font-bold focus:outline-none focus:border-emerald-500/40 ${locked ? 'opacity-40 cursor-not-allowed' : ''} ${r.edited ? 'ring-2 ring-amber-400/60 text-amber-300' : (r.quantity > 0 ? 'text-emerald-400' : 'text-slate-500')}">
@@ -1438,7 +1717,11 @@ el('parties-cancel-2').addEventListener('click', () => el('parties-modal').class
 el('ret-add-cancel-2').addEventListener('click', () => el('ret-add-modal').classList.add('hidden'));
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
-  for (const id of ['parties-modal', 'bill-preview-modal', 'ret-add-modal']) el(id).classList.add('hidden');
+  for (const id of ['parties-modal', 'bill-preview-modal', 'ret-add-modal',
+                    'ord-return-modal', 'ord-add-modal', 'receive-modal']) el(id).classList.add('hidden');
+  // Hiding the return modal is not enough — the dispatch it was holding has
+  // to go with it, or the next save could aim at a parcel that is off screen.
+  ordersTab?.closeReturnModal();
 });
 
 // Keep the parties line in sync after the modal saves

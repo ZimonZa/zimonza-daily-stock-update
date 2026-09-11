@@ -102,6 +102,8 @@ Visit `http://localhost:8080`
 │   ├── myntra-labels.js    ← label.pdf reader (one page = one piece)
 │   ├── pdf-merge.js        ← PDF sorter & merger (label/invoice grouping)
 │   ├── myntra-fulfilment.js← Label → RTO stock first, then purchase
+│   ├── myntra-dispatch.js  ← Dispatch records + return-abuse analytics
+│   ├── myntra-orders.js    ← Orders & fake returns tab
 │   ├── skip-manager.js     ← Skip list management
 │   ├── history-manager.js  ← Calendar & history logic
 │   ├── report-generator.js ← PDF/Excel/CSV export
@@ -112,10 +114,33 @@ Visit `http://localhost:8080`
 │   ├── utils.js            ← Date, color parsing, formatters
 │   └── constants.js        ← App-wide constants & column maps
 │
+├── tests/                  ← node tests/run.mjs
 ├── firestore.rules         ← Firestore security rules
 ├── firebase.json           ← Firebase Hosting config
 └── .env.example            ← Environment variables template
 ```
+
+---
+
+## 📡 Orders & Fake Returns
+
+Sixth tab on the Myntra page. Every label that ships becomes a **dispatch**, keyed by the forward tracking ID printed under its barcode — so when a parcel comes back, you find it by the number on it.
+
+**Reading the label.** Printed text only. Tracking IDs are printed as digits under the barcode, so the text layer already carries them; decoding the barcode image would cost a megabyte and minutes on a 200-page file for the same answer. Tracking ID, order ID, customer name and address are each read independently, and **anything the label did not print is flagged rather than invented**. A page with no tracking ID is still kept, so you can complete it by hand.
+
+The Purchase tab reads the label once and hands the same parse to dispatch tracking — one upload, both jobs.
+
+**Recording a return.** Search the forward ID, hit Open, enter the return ID and pick the type:
+
+| Type | Effect |
+|---|---|
+| RTO | A row appears in the Returns & RTO register — the piece is usable stock again |
+| Customer Return | Same |
+| **Fake Return** | **No stock row.** The product did not come back. What *was* inside is recorded instead, and it counts against the customer |
+
+The modal states which of these will happen before you save.
+
+**Repeat returners.** Grouped by the best key the label gave — customer name where printed, otherwise delivery address, otherwise order ID — and every row shows **which key it matched on**, so a count built on a masked address never reads as a confirmed person. A single fake return flags a customer on its own; a high return rate needs at least three orders behind it to mean anything.
 
 ---
 
@@ -197,15 +222,29 @@ Anything the signals cannot place lands in **Unsorted** — never silently dropp
 
 ## 🛍️ Myntra Hub
 
-One page (`myntra.html`), five sections:
+One page (`myntra.html`), six sections:
 
 | Tab | What it does |
 |-----|--------------|
-| **Inventory Update** | Generates the `sellerSkuCode,quantity` file Myntra consumes. Takes a configurable % of each colour's stock above the gap threshold. Deactivated SKUs are excluded from the download. |
+| **Inventory Update** | Generates the `sellerSkuCode,quantity` file Myntra consumes. Takes a configurable % of each colour's stock above the gap threshold, and optionally adds usable Returns & RTO stock on top. Deactivated SKUs are excluded from the download. |
 | **Mapping** | Every SellerSkuCode with its colour, today's stock, live status toggle, and price columns. Bulk activate / deactivate. |
 | **Pricing** | Upload `Myntra Pricing.xlsx`. Flags mapped styles that have no price (those cannot be billed). |
-| **Purchase** | Cart → GST bill → PDF. Saved, auto-numbered, re-downloadable. |
-| **Returns & RTO** | Register of goods coming back, with a stock summary. **Never counted into stock**, but a label can be filled from it. |
+| **Purchase** | Cart → GST bill → PDF. Saved, auto-numbered, re-downloadable. Also GR credit notes, short-receive, and the per-bill note. |
+| **Returns & RTO** | Register of goods coming back, with a stock summary. A label can be filled from it, and the inventory update can declare it. |
+| **Orders** | Every dispatched label tracked to its customer by forward tracking ID. Return intake, fake-return recording, repeat-returner analytics. |
+
+### Including returns in the inventory update
+
+The warehouse part is unchanged: colours at or below the gap threshold generate nothing, everything above generates `floor(qty × take%)`. Tick **Include usable Returns & RTO stock** and usable register pieces are added to that number **at full quantity** — no percentage, no gap rule, because those pieces are already on your shelf and can ship today.
+
+```
+quantity = floor(warehouseQty × take%)     only when warehouseQty > gap
+         + usableReturnQty                 always, in full
+```
+
+A colour with zero warehouse stock and three usable returns now generates **3** instead of **0**, and is marked `returns only` so the number is never mistaken for warehouse stock. Every boosted row reports how much came from returns. Damaged and Missing are excluded — `availableReturnStock()` already holds them back.
+
+The toggle is off by default and remembered. **Declaring is not consuming**: generating the file never touches the register.
 
 ### Returns & RTO file
 
@@ -250,7 +289,11 @@ Documents are written *before* stock is touched, so a mid-run failure leaves vis
 
 A scanned (image-only) label PDF has no text layer and is rejected with a message saying so.
 
-> Returns remain invisible to the Myntra inventory update. They are stock for **labels**, never stock for **listings** — running a fulfilment does not change the generated `sellerSkuCode,quantity` file at all.
+**Add a line by hand.** The review table takes hand-added SKUs and editable `Need` quantities, so an order that never came through a label PDF still gets the same split, the same caps and the same two documents.
+
+**Build by hand.** A mode switch on the panel — *Drop label.pdf* / *Build by hand* — lists the register directly so you can set take quantities and produce a Stock Pick Slip with no label at all. It runs through the same `exportPickSlipPDF` and the same `applyReturnConsumption`: one place makes slips, only the input differs.
+
+> Running a fulfilment does not change the generated `sellerSkuCode,quantity` file. Returns reach that file only when you tick **Include usable Returns & RTO stock**, and even then only as a declared quantity — the register is untouched.
 
 ### Myntra Pricing.xlsx
 
@@ -268,10 +311,14 @@ A blank Myntra MRP stays blank — it is never coerced to 0.
 - GST rate comes from the line's category — lehnga 18% (9% + 9%), saree 5% (2.5% + 2.5%) by default. The rate table is editable, any line can be overridden, and lines whose category has no rate are flagged amber.
 - Document type is chosen per bill: Tax Invoice / Purchase Order / Proforma Invoice. Numbers are reserved transactionally per type and financial year (`INV/26-27/0042`).
 - The PDF prints party blocks, an HSN line table, a rate-wise tax summary, round-off, grand total, amount in words, bank details, terms and a signature block. It uses `Rs.` rather than ₹ because jsPDF's built-in fonts have no rupee glyph.
+- **Note.** A free-text box prints under Terms on every document type. It pre-fills from a saved default in Parties & GST, can be overridden per bill, and is stored on the document — so a re-download reprints what was actually sent, not today's default. A blank note prints no empty heading.
+- **Short receive.** A saved bill opens a **Receive** panel: per line, how many actually arrived. Receipts are stored beside the bill and **never alter the original figures** — the bill still says what you ordered, and the outstanding pieces and value show separately. Over-receiving is refused. This is independent of marking a customer order unfulfillable in Orders, because the two causes are independent.
 
 ### Returns & RTO
 
-Stored in their own `myntra_returns` collection. No stock or inventory-update code path reads it, so returned goods can never leak into stock counts. Rows arrive either from the Myntra returns report (columns auto-detected, reviewed before saving) or by hand. In the Add Row form a **Kuntal Code** suggests the SellerSkuCodes it covers (one code, many colours) and a SellerSkuCode fills the Kuntal Code back — whichever you type first. The Purchase product search also matches on Kuntal Code, priced or not.
+Stored in their own `myntra_returns` collection. Rows arrive from the Myntra returns report (columns auto-detected, reviewed before saving), by hand, or automatically when a return is recorded against a dispatched order.
+
+Pieces leave the register only through a **pick slip** or a **Goods Return**. The inventory update can *declare* them to Myntra when you tick **Include usable Returns & RTO stock** — but generating a file never consumes anything here. Declaring what you hold is not spending it. In the Add Row form a **Kuntal Code** suggests the SellerSkuCodes it covers (one code, many colours) and a SellerSkuCode fills the Kuntal Code back — whichever you type first. The Purchase product search also matches on Kuntal Code, priced or not.
 
 ---
 
@@ -310,7 +357,21 @@ skip_products/{sku}     ← { sku, notes, skippedAt }
 history/{YYYY-MM-DD}    ← { lehngaCount, sareeCount, totalSKUs, ... }
 reports/{reportId}
 settings/general        ← { lowStockThreshold, mediumStockThreshold, theme }
+
+myntra_mapping/{id}     ← { sellerSkuCode, zmCode, colourName, active }
+myntra_pricing/{zmCode} ← { category, kuntalCode, kuntalSellingPrice, myntraMrp, ... }
+myntra_returns/{id}     ← { type, sellerSkuCode, zmCode, colourName, qty, date,
+                            condition, reason, notes, dispatchId }
+myntra_sku_status/{id}  ← { active, updatedAt }
+purchase_bills/{id}     ← { docType, number, date, lines[], totals, note, receipts[] }
+settings/purchase_counters ← reserved transactionally, per doc type and financial year
+stock_pick_slips/{id}   ← { number, date, lines[], source }
+dispatches/{id}         ← { forwardId, orderId, customer:{ name, address, key, keyType },
+                            sellerSkuCode, zmCode, colourName, qty, dispatchDate,
+                            status, return:{ returnId, type, foundInside, date } | null }
 ```
+
+`firestore.rules` needs no change for the new collections — the authenticated-user rule already covers them.
 
 ---
 
@@ -335,17 +396,24 @@ Drag and drop the project folder onto [netlify.com/drop](https://netlify.com/dro
 
 ---
 
+## 🧪 Tests
+
+```bash
+node tests/run.mjs            # every suite
+node tests/run.mjs dispatch   # one suite
+```
+
+The runner copies `js/` into a sandbox, rewrites the CDN imports to generated stubs, **parse-checks every module and page script**, then runs each `tests/*.test.js`.
+
+The parse check uses `vm.SourceTextModule`, not `node --check` — under Node 26 `node --check` exits 0 on files it cannot parse, which had already let a real unbalanced paren through. The runner re-execs itself with `--experimental-vm-modules` so no flag is needed at the call site.
+
+Suites cover ZM-code normalisation, GST maths, day-first and Excel-serial dates, swatch luminance, PDF sorter ordering and conflict confidence, label field extraction, offender keys, return intake, the inventory return boost, and the Orders tab driven end to end through a fake DOM.
+
+---
+
 ## 🎨 Design System
 
-| Token | Value |
-|-------|-------|
-| Primary | Emerald `#10B981` |
-| Accent | Gold `#F59E0B` |
-| Background | Slate `#0F172A` |
-| Font | Inter (Google Fonts) |
-| Radius | `rounded-2xl` (16px) |
-| Dates | `dd/mm/yyyy` throughout |
-| Cards | Glassmorphism + `rgba(255,255,255,0.04)` |
+See **Midnight Zari** above for the live tokens. Dates are `dd/mm/yyyy` throughout; figures and codes are set in IBM Plex Mono so columns align.
 
 ---
 

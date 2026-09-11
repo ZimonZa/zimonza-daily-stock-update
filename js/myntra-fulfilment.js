@@ -13,7 +13,7 @@ import { computeLine, computeTotals } from './myntra-purchase.js';
 import { pricingIndex } from './myntra-pricing.js';
 import { resolveStock } from './myntra.js';
 import { swatchDot } from './swatches.js';
-import { exportBillPDF, exportPickSlipPDF, renderBillPreviewHTML, renderSlipPreviewHTML } from './invoice-pdf.js';
+import { exportBillPDF, exportPickSlipPDF, renderSlipPreviewHTML } from './invoice-pdf.js';
 import {
   savePickSlip, getAllPickSlips, deletePickSlip, nextSlipNumber,
   applyReturnConsumption, savePurchaseBill, nextBillNumber
@@ -95,6 +95,90 @@ export function initFulfilmentPanel(state, tabs) {
   const drop = el('ful-drop');
   state.helpers.bindDrop(drop, el('ful-file'), handleFile);
 
+  // A slip can start from a label or from nothing at all. Only the input
+  // differs — everything downstream is the same code.
+  let mode = localStorage.getItem('zm_ful_mode') === 'manual' ? 'manual' : 'label';
+  const isManual = () => mode === 'manual';
+
+  function setMode(next) {
+    mode = next === 'manual' ? 'manual' : 'label';
+    localStorage.setItem('zm_ful_mode', mode);
+    el('ful-mode-label').classList.toggle('is-active', !isManual());
+    el('ful-mode-manual').classList.toggle('is-active', isManual());
+    el('ful-label-input').classList.toggle('hidden', isManual());
+    el('ful-manual-input').classList.toggle('hidden', !isManual());
+    render();
+  }
+  el('ful-mode-label').addEventListener('click', () => setMode('label'));
+  el('ful-mode-manual').addEventListener('click', () => setMode('manual'));
+
+  // ── Adding a line by hand, in either mode ──
+  el('ful-add-line').addEventListener('click', addManualLine);
+  el('ful-manual-sku').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); addManualLine(); }
+  });
+
+  /**
+   * Put a SKU on the plan without a label carrying it.
+   * It joins as an ordinary row, so the RTO-first split, the caps and the
+   * two documents all behave exactly as they do for a scanned page.
+   */
+  function addManualLine() {
+    const sku = el('ful-manual-sku').value.trim();
+    const qty = Math.max(1, Math.floor(Number(el('ful-manual-qty').value) || 1));
+    if (!sku) { notify.warning('Pick a SellerSkuCode first'); return; }
+
+    const known = state.mappings.find(m =>
+      String(m.sellerSkuCode).toLowerCase() === sku.toLowerCase());
+    if (!known) { notify.error(`${sku} is not in the Myntra mapping`); return; }
+
+    const item = {
+      key: `${normZmCode(known.zmCode)}|${String(known.colourName).toLowerCase().trim().replace(/\s+/g, ' ')}`,
+      sellerSkuCode: known.sellerSkuCode,
+      zmCode: normZmCode(known.zmCode),
+      colourName: known.colourName,
+      qty,
+      pages: [],
+      mapped: true
+    };
+
+    const existing = (plan || []).find(r => r.key === item.key);
+    if (existing) {
+      existing.need += qty;
+      // The split must follow the new need, not stay at the old one
+      existing.fromRto = Math.min(existing.need, existing.available);
+      notify.info(`${sku} → ${existing.need} pc(s)`);
+    } else {
+      const built = buildPlan([item], {
+        pricing: state.pricing, ctx: state.ctx, returns: tabs.returnsTab.getReturns()
+      });
+      plan = [...(plan || []), ...built];
+      if (!sourceFile) sourceFile = isManual() ? 'built by hand' : sourceFile;
+      notify.success(`${sku} added — ${qty} pc(s)`);
+    }
+
+    el('ful-manual-sku').value = '';
+    el('ful-manual-qty').value = 1;
+    el('ful-source').textContent = planSourceLine();
+    render();
+  }
+
+  function planSourceLine() {
+    if (!plan?.length) return '';
+    const pcs = plan.reduce((t, r) => t + r.need, 0);
+    const fromLabel = plan.some(r => r.pages?.length);
+    const origin = fromLabel ? (sourceFile || 'label') : 'built by hand';
+    return `${origin} · ${plan.length} SKU(s) · ${pcs} pc(s)`;
+  }
+
+  /** Fill the SKU datalist once the mapping is known. */
+  function fillSkuList() {
+    const list = el('ful-sku-list');
+    if (!list) return;
+    list.innerHTML = state.mappings
+      .map(m => `<option value="${esc(m.sellerSkuCode)}"></option>`).join('');
+  }
+
   el('ful-cancel').addEventListener('click', reset);
   el('ful-confirm').addEventListener('click', commit);
   el('ful-table').addEventListener('input', onTableInput);
@@ -137,6 +221,9 @@ export function initFulfilmentPanel(state, tabs) {
         `${file.name} · ${result.pages} page(s) · ${result.items.length} SKU(s) · ${found} pc(s)` +
         (result.unreadablePages.length ? ` · ${result.unreadablePages.length} page(s) with no code` : '');
 
+      // Hand the pages to dispatch tracking, so who received what is recorded
+      state.onLabelParsed?.(result, file.name);
+
       if (result.unreadablePages.length) {
         notify.warning(`No SKU found on page(s) ${result.unreadablePages.slice(0, 8).join(', ')}${result.unreadablePages.length > 8 ? '…' : ''} — those pieces are not counted.`);
       }
@@ -151,6 +238,7 @@ export function initFulfilmentPanel(state, tabs) {
   function reset() {
     plan = null;
     sourceFile = '';
+    el('ful-source').textContent = '';
     render();
   }
 
@@ -161,6 +249,10 @@ export function initFulfilmentPanel(state, tabs) {
     const row = plan.find(r => r.key === inp.dataset.fulKey);
     if (!row) return;
 
+    if (inp.dataset.fulField === 'need') {
+      onNeedInput(inp);
+      return;
+    }
     if (inp.dataset.fulField === 'fromRto') {
       // Never promise more returned stock than actually exists
       row.fromRto = Math.max(0, Math.min(row.need, row.available, Math.floor(Number(inp.value) || 0)));
@@ -180,6 +272,16 @@ export function initFulfilmentPanel(state, tabs) {
     if (!cb || !plan) return;
     const row = plan.find(r => r.key === cb.dataset.fulInclude);
     if (row) { row.include = cb.checked; render(); }
+  }
+
+  /** Editing the needed quantity by hand, after the plan exists. */
+  function onNeedInput(inp) {
+    const row = plan?.find(r => r.key === inp.dataset.fulKey);
+    if (!row) return;
+    row.need = Math.max(1, Math.floor(Number(inp.value) || 1));
+    row.fromRto = Math.min(row.fromRto, row.need, row.available);
+    el('ful-source').textContent = planSourceLine();
+    render();
   }
 
   // ── Commit ──────────────────────────────────────────────────
@@ -379,9 +481,11 @@ export function initFulfilmentPanel(state, tabs) {
 
   // ── Review rendering ────────────────────────────────────────
   function render() {
+    fillSkuList();
     const hasPlan = !!plan && plan.length > 0;
     el('ful-review').classList.toggle('hidden', !hasPlan);
-    el('ful-idle').classList.toggle('hidden', hasPlan);
+    // In by-hand mode the builder stays visible so lines can keep being added
+    el('ful-idle').classList.toggle('hidden', hasPlan && !isManual());
     if (!hasPlan) { renderSlips(); return; }
 
     el('ful-table').innerHTML = `
@@ -412,7 +516,10 @@ export function initFulfilmentPanel(state, tabs) {
             <td class="px-3 py-2 text-slate-200 font-medium whitespace-nowrap" title="pages ${r.pages.join(', ')}">${esc(r.sellerSkuCode)}</td>
             <td class="px-3 py-2 text-slate-300">${r.colourName ? swatchDot(r.colourName) + ' ' + esc(r.colourName) : '—'}</td>
             <td class="px-3 py-2 text-slate-400">${esc(r.kuntalCode) || '—'}</td>
-            <td class="px-3 py-2 text-right text-slate-200 font-semibold">${r.need}</td>
+            <td class="px-3 py-2 text-right">
+              <input type="number" min="1" value="${r.need}" data-ful-field="need" data-ful-key="${esc(r.key)}"
+                class="w-14 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-right text-sm font-semibold focus:outline-none focus:border-emerald-500/40">
+            </td>
             <td class="px-3 py-2 text-right ${r.available ? 'text-amber-300' : 'text-slate-600'}">${r.available}</td>
             <td class="px-3 py-2 text-right">
               <input type="number" min="0" max="${Math.min(r.need, r.available)}" value="${r.fromRto}"

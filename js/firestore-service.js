@@ -3,7 +3,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { db } from './firebase-config.js';
-import { COLLECTIONS, DEFAULT_PARTIES, GST_RATE_DEFAULTS, HSN_DEFAULTS, PURCHASE_DOC_TYPES } from './constants.js';
+import { COLLECTIONS, DEFAULT_PARTIES, GST_RATE_DEFAULTS, HSN_DEFAULTS, PURCHASE_DOC_TYPES, DISPATCH_STATUS } from './constants.js';
 import { normZmCode } from './utils.js';
 import {
   doc, setDoc, getDoc, getDocs, deleteDoc, updateDoc,
@@ -188,8 +188,9 @@ export async function getAllMyntraSkuStatus() {
 }
 
 // ─── Myntra Returns & RTO ───────────────────────────────────────
-// Deliberately its own collection: nothing in the stock or inventory-update
-// pipeline reads it, so returned goods can never leak into stock counts.
+// Its own collection. Pieces leave it only through a pick slip or a Goods
+// Return — generating an inventory update never consumes it, even when the
+// "include returns" toggle is on. Declaring what you hold is not spending it.
 
 /** Add return/RTO rows (auto-id docs, chunked) */
 export async function addMyntraReturns(rows) {
@@ -337,6 +338,56 @@ export function financialYearLabel(date = new Date()) {
   return `${String(startYear).slice(-2)}-${String(startYear + 1).slice(-2)}`;
 }
 
+// ─── Dispatches (what went out, and what came back) ─────────────
+// Keyed by forward tracking ID, so a returning parcel is found by the
+// number printed on it.
+
+const dispatchId = (forwardId) => String(forwardId).trim().toUpperCase().replace(/[/\#?s]+/g, '_');
+
+/** Save dispatch records (chunked). Existing tracking IDs are overwritten. */
+export async function saveDispatches(records) {
+  const withId = (records || []).filter(r => r.forwardId);
+  const operations = withId.map(r => (batch) => {
+    const id = dispatchId(r.forwardId);
+    batch.set(doc(db, COLLECTIONS.DISPATCHES, id), { ...r, id, updatedAt: serverTimestamp() }, { merge: true });
+  });
+  await runChunkedBatch(operations);
+  return withId.length;
+}
+
+/** One dispatch with no tracking ID yet — stored under a generated id. */
+export async function addDispatch(record) {
+  const col = collection(db, COLLECTIONS.DISPATCHES);
+  const ref = record.forwardId ? doc(db, COLLECTIONS.DISPATCHES, dispatchId(record.forwardId)) : doc(col);
+  await setDoc(ref, { ...record, id: ref.id, updatedAt: serverTimestamp() }, { merge: true });
+  return ref.id;
+}
+
+export async function getAllDispatches() {
+  const snap = await getDocs(collection(db, COLLECTIONS.DISPATCHES));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function updateDispatch(id, patch) {
+  await updateDoc(doc(db, COLLECTIONS.DISPATCHES, id), { ...patch, updatedAt: serverTimestamp() });
+}
+
+export async function deleteDispatch(id) {
+  await deleteDoc(doc(db, COLLECTIONS.DISPATCHES, id));
+}
+
+/** Mark an order that can never be shipped — the supplier never sent it. */
+export async function markDispatchUnfulfillable(id, reason) {
+  await updateDispatch(id, { status: DISPATCH_STATUS.UNFULFILLABLE, unfulfillableReason: String(reason ?? '').trim() });
+}
+
+/** What actually arrived against a purchase order, line by line. */
+export async function savePurchaseReceipts(billId, receipts) {
+  await updateDoc(doc(db, COLLECTIONS.PURCHASE_BILLS, billId), {
+    receipts, receivedAt: serverTimestamp()
+  });
+}
+
 // ─── Purchase Settings (parties, GST rates, bank, terms) ────────
 
 export async function getPurchaseSettings() {
@@ -346,6 +397,7 @@ export async function getPurchaseSettings() {
   return {
     ...DEFAULT_PARTIES,
     ...saved,
+    defaultNote: saved.defaultNote ?? '',
     gstRates: { ...GST_RATE_DEFAULTS, ...(saved.gstRates || {}) },
     hsnCodes: { ...HSN_DEFAULTS, ...(saved.hsnCodes || {}) }
   };

@@ -10,7 +10,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { DISPATCH_STATUS, RETURN_TYPES, isStockReturn } from './constants.js';
-import { normColorKey, normZmCode, today } from './utils.js';
+import { normZmCode, today } from './utils.js';
 
 /**
  * Who to count a return against.

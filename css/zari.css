@@ -820,3 +820,49 @@ td.text-right, th.text-right { font-variant-numeric: tabular-nums; }
   .zm-tab::after { transition: none; }
   * { scroll-behavior: auto; }
 }
+
+/* ═══════════════ Orders & fake returns ═══════════════ */
+
+/* A field the label did not print. Asking is better than guessing. */
+.ord-flag {
+  display: inline-block; font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.04em;
+  padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+  background: rgba(155,143,212,0.14); color: #C7BFEC;
+  border: 1px solid rgba(155,143,212,0.30);
+}
+
+/* How a customer was grouped — an address-keyed count must not read
+   as a confirmed person. */
+.ord-keytype {
+  display: inline-block; font-family: var(--font-mono);
+  font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 1px 5px; border-radius: 4px; margin-left: 6px;
+  background: rgba(255,255,255,0.05); color: var(--silk-4);
+  border: 1px solid var(--ink-line-soft);
+}
+
+.ord-row-fake { background: rgba(229,86,91,0.06); }
+.ord-row-fake:hover { background: rgba(229,86,91,0.10); }
+
+/* What saving this return will actually do */
+.ord-effect {
+  font-size: 11.5px; padding: 8px 11px; border-radius: 10px; margin-top: 4px;
+}
+.ord-effect-ok  { background: rgba(61,190,139,0.10); color: #7FD9B4; border: 1px solid rgba(61,190,139,0.26); }
+.ord-effect-bad { background: rgba(229,86,91,0.10);  color: #F0999C; border: 1px solid rgba(229,86,91,0.26); }
+
+/* Pieces added from the register, shown against the warehouse figure */
+.inv-boost {
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+  color: var(--warn); margin-left: 3px;
+}
+
+/* Outstanding on a purchase order */
+.pur-short { color: var(--bad); font-weight: 600; }
+
+.light-mode .ord-flag     { background: rgba(93,78,160,0.10);  color: #4A3E80; }
+.light-mode .ord-keytype  { background: rgba(0,0,0,0.05);      color: #6E6553; }
+.light-mode .ord-row-fake { background: rgba(229,86,91,0.07); }
+.light-mode .ord-effect-ok  { background: rgba(16,120,85,0.09);  color: #14634A; }
+.light-mode .ord-effect-bad { background: rgba(190,40,45,0.08);  color: #9B2226; }

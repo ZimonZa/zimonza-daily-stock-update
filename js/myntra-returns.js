@@ -1,8 +1,13 @@
 // ═══════════════════════════════════════════════════════════════
 // ZIMONZA — Myntra Customer Returns & RTO
-// A standalone register. Nothing in the stock pipeline or the
-// inventory-update generator reads this collection, so returned
-// goods can never leak into stock counts.
+//
+// A standalone register. Pieces leave it only through a pick slip or a
+// Goods Return.
+//
+// The inventory update may now ADD these pieces to the quantity it
+// declares to Myntra, when the "include returns" box is ticked — they
+// are on the shelf and can ship today. Declaring is not consuming:
+// generating a file never decrements this register.
 // ═══════════════════════════════════════════════════════════════
 
 import { RETURN_TYPES, RETURN_TYPE_LABELS, RETURN_CONDITIONS } from './constants.js';
@@ -14,7 +19,7 @@ import {
 } from './firestore-service.js';
 import { pricingIndex } from './myntra-pricing.js';
 import { skuKey, keyFromSellerSku } from './myntra-labels.js';
-import { swatchChip, swatchDot } from './swatches.js';
+import { swatchChip } from './swatches.js';
 import {
   normZmCode, normItemNo, normColorKey, debounce, toCSV, downloadFile,
   formatDate, formatDateDisplay, today, titleCase,

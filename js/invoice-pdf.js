@@ -421,6 +421,24 @@ function drawClosing(d, bill, s, yStart) {
     }
   }
 
+  // A note written for this one document — printed under the terms, where
+  // the supplier will actually look for it.
+  if (bill.note) {
+    d.setFont('helvetica', 'bold');
+    d.setFontSize(6.5);
+    setText(d, MUTED);
+    d.text('NOTE', M, y);
+    d.setFont('helvetica', 'normal');
+    d.setFontSize(7);
+    setText(d, INK);
+    let ny = y + 4;
+    for (const line of wrap(d, bill.note, colW)) {
+      if (ny > PAGE_H - 20) break;
+      d.text(line, M, ny);
+      ny += 3.4;
+    }
+  }
+
   // Signature (right)
   const sx = PAGE_W - M;
   d.setFont('helvetica', 'bold');
@@ -766,6 +784,8 @@ export function renderBillPreviewHTML(bill, settings) {
           ${s.bankIfsc ? `<p class="bill-sub-dark">IFSC: ${esc(s.bankIfsc)}</p>` : ''}` : ''}
         ${s.terms ? `<p class="bill-party-head" style="margin-top:10px">TERMS &amp; CONDITIONS</p>
           <p class="bill-terms">${esc(s.terms)}</p>` : ''}
+        ${bill.note ? `<p class="bill-party-head" style="margin-top:10px">NOTE</p>
+          <p class="bill-terms" style="color:#0F172A">${esc(bill.note)}</p>` : ''}
       </div>
       <div class="bill-sign">
         <p class="bill-sub-dark"><b>For ${esc(issuerName)}</b></p>

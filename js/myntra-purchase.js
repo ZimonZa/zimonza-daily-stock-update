@@ -9,7 +9,7 @@ import { PURCHASE_DOC_TYPES, GST_RATE_FALLBACK, isReturnDocType } from './consta
 import {
   getPurchaseSettings, savePurchaseSettings, savePurchaseBill,
   getAllPurchaseBills, deletePurchaseBill, nextBillNumber, financialYearLabel,
-  applyReturnConsumption
+  applyReturnConsumption, savePurchaseReceipts
 } from './firestore-service.js';
 import { pricingIndex } from './myntra-pricing.js';
 import { availableReturnStock, allocateFromReturns } from './myntra-returns.js';
@@ -127,6 +127,19 @@ export function initPurchaseTab(state) {
 
   el('pur-billdate').value = today();
 
+  /** The standing instruction pre-fills; anything typed for this bill wins. */
+  function applyDefaultNote() {
+    const box = el('pur-note');
+    if (!box) return;
+    const def = state.purchaseSettings.defaultNote || '';
+    if (!box.value.trim() || box.dataset.fromDefault === '1') {
+      box.value = def;
+      box.dataset.fromDefault = def ? '1' : '';
+    }
+  }
+  el('pur-note')?.addEventListener('input', () => { el('pur-note').dataset.fromDefault = ''; });
+  applyDefaultNote();
+
   function updateBillNoPlaceholder() {
     const type = PURCHASE_DOC_TYPES.find(t => t.id === docTypeSel.value) || PURCHASE_DOC_TYPES[0];
     el('pur-billno').placeholder = `${type.prefix}/${financialYearLabel(new Date())}/…  (auto on save)`;
@@ -159,6 +172,8 @@ export function initPurchaseTab(state) {
     if (!activeCart().length) return;
     if (!confirm(`Clear all ${activeCart().length} line(s) from this bill?`)) return;
     setActiveCart([]); persist(); renderCart(); renderPicker();
+    el('pur-note').dataset.fromDefault = '1';
+    applyDefaultNote();
     notify.info('Bill cleared');
   });
 
@@ -411,6 +426,7 @@ export function initPurchaseTab(state) {
       billNo: billNo || typed || `${type.prefix}/${financialYearLabel(new Date())}/DRAFT`,
       billDate: el('pur-billdate').value || today(),
       placeOfSupply: el('pur-place').value.trim(),
+      note: el('pur-note').value.trim(),
       isDraft: !!draft && !billNo && !typed,
       lines,
       totals,
@@ -509,7 +525,7 @@ export function initPurchaseTab(state) {
   const PARTY_FIELDS = [
     'sellerName', 'sellerAddress', 'sellerGstin', 'sellerState',
     'buyerName', 'buyerBrand', 'buyerAddress', 'buyerGstin', 'buyerState',
-    'bankName', 'bankAccount', 'bankIfsc', 'terms'
+    'bankName', 'bankAccount', 'bankIfsc', 'terms', 'defaultNote'
   ];
 
   function openPartiesModal() {
@@ -566,6 +582,7 @@ export function initPurchaseTab(state) {
 
       await savePurchaseSettings(patch);
       state.purchaseSettings = await getPurchaseSettings();
+      applyDefaultNote();
       // Refresh HSN on lines that never had one typed in
       for (const l of activeCart()) {
         if (!l.hsn) l.hsn = state.purchaseSettings.hsnCodes?.[l.category] || '';
@@ -596,6 +613,9 @@ export function initPurchaseTab(state) {
     if (!bill) return;
 
     switch (btn.dataset.billAction) {
+      case 'receive':
+        openReceiveModal(bill);
+        break;
       case 'view':
         el('bill-preview-body').innerHTML = renderBillPreviewHTML(bill, bill.parties || state.purchaseSettings);
         el('bill-preview-modal').classList.remove('hidden');
@@ -664,18 +684,126 @@ export function initPurchaseTab(state) {
       <div class="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-white/5 hover:bg-white/[0.02] ${b.isReturn ? 'pur-row-gr' : ''}">
         <div class="min-w-0 flex-1">
           <p class="text-slate-200 text-sm font-semibold truncate">${b.isReturn ? '<span class="pur-badge-gr">GR</span> ' : ''}${esc(b.billNo)}</p>
-          <p class="text-slate-500 text-xs">${esc(b.docTypeLabel || '')} · ${esc(formatDateDisplay(b.billDate) || b.billDate)} · ${(b.lines || []).length} line(s) · ${b.totals?.totalQty ?? 0} pcs</p>
+          <p class="text-slate-500 text-xs">${esc(b.docTypeLabel || '')} · ${esc(formatDateDisplay(b.billDate) || b.billDate)} · ${(b.lines || []).length} line(s) · ${b.totals?.totalQty ?? 0} pcs${
+            shortfallOf(b).pcs ? ` · <span class="pur-short">${shortfallOf(b).pcs} pcs short</span>` : ''}</p>
         </div>
         <p class="${b.isReturn ? 'pur-credit' : 'text-emerald-300'} font-bold text-sm whitespace-nowrap" title="${b.isReturn ? 'Credit due from the supplier' : 'Amount payable'}">₹ ${formatINR(b.totals?.grandRounded ?? 0, 0)}</p>
         <div class="flex gap-1.5">
           <button data-bill-action="view" data-bill-id="${esc(b.id)}" class="btn-secondary text-xs py-1.5 px-2.5" title="View"><i data-lucide="eye" class="w-3.5 h-3.5"></i></button>
           <button data-bill-action="pdf" data-bill-id="${esc(b.id)}" class="btn-secondary text-xs py-1.5 px-2.5" title="Download PDF"><i data-lucide="download" class="w-3.5 h-3.5"></i></button>
+          ${b.isReturn ? '' : `<button data-bill-action="receive" data-bill-id="${esc(b.id)}" class="btn-secondary text-xs py-1.5 px-2.5" title="Record what actually arrived"><i data-lucide="package-check" class="w-3.5 h-3.5"></i></button>`}
           <button data-bill-action="duplicate" data-bill-id="${esc(b.id)}" class="btn-secondary text-xs py-1.5 px-2.5" title="Copy into a new bill"><i data-lucide="copy" class="w-3.5 h-3.5"></i></button>
           <button data-bill-action="delete" data-bill-id="${esc(b.id)}" class="btn-secondary text-xs py-1.5 px-2.5 hover:!text-red-400" title="Delete"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
         </div>
       </div>`).join('');
     if (window.lucide) lucide.createIcons();
   }
+
+  // ═══════════ Short receive ═══════════
+
+  /**
+   * What a purchase order is still owed.
+   * PURE — the bill's own figures are never altered; receipts sit alongside.
+   */
+  function shortfallOf(bill) {
+    if (!bill || bill.isReturn) return { pcs: 0, value: 0, lines: [] };
+    const received = new Map((bill.receipts || []).map(r => [r.sellerSkuCode, Number(r.received) || 0]));
+    const lines = [];
+    let pcs = 0, value = 0;
+    for (const l of bill.lines || []) {
+      const got = received.has(l.sellerSkuCode) ? received.get(l.sellerSkuCode) : (bill.receipts ? 0 : l.qty);
+      const short = Math.max(0, (Number(l.qty) || 0) - got);
+      if (short > 0) {
+        lines.push({ ...l, received: got, short });
+        pcs += short;
+        value += round2(short * (Number(l.rate) || 0));
+      }
+    }
+    return { pcs, value: round2(value), lines };
+  }
+
+  let receiveBill = null;
+
+  function openReceiveModal(bill) {
+    receiveBill = bill;
+    const received = new Map((bill.receipts || []).map(r => [r.sellerSkuCode, Number(r.received) || 0]));
+    el('receive-title').textContent = `Receive ${bill.billNo}`;
+    el('receive-body').innerHTML = `
+      <table class="w-full text-sm">
+        <thead><tr class="text-slate-500 text-[10px] uppercase tracking-wide border-b border-white/5">
+          <th class="text-left px-3 py-2">Kuntal</th>
+          <th class="text-left px-3 py-2">Colour</th>
+          <th class="text-right px-3 py-2">Ordered</th>
+          <th class="text-right px-3 py-2">Received</th>
+          <th class="text-right px-3 py-2">Short</th>
+        </tr></thead>
+        <tbody>${(bill.lines || []).map(l => {
+          const got = received.has(l.sellerSkuCode) ? received.get(l.sellerSkuCode) : l.qty;
+          return `<tr class="border-b border-white/5">
+            <td class="px-3 py-2 text-slate-200">${esc(l.kuntalCode) || '—'}</td>
+            <td class="px-3 py-2 text-slate-300">${esc(l.colourName) || '—'}</td>
+            <td class="px-3 py-2 text-right text-slate-400">${l.qty}</td>
+            <td class="px-3 py-2 text-right">
+              <input type="number" min="0" max="${l.qty}" value="${got}"
+                data-recv="${esc(l.sellerSkuCode)}" data-ordered="${l.qty}"
+                class="w-20 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-emerald-500/40">
+            </td>
+            <td data-short="${esc(l.sellerSkuCode)}" class="px-3 py-2 text-right ${l.qty - got > 0 ? 'pur-short' : 'text-slate-600'}">${Math.max(0, l.qty - got)}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`;
+    updateReceiveTotal();
+    el('receive-modal').classList.remove('hidden');
+    if (window.lucide) lucide.createIcons();
+  }
+
+  function updateReceiveTotal() {
+    let pcs = 0;
+    el('receive-body').querySelectorAll('input[data-recv]').forEach(inp => {
+      const ordered = Number(inp.dataset.ordered) || 0;
+      // Receiving more than was ordered is not a shortfall, it is a mistake
+      let got = Math.floor(Number(inp.value) || 0);
+      if (got > ordered) { got = ordered; inp.value = ordered; }
+      if (got < 0) { got = 0; inp.value = 0; }
+      const short = ordered - got;
+      pcs += short;
+      const cell = el('receive-body').querySelector(`[data-short="${CSS.escape(inp.dataset.recv)}"]`);
+      if (cell) {
+        cell.textContent = short;
+        cell.className = `px-3 py-2 text-right ${short > 0 ? 'pur-short' : 'text-slate-600'}`;
+      }
+    });
+    el('receive-total').textContent = pcs ? `${pcs} pc(s) short` : 'Everything arrived';
+  }
+
+  el('receive-body').addEventListener('input', updateReceiveTotal);
+  el('receive-cancel').addEventListener('click', () => el('receive-modal').classList.add('hidden'));
+  el('receive-modal').addEventListener('click', e => {
+    if (e.target.id === 'receive-modal') el('receive-modal').classList.add('hidden');
+  });
+
+  el('receive-save').addEventListener('click', async () => {
+    if (!receiveBill) return;
+    const btn = el('receive-save');
+    btn.disabled = true;
+    try {
+      const receipts = [...el('receive-body').querySelectorAll('input[data-recv]')].map(inp => ({
+        sellerSkuCode: inp.dataset.recv,
+        ordered: Number(inp.dataset.ordered) || 0,
+        received: Math.max(0, Math.min(Number(inp.dataset.ordered) || 0, Math.floor(Number(inp.value) || 0)))
+      }));
+      await savePurchaseReceipts(receiveBill.id, receipts);
+      el('receive-modal').classList.add('hidden');
+      await refreshBills();
+      const short = receipts.reduce((t, r) => t + (r.ordered - r.received), 0);
+      notify.success(short ? `${receiveBill.billNo}: ${short} pc(s) recorded short` : `${receiveBill.billNo} fully received`);
+      receiveBill = null;
+    } catch (err) {
+      notify.error('Could not save: ' + err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   // ═══════════ Rendering ═══════════
 
@@ -830,6 +958,8 @@ export function initPurchaseTab(state) {
     render,
     refreshBills,
     getBills: () => bills,
-    getCartCount: () => activeCart().length
+    getCartCount: () => activeCart().length,
+    shortfallOf,
+    getBillsWithShortfall: () => bills.filter(b => shortfallOf(b).pcs > 0)
   };
 }
