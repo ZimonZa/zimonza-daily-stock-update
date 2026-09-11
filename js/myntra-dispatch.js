@@ -46,6 +46,10 @@ export function offenderKey({ customerName, address, orderId } = {}) {
 export function dispatchFromPageRecord(rec, { sourceFile = '', dispatchDate = '' } = {}) {
   const fields = rec || {};
   const sku = fields.sku || null;
+  // The layout reader also reads the bracketed code, e.g. [ZM-43-Rani - T].
+  // It is the fallback for a SKU the mapping does not know yet, so an
+  // unmapped style still lands on the record instead of vanishing.
+  const sellerSkuCode = sku?.sellerSkuCode || fields.sellerSkuCode || '';
   const { key, keyType, label } = offenderKey({
     customerName: fields.customerName,
     address: fields.address,
@@ -66,9 +70,11 @@ export function dispatchFromPageRecord(rec, { sourceFile = '', dispatchDate = ''
       keyType,
       label
     },
-    sellerSkuCode: sku?.sellerSkuCode || '',
+    sellerSkuCode,
     zmCode: sku ? normZmCode(sku.zmCode) : '',
     colourName: sku?.colourName || '',
+    // The size the label printed beside the code
+    size: fields.size || '',
     qty: 1,                                    // one label page is one piece
     dispatchDate: dispatchDate || today(),
     sourceFile,

@@ -27,6 +27,7 @@ const EXPORT_COLUMNS = [
   { key: 'customerName',  label: 'Customer' },
   { key: 'customerKey',   label: 'Grouped by' },
   { key: 'sellerSkuCode', label: 'SellerSkuCode' },
+  { key: 'size',          label: 'Size' },
   { key: 'colourName',    label: 'Colour' },
   { key: 'qty',           label: 'Qty' },
   { key: 'dispatchDate',  label: 'Dispatched' },
@@ -264,7 +265,7 @@ export function initOrdersTab(state) {
     el('ord-ret-title').textContent = `Return against ${dispatch.forwardId || '(no tracking ID)'}`;
     el('ord-ret-sub').innerHTML =
       `${dispatch.colourName ? swatchDot(dispatch.colourName) + ' ' : ''}` +
-      `${esc(dispatch.sellerSkuCode) || '—'} · ${dispatch.qty} pc(s) · ` +
+      `${esc(dispatch.sellerSkuCode) || '—'}${dispatch.size ? ' · size ' + esc(dispatch.size) : ''} · ${dispatch.qty} pc(s) · ` +
       `${esc(dispatch.customer?.name || dispatch.customer?.label || 'customer not printed')}`;
     el('ord-ret-id').value = dispatch.return?.returnId || '';
     el('ord-ret-type').value = dispatch.return?.type || RETURN_TYPES.CUSTOMER_RETURN;
@@ -360,6 +361,7 @@ export function initOrdersTab(state) {
     customerName: d.customer?.name || '',
     customerKey: d.customer?.keyType || '',
     sellerSkuCode: d.sellerSkuCode,
+    size: d.size || '',
     colourName: d.colourName,
     qty: d.qty,
     dispatchDate: d.dispatchDate,
@@ -440,7 +442,7 @@ export function initOrdersTab(state) {
         <tbody>${rows.map(d => `
           <tr class="border-b border-white/5 hover:bg-white/[0.02] ${d.return?.type === RETURN_TYPES.FAKE_RETURN ? 'ord-row-fake' : ''}">
             <td class="px-4 py-2 text-slate-200 font-medium whitespace-nowrap zm-mono">${esc(d.forwardId) || '<span class="ord-flag">no tracking ID</span>'}</td>
-            <td class="px-4 py-2 text-slate-300">${esc(d.sellerSkuCode) || '—'}</td>
+            <td class="px-4 py-2 text-slate-300">${esc(d.sellerSkuCode) || '—'}${d.size ? `<span class="ord-size">${esc(d.size)}</span>` : ''}</td>
             <td class="px-4 py-2">${d.colourName ? swatchDot(d.colourName) + ' ' + esc(d.colourName) : '<span class="zm-muted">—</span>'}</td>
             <td class="px-4 py-2 text-right text-slate-200 font-semibold">${d.qty}</td>
             <td class="px-4 py-2 text-slate-400 max-w-[180px] truncate" title="${esc(d.customer?.address || '')}">
@@ -517,6 +519,7 @@ export function initOrdersTab(state) {
     forwardId: { path: 'forwardId', upper: true },
     orderId: { path: 'orderId', upper: true },
     sku: { path: 'sellerSkuCode' },
+    size: { path: 'size' },
     qty: { path: 'qty', number: true },
     customer: { path: 'customer.name', rekey: true },
     address: { path: 'customer.address', rekey: true },
@@ -574,6 +577,7 @@ export function initOrdersTab(state) {
           <th class="px-2 py-2 text-left">Forward tracking ID</th>
           <th class="px-2 py-2 text-left">Order ID</th>
           <th class="px-2 py-2 text-left">SellerSkuCode</th>
+          <th class="px-2 py-2 text-left">Size</th>
           <th class="px-2 py-2 text-left">Qty</th>
           <th class="px-2 py-2 text-left">Customer</th>
           <th class="px-2 py-2 text-left">Delivery address</th>
@@ -592,6 +596,7 @@ export function initOrdersTab(state) {
             </td>
             <td class="px-2 py-1.5">${cell(i, 'orderId', r.orderId, 'w-32')}</td>
             <td class="px-2 py-1.5">${cell(i, 'sku', r.sellerSkuCode, 'w-40', 'list="ord-sku-list" autocomplete="off"')}</td>
+            <td class="px-2 py-1.5">${cell(i, 'size', r.size || '', 'w-16')}</td>
             <td class="px-2 py-1.5">${cell(i, 'qty', r.qty, 'w-16', 'type="number" min="1"')}</td>
             <td class="px-2 py-1.5">${cell(i, 'customer', r.customer?.name || '', 'w-36', 'placeholder="masked on label"')}</td>
             <td class="px-2 py-1.5">${cell(i, 'address', r.customer?.address || '', 'w-48')}</td>

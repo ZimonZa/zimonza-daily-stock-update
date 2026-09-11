@@ -65,18 +65,36 @@ function build() {
     ...[...imported].filter(n => !special[n]).map(n => `export const ${n} = noop;`)
   ].join('\n'));
 
-  // A test drives this by setting globalThis.__PDF_PAGES to an array of
-  // page texts; with nothing set it behaves as an empty document.
+  // Each page is a multi-line string, and every line becomes a POSITIONED
+  // text item — y descending down the page, exactly as PDF.js reports it.
+  // Without real coordinates a layout-aware reader cannot be tested at all.
+  // Tab-separated "x|text" runs place text at a given x on the same line.
   writeFileSync(join(sandbox, '_stub-pdfjs.js'), [
     "export const GlobalWorkerOptions = { workerSrc: '' };",
     'export const Util = { transform: () => [1,0,0,1,0,0] };',
+    'const toItems = (page) => {',
+    '  if (Array.isArray(page)) return page;',
+    '  const out = [];',
+    '  String(page ?? "").split(String.fromCharCode(10)).forEach((row, i) => {',
+    '    const y = 800 - i * 14;',
+    '    for (const run of row.split(String.fromCharCode(9))) {',
+    '      const bar = run.indexOf("|");',
+    '      const head = bar > 0 ? run.slice(0, bar) : "";',
+    '      const numeric = head.length > 0 && !/[^0-9]/.test(head);',
+    '      const x = numeric ? Number(head) : 40;',
+    '      const str = numeric ? run.slice(bar + 1) : run;',
+    '      if (str.trim()) out.push({ str, height: 10, transform: [1,0,0,10,x,y] });',
+    '    }',
+    '  });',
+    '  return out;',
+    '};',
     'export const getDocument = () => {',
     '  const pages = globalThis.__PDF_PAGES || [];',
     '  return { promise: Promise.resolve({',
     '    numPages: pages.length,',
     '    getPage: async (n) => ({',
     '      _page: n,',
-    '      getTextContent: async () => ({ items: [{ str: pages[n - 1] ?? "" }] }),',
+    '      getTextContent: async () => ({ items: toItems(pages[n - 1]) }),',
     '      getViewport: () => ({ width: 600, height: 900 }),',
     '      render: () => ({ promise: Promise.resolve() })',
     '    })',

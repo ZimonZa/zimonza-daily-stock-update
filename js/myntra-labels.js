@@ -7,6 +7,7 @@
 
 import { normZmCode, normColorKey } from './utils.js';
 import { decodeTrackingBarcode } from './label-barcode.js';
+import { itemsToLines, extractMyntraFields, looksLikeMyntraLabel } from './myntra-label-layout.js';
 
 // Same PDF.js build and worker the PDF → Excel page already uses.
 const PDFJS_URL = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.7.76/build/pdf.min.mjs';
@@ -169,13 +170,23 @@ export async function parseLabelPdf(file, mappings, onProgress, opts = {}) {
     if (onProgress) onProgress(p, pdf.numPages);
     const page = await pdf.getPage(p);
     const tc = await page.getTextContent();
-    const text = tc.items.map(it => it.str).join(' ');
+    // Keep the coordinates. A label is a form, not a paragraph, and the
+    // fields are told apart by where they sit far more reliably than by
+    // the words around them.
+    const lines = itemsToLines(tc.items);
+    const text = lines.map(l => l.text).join(' ');
     if (text.trim()) anyText = true;
     const match = matchSkuOnPage(text, index);
     pageMatches.push(match);
+
     // One record per page for dispatch tracking. The aggregate above is
     // unchanged, so the fulfilment path sees exactly what it saw before.
-    const fields = extractDispatchFields(text);
+    //
+    // Layout reader first — it knows where a Myntra label keeps things.
+    // The keyword reader stays as the fallback for every other courier.
+    const fields = looksLikeMyntraLabel(lines)
+      ? extractMyntraFields(lines)
+      : extractDispatchFields(text);
     fields.forwardIdSource = fields.forwardId ? 'text' : '';
 
     // Only when the printed text gave nothing. Rasterising every page to

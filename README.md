@@ -104,6 +104,7 @@ Visit `http://localhost:8080`
 │   ├── myntra-fulfilment.js← Label → RTO stock first, then purchase
 │   ├── myntra-dispatch.js  ← Dispatch records + return-abuse analytics
 │   ├── label-barcode.js    ← Barcode fallback when the text has no ID
+│   ├── myntra-label-layout.js ← Reads a Myntra label by position, not keywords
 │   ├── myntra-orders.js    ← Orders & fake returns tab
 │   ├── skip-manager.js     ← Skip list management
 │   ├── history-manager.js  ← Calendar & history logic
@@ -129,14 +130,31 @@ Sixth tab on the Myntra page. Every label that ships becomes a **dispatch**, key
 
 **Getting labels in.** Drop `label.pdf` on the Orders tab, or on the Purchase tab — either gives you the same review. The Purchase tab reads the file once and hands the same parse to dispatch tracking, so one upload still does both jobs.
 
-**Reading the label — cheap answers first.**
+**Reading the label — by its layout, not by keywords.**
 
-1. **The printed text.** Tracking IDs are printed as digits under the barcode, so the text layer usually already carries them. This costs nothing.
+A Myntra label is a form, not a paragraph. The old reader flattened the page into one string and hunted for words like "Ship To" — which a Myntra label does not contain. On a real label it returned **no customer name at all**, and an address of `AMOUNT TO BE PAID EK_E2E Rs.5846.0 PAT/PNP (801105` — the courier routing code at the very top of the page, because that is the first six-digit number on it. Worse, it reported that address as complete.
+
+So the coordinates PDF.js already provides are kept, the lines are rebuilt in reading order, and each field is read from where it sits:
+
+| Field | Where it is |
+|---|---|
+| **Tracking ID** | the `MY`-prefixed token under the barcode — `MYC…`, `MYEC…` |
+| **Customer name** | the first line under **"Buyer's Name And Address"** |
+| **Delivery address** | every line after the name, until **"If undelivered"** |
+| **SellerSkuCode** | the bracketed code, `[ZM-43-Rani - T]` — size kept separately |
+
+Reading *downward from an anchor* is what makes the seller's own address impossible to mistake for the buyer's. Everything from "If undelivered" onward belongs to Kuntal Fashion, and the reader stops there. A wide horizontal gap between two runs is treated as a column break rather than a space, so a name never gets glued to whatever is printed beside it.
+
+A label with no Myntra markings falls back to the old keyword reader, so other couriers still work.
+
+**Then, cheap answers first.**
+
+1. **The printed text**, read by layout as above. This costs nothing.
 2. **The barcode itself**, but *only* on a page where the text gave no tracking ID. That page is rendered to an image and decoded — with the browser's own `BarcodeDetector` where it exists (Chrome, Edge: no download at all), and ZXing from the CDN otherwise, imported lazily so a session that never needs it never fetches it.
 
 Rasterising all 200 pages to re-read a number that is already printed would cost minutes for the same answer, so the expensive path runs only where the cheap one came up empty. **Every row shows which route its ID came from** — `text`, `barcode` or `typed` — because a decoded value is not the same claim as one the label actually printed.
 
-Tracking ID, order ID, customer name and address are each read independently, and **anything the label did not print is flagged rather than invented**.
+Tracking ID, order ID, customer name and address are each read independently, and **anything the label did not print is flagged rather than invented** — an empty buyer block yields two flagged blanks, never a guess.
 
 **The review is editable.** Every cell is a live input — tracking ID, order ID, SellerSkuCode, quantity, customer, address, dispatch date. Fix whatever the label got wrong, then save. Two things follow your edits automatically:
 
