@@ -58,6 +58,7 @@ export const COLLECTIONS = {
   MYNTRA_RETURNS: 'myntra_returns',
   PURCHASE_BILLS: 'purchase_bills',
   PICK_SLIPS: 'stock_pick_slips',
+  DISPATCHES: 'dispatches',
   WEBSITE_STATUS: 'website_upload_status',
   SKIP_PRODUCTS: 'skip_products',
   HISTORY: 'history',
@@ -113,12 +114,26 @@ export const DEFAULT_PARTIES = {
 
 export const RETURN_TYPES = {
   CUSTOMER_RETURN: 'customer_return',
-  RTO: 'rto'
+  RTO: 'rto',
+  // A parcel that came back without the product in it. Recorded against the
+  // customer, but it never becomes stock — there is nothing to put on a shelf.
+  FAKE_RETURN: 'fake_return'
+};
+
+/** The two types that genuinely put a piece back on the shelf. */
+export const STOCK_RETURN_TYPES = ['rto', 'customer_return'];
+export const isStockReturn = (type) => STOCK_RETURN_TYPES.includes(type);
+
+export const DISPATCH_STATUS = {
+  SHIPPED: 'shipped',
+  RETURNED: 'returned',
+  UNFULFILLABLE: 'unfulfillable'
 };
 
 export const RETURN_TYPE_LABELS = {
   customer_return: 'Customer Return',
-  rto: 'RTO'
+  rto: 'RTO',
+  fake_return: 'Fake Return'
 };
 
 export const RETURN_CONDITIONS = ['good', 'damaged', 'missing'];

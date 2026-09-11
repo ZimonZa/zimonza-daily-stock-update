@@ -197,10 +197,20 @@ export function findColourQty(stockItem, colourName) {
  * SKUs listed in `opts.inactiveSkus` (a Set of lowercased SellerSkuCodes) are
  * flagged 'inactive' and likewise excluded — a listing switched off on Myntra
  * must not receive stock.
+ *
+ * `opts.returnStock` is an optional Map from availableReturnStock(): usable
+ * Returns/RTO pieces keyed by `ZM-n|colour`. When supplied, those pieces are
+ * added ON TOP at FULL quantity — they are physically in hand, so there is
+ * nothing to hold back and the gap rule does not apply to them.
+ *
+ * Declaring is not consuming: this raises the quantity told to Myntra, and
+ * never touches the returns register. Only a pick slip or a GR removes pieces.
+ *
  * Returns { rows, summary }.
  */
 export function generateInventoryUpdate(skus, ctx, gap, percent = 50, opts = {}) {
   const inactiveSkus = opts.inactiveSkus instanceof Set ? opts.inactiveSkus : new Set();
+  const returnStock = opts.returnStock instanceof Map ? opts.returnStock : null;
   const seen = new Set();
   const rows = [];
 
@@ -232,20 +242,47 @@ export function generateInventoryUpdate(skus, ctx, gap, percent = 50, opts = {})
     const { stock, kuntalCode, reason } = resolveStock(parsed.zmCode, ctx);
     base.kuntalCode = kuntalCode || '';
     if (!stock) {
-      rows.push({ ...base, status: reason });
+      // No warehouse item, but returned pieces may still be on the shelf
+      const orphanBoost = returnStock
+        ? (returnStock.get(`${parsed.zmCode}|${normColorKey(parsed.colourName)}`)?.total || 0)
+        : 0;
+      base.returnBoost = orphanBoost;
+      rows.push(orphanBoost > 0
+        ? { ...base, quantity: orphanBoost, status: 'returns_only' }
+        : { ...base, status: reason });
       continue;
     }
     base.productName = stock.name || '';
 
     const qty = findColourQty(stock, parsed.colourName);
     if (qty === null) {
-      rows.push({ ...base, status: 'colour_not_found' });
+      const orphanBoost = returnStock
+        ? (returnStock.get(`${parsed.zmCode}|${normColorKey(parsed.colourName)}`)?.total || 0)
+        : 0;
+      base.returnBoost = orphanBoost;
+      rows.push(orphanBoost > 0
+        ? { ...base, quantity: orphanBoost, status: 'returns_only' }
+        : { ...base, status: 'colour_not_found' });
       continue;
     }
     base.stockQty = qty;
 
+    // Usable returned pieces for this exact SKU, at full count
+    const boost = returnStock
+      ? (returnStock.get(`${parsed.zmCode}|${normColorKey(parsed.colourName)}`)?.total || 0)
+      : 0;
+    base.returnBoost = boost;
+
+    // The gap rule governs the warehouse portion only
+    const fromWarehouse = qty > gap ? Math.floor(qty * percent / 100) : 0;
+    const total = fromWarehouse + boost;
+
     if (qty > gap) {
-      rows.push({ ...base, quantity: Math.floor(qty * percent / 100), status: 'ok' });
+      rows.push({ ...base, quantity: total, status: 'ok' });
+    } else if (boost > 0) {
+      // Warehouse is below the gap, but returned stock is on the shelf and
+      // can ship today — declaring 0 here would be wrong.
+      rows.push({ ...base, quantity: total, status: 'returns_only' });
     } else {
       rows.push({ ...base, status: 'below_gap' });
     }
@@ -258,6 +295,8 @@ export function generateInventoryUpdate(skus, ctx, gap, percent = 50, opts = {})
     belowGap: count('below_gap'),
     duplicates: count('duplicate'),
     inactive: count('inactive'),
+    returnsOnly: count('returns_only'),
+    returnBoostPcs: rows.reduce((t, r) => t + (r.returnBoost || 0), 0),
     missing: count('invalid_sku') + count('no_zm_mapping') + count('no_stock_item') + count('colour_not_found'),
     exported: rows.filter(r => isExportable(r)).length
   };

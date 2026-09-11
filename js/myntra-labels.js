@@ -154,6 +154,7 @@ export async function parseLabelPdf(file, mappings, onProgress) {
 
   const index = buildSkuIndex(mappings);
   const pageMatches = [];
+  const pageRecords = [];
   let anyText = false;
 
   for (let p = 1; p <= pdf.numPages; p++) {
@@ -162,9 +163,92 @@ export async function parseLabelPdf(file, mappings, onProgress) {
     const tc = await page.getTextContent();
     const text = tc.items.map(it => it.str).join(' ');
     if (text.trim()) anyText = true;
-    pageMatches.push(matchSkuOnPage(text, index));
+    const match = matchSkuOnPage(text, index);
+    pageMatches.push(match);
+    // One record per page for dispatch tracking. The aggregate above is
+    // unchanged, so the fulfilment path sees exactly what it saw before.
+    pageRecords.push({ page: p, ...extractDispatchFields(text), sku: match });
   }
 
   const { items, unreadablePages } = aggregatePages(pageMatches);
-  return { pages: pdf.numPages, items, unreadablePages, hasTextLayer: anyText };
+  return { pages: pdf.numPages, items, unreadablePages, hasTextLayer: anyText, pageRecords };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Dispatch details — who is receiving this piece
+//
+// Everything here reads the PRINTED TEXT. Courier labels print the
+// tracking ID as digits under the barcode, so the text layer already
+// carries it; decoding the barcode image would cost a megabyte and
+// minutes on a 200-page file for the same answer.
+//
+// Every field is independently optional. A page missing one is kept and
+// flagged — silently dropping a dispatch is worse than an incomplete one.
+// ═══════════════════════════════════════════════════════════════
+
+/** Labelled first — that is the only reading we can be confident about. */
+const TRACKING_LABELLED = /(?:awb|air\s*way\s*bill|waybill|tracking(?:\s*(?:id|no|number))?|shipment\s*(?:id|no))\s*(?:no\.?|number|id)?\s*[:#-]?\s*([A-Z0-9][A-Z0-9-]{7,24})/i;
+
+/** A bare token that looks like a courier ID, when nothing is labelled. */
+const TRACKING_BARE = /\b(?=[A-Z0-9-]{10,24}\b)(?=.*\d)[A-Z][A-Z0-9-]{9,23}\b|\b\d{11,18}\b/;
+
+const ORDER_ID_RE = /order\s*(?:id|no\.?|number)?\s*[:#-]?\s*([A-Z0-9][A-Z0-9-]{5,24})/i;
+
+/** The name follows the "ship to" marker. */
+const CUSTOMER_RE = /(?:ship\s*to|deliver(?:y)?\s*to|customer\s*(?:name)?|consignee|bill\s*to)\s*[:#-]?\s*([A-Za-z][A-Za-z.\s'-]{1,48})/i;
+
+/** A 6-digit Indian PIN anchors the address block. */
+const PINCODE_RE = /\b([1-9]\d{5})\b/;
+
+// Words that end a captured name — they start the next field on the label
+const NAME_STOPWORDS = /\b(?:address|addr|phone|mobile|pin|pincode|order|awb|tracking|qty|quantity|sku|size|colour|color|courier|route|invoice|gstin|seller|sold\s*by|return|if\s*undelivered)\b/i;
+
+/** Trim a captured name where the next label field begins. */
+function tidyName(raw) {
+  let s = String(raw ?? '').replace(/\s+/g, ' ').trim();
+  const stop = NAME_STOPWORDS.exec(s);
+  if (stop) s = s.slice(0, stop.index).trim();
+  s = s.replace(/[.,;:\-\s]+$/, '').trim();
+  // One or two stray letters is noise, not a name
+  return s.length >= 2 && /[A-Za-z]{2}/.test(s) ? s : '';
+}
+
+/** The address text around the PIN code, when one is present. */
+function extractAddress(text) {
+  const pin = PINCODE_RE.exec(text);
+  if (!pin) return '';
+  const start = Math.max(0, pin.index - 90);
+  return text.slice(start, pin.index + 6).replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Pull the dispatch fields off one page's text.
+ * Returns every field it could read, plus `missing` naming the rest.
+ */
+export function extractDispatchFields(pageText) {
+  const text = String(pageText ?? '').replace(/\s+/g, ' ').trim();
+  const out = { forwardId: '', orderId: '', customerName: '', address: '', missing: [] };
+  if (!text) { out.missing = ['forwardId', 'orderId', 'customerName', 'address']; return out; }
+
+  const labelled = TRACKING_LABELLED.exec(text);
+  if (labelled) {
+    out.forwardId = labelled[1].toUpperCase();
+  } else {
+    const bare = TRACKING_BARE.exec(text);
+    if (bare) out.forwardId = bare[0].toUpperCase();
+  }
+
+  const order = ORDER_ID_RE.exec(text);
+  // An "Order" capture that grabbed the tracking ID is not an order ID
+  if (order && order[1].toUpperCase() !== out.forwardId) out.orderId = order[1].toUpperCase();
+
+  const cust = CUSTOMER_RE.exec(text);
+  if (cust) out.customerName = tidyName(cust[1]);
+
+  out.address = extractAddress(text);
+
+  for (const f of ['forwardId', 'orderId', 'customerName', 'address']) {
+    if (!out[f]) out.missing.push(f);
+  }
+  return out;
 }
