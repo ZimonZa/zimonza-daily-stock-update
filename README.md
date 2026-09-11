@@ -103,6 +103,7 @@ Visit `http://localhost:8080`
 │   ├── pdf-merge.js        ← PDF sorter & merger (label/invoice grouping)
 │   ├── myntra-fulfilment.js← Label → RTO stock first, then purchase
 │   ├── myntra-dispatch.js  ← Dispatch records + return-abuse analytics
+│   ├── label-barcode.js    ← Barcode fallback when the text has no ID
 │   ├── myntra-orders.js    ← Orders & fake returns tab
 │   ├── skip-manager.js     ← Skip list management
 │   ├── history-manager.js  ← Calendar & history logic
@@ -124,11 +125,35 @@ Visit `http://localhost:8080`
 
 ## 📡 Orders & Fake Returns
 
-Sixth tab on the Myntra page. Every label that ships becomes a **dispatch**, keyed by the forward tracking ID printed under its barcode — so when a parcel comes back, you find it by the number on it.
+Sixth tab on the Myntra page. Every label that ships becomes a **dispatch**, keyed by the forward tracking ID under its barcode — so when a parcel comes back, you find it by the number written on it.
 
-**Reading the label.** Printed text only. Tracking IDs are printed as digits under the barcode, so the text layer already carries them; decoding the barcode image would cost a megabyte and minutes on a 200-page file for the same answer. Tracking ID, order ID, customer name and address are each read independently, and **anything the label did not print is flagged rather than invented**. A page with no tracking ID is still kept, so you can complete it by hand.
+**Getting labels in.** Drop `label.pdf` on the Orders tab, or on the Purchase tab — either gives you the same review. The Purchase tab reads the file once and hands the same parse to dispatch tracking, so one upload still does both jobs.
 
-The Purchase tab reads the label once and hands the same parse to dispatch tracking — one upload, both jobs.
+**Reading the label — cheap answers first.**
+
+1. **The printed text.** Tracking IDs are printed as digits under the barcode, so the text layer usually already carries them. This costs nothing.
+2. **The barcode itself**, but *only* on a page where the text gave no tracking ID. That page is rendered to an image and decoded — with the browser's own `BarcodeDetector` where it exists (Chrome, Edge: no download at all), and ZXing from the CDN otherwise, imported lazily so a session that never needs it never fetches it.
+
+Rasterising all 200 pages to re-read a number that is already printed would cost minutes for the same answer, so the expensive path runs only where the cheap one came up empty. **Every row shows which route its ID came from** — `text`, `barcode` or `typed` — because a decoded value is not the same claim as one the label actually printed.
+
+Tracking ID, order ID, customer name and address are each read independently, and **anything the label did not print is flagged rather than invented**.
+
+**The review is editable.** Every cell is a live input — tracking ID, order ID, SellerSkuCode, quantity, customer, address, dispatch date. Fix whatever the label got wrong, then save. Two things follow your edits automatically:
+
+- **Correcting a name or address re-groups the record.** The repeat-returner key is name → address → order ID; typing a name into a row that only had an address moves it into the name group, so the analytics never count stale evidence.
+- **A corrected SellerSkuCode brings its ZM code and colour with it**, so a record cannot end up pointing at a style that does not exist.
+
+**Pages with no tracking ID are listed too**, with a blank cell to type into — losing a parcel is worse than showing an incomplete row. Saved without one, it is called out: a return cannot find that parcel until an ID is added.
+
+**Re-uploading the same file is safe.** Each row is checked against what is already saved:
+
+| | |
+|---|---|
+| new | ticked, saves normally |
+| already saved | **unticked**, flagged — tick it to update the details |
+| **already returned** | **locked.** Cannot be saved over at all |
+
+An update writes the details only: `status` and `return` are stripped from the payload entirely, so correcting a customer's name can never push a returned parcel back to `shipped` or erase the return. That last row matters most — a fake-return record is the evidence against a customer, and dropping the same PDF twice used to destroy it.
 
 **Recording a return.** Search the forward ID, hit Open, enter the return ID and pick the type:
 
@@ -231,7 +256,7 @@ One page (`myntra.html`), six sections:
 | **Pricing** | Upload `Myntra Pricing.xlsx`. Flags mapped styles that have no price (those cannot be billed). |
 | **Purchase** | Cart → GST bill → PDF. Saved, auto-numbered, re-downloadable. Also GR credit notes, short-receive, and the per-bill note. |
 | **Returns & RTO** | Register of goods coming back, with a stock summary. A label can be filled from it, and the inventory update can declare it. |
-| **Orders** | Every dispatched label tracked to its customer by forward tracking ID. Return intake, fake-return recording, repeat-returner analytics. |
+| **Orders** | Drop a label here. Every dispatch tracked to its customer by forward tracking ID, with an editable review before saving. Return intake, fake-return recording, repeat-returner analytics. |
 
 ### Including returns in the inventory update
 
@@ -407,7 +432,7 @@ The runner copies `js/` into a sandbox, rewrites the CDN imports to generated st
 
 The parse check uses `vm.SourceTextModule`, not `node --check` — under Node 26 `node --check` exits 0 on files it cannot parse, which had already let a real unbalanced paren through. The runner re-execs itself with `--experimental-vm-modules` so no flag is needed at the call site.
 
-Suites cover ZM-code normalisation, GST maths, day-first and Excel-serial dates, swatch luminance, PDF sorter ordering and conflict confidence, label field extraction, offender keys, return intake, the inventory return boost, and the Orders tab driven end to end through a fake DOM.
+Suites cover ZM-code normalisation, GST maths, day-first and Excel-serial dates, swatch luminance, PDF sorter ordering and conflict confidence, label field extraction, the barcode fallback, offender keys and re-keying, duplicate classification, the write payload that protects a recorded return, return intake, the inventory return boost, and the Orders tab driven end to end through a fake DOM.
 
 ---
 

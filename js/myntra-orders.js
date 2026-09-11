@@ -6,8 +6,10 @@
 
 import { RETURN_TYPES, RETURN_TYPE_LABELS, DISPATCH_STATUS } from './constants.js';
 import {
-  dispatchesFromLabel, mergeByForwardId, applyReturn, offenderSummary, offenderKey
+  dispatchesFromLabel, mergeByForwardId, applyReturn, offenderSummary, offenderKey,
+  classifyAgainstSaved, rekeyDispatch
 } from './myntra-dispatch.js';
+import { parseLabelPdf } from './myntra-labels.js';
 import {
   saveDispatches, addDispatch, getAllDispatches, updateDispatch, deleteDispatch,
   markDispatchUnfulfillable, addMyntraReturns
@@ -63,11 +65,20 @@ export function initOrdersTab(state) {
   });
 
   // ── Label intake ───────────────────────────────────────────
+  // Same dropzone helpers the Purchase and Returns uploads use, so
+  // drag-over and click-to-browse behave identically everywhere.
+  state.helpers.bindDrop(el('ord-drop'), el('ord-file'), onLabelFile);
+  state.helpers.resetDrop(el('ord-drop'), 'Myntra label.pdf — one page per piece');
+
   el('ord-confirm-save').addEventListener('click', commitLabel);
   el('ord-confirm-cancel').addEventListener('click', () => {
     pending = null;
     el('ord-confirm').classList.add('hidden');
   });
+  // Delegated once, on the container — the rows are redrawn, the container
+  // is not, so this never accumulates duplicate listeners.
+  el('ord-confirm-table').addEventListener('input', onReviewEdit);
+  el('ord-confirm-table').addEventListener('change', onReviewEdit);
 
   // ── Manual add ─────────────────────────────────────────────
   el('ord-add-btn').addEventListener('click', openAddModal);
@@ -107,27 +118,79 @@ export function initOrdersTab(state) {
   }
 
   /**
-   * Called by the fulfilment panel after it reads a label, so one PDF read
-   * serves both the purchase plan and dispatch tracking.
+   * Read a label dropped on THIS tab. The Purchase tab still calls
+   * `ingestLabel` with its own parse, so there is one review either way.
+   */
+  async function onLabelFile(file) {
+    const drop = el('ord-drop');
+    const hint = 'Myntra label.pdf — one page per piece';
+    drop.innerHTML = `<p class="text-slate-300 text-sm font-medium">Reading ${esc(file.name)}…</p>
+      <p id="ord-drop-progress" class="text-slate-500 text-xs mt-1">page 1</p>`;
+    try {
+      const result = await parseLabelPdf(file, state.mappings, (p, total) => {
+        const line = el('ord-drop-progress');
+        if (line) line.textContent = `page ${p} of ${total}`;
+      });
+
+      // Say which of the two ways in actually failed, rather than guessing
+      // at the cause on the user's behalf.
+      const anyId = (result.pageRecords || []).some(r => r.forwardId);
+      if (!result.hasTextLayer && !anyId) {
+        notify.error('This PDF has no text layer and no barcode could be decoded — nothing to read.');
+        state.helpers.resetDrop(drop, hint);
+        return;
+      }
+      if (!anyId) {
+        notify.warning(`No tracking ID found on any of ${result.pages} page(s). The rows are listed anyway — type the IDs in.`);
+      } else if (result.barcodePages?.length) {
+        notify.info(`${result.barcodePages.length} tracking ID(s) read from the barcode because the text did not carry them.`);
+      }
+
+      ingestLabel(result, file.name);
+      state.helpers.resetDrop(drop, hint);
+    } catch (err) {
+      notify.error('Could not read the label PDF: ' + err.message);
+      state.helpers.resetDrop(drop, hint);
+    }
+  }
+
+  /**
+   * Turn a parse into the editable review.
+   *
+   * Pages with no tracking ID are listed too — dropping them and mentioning
+   * it in a warning loses the parcel, which is worse than showing a row with
+   * one blank field.
    */
   function ingestLabel(result, fileName) {
     const records = dispatchesFromLabel(result.pageRecords || [], { sourceFile: fileName });
-    if (!records.length) return;
+    if (!records.length) { notify.warning('Nothing readable on any page of that PDF'); return; }
+
     const { merged, withoutTrackingId } = mergeByForwardId(records);
-    pending = { fileName, merged, withoutTrackingId };
+    const rows = classifyAgainstSaved([...merged, ...withoutTrackingId], dispatches);
+    pending = { fileName, rows };
     renderConfirm();
   }
 
   async function commitLabel() {
     if (!pending) return;
+    const keep = pending.rows.filter(r => r._keep && r._dupe !== 'locked');
+    if (!keep.length) { notify.warning('Nothing ticked to save'); return; }
+
     const btn = el('ord-confirm-save');
     btn.disabled = true;
     try {
-      const keep = pending.merged.filter(m => m._keep !== false);
-      const saved = await store.saveDispatches(keep);
-      notify.success(`${saved} dispatch record(s) saved from ${pending.fileName}`);
-      if (pending.withoutTrackingId.length) {
-        notify.warning(`${pending.withoutTrackingId.length} page(s) had no tracking ID — add them by hand so nothing is lost.`);
+      const withId = keep.filter(r => r.forwardId.trim());
+      const withoutId = keep.filter(r => !r.forwardId.trim());
+
+      let saved = 0;
+      if (withId.length) saved += await store.saveDispatches(withId);
+      // No tracking ID means no parcel to match a return against later, so
+      // these are saved under a generated id and called out as incomplete.
+      for (const row of withoutId) { await store.addDispatch(row); saved++; }
+
+      notify.success(`${saved} order(s) saved from ${pending.fileName}`);
+      if (withoutId.length) {
+        notify.warning(`${withoutId.length} saved with no tracking ID — a return cannot find them until you add one.`);
       }
       pending = null;
       el('ord-confirm').classList.add('hidden');
@@ -448,43 +511,188 @@ export function initOrdersTab(state) {
       ${!flagged.length ? '<p class="text-slate-600 text-xs px-4 py-2">Nobody is over the threshold — showing the busiest customers.</p>' : ''}`;
   }
 
+  // Which row property each editable cell writes to. `customer.*` are
+  // nested, and changing either of them re-keys the record.
+  const EDIT_FIELDS = {
+    forwardId: { path: 'forwardId', upper: true },
+    orderId: { path: 'orderId', upper: true },
+    sku: { path: 'sellerSkuCode' },
+    qty: { path: 'qty', number: true },
+    customer: { path: 'customer.name', rekey: true },
+    address: { path: 'customer.address', rekey: true },
+    date: { path: 'dispatchDate' }
+  };
+
+  const SOURCE_BADGE = {
+    text: '<span class="ord-src" title="printed on the label">text</span>',
+    barcode: '<span class="ord-src ord-src-bar" title="decoded from the barcode image">barcode</span>',
+    manual: '<span class="ord-src ord-src-man" title="you typed this">typed</span>'
+  };
+
+  function dupeFlag(r) {
+    if (r._dupe === 'locked') {
+      return `<span class="ord-lock" title="a return is already recorded against this parcel">🔒 ${esc(RETURN_TYPE_LABELS[r._existingReturn] || 'returned')} — locked</span>`;
+    }
+    if (r._dupe === 'exists') return '<span class="ord-dupe">already saved — tick to update</span>';
+    return '';
+  }
+
+  function noteCell(r) {
+    const dupe = dupeFlag(r);
+    const missing = r.missing?.length ? `<span class="ord-flag">${esc(r.missing.join(', '))}</span>` : '';
+    return (dupe + ' ' + missing).trim() || '<span class="zm-muted">—</span>';
+  }
+
   function renderConfirm() {
     const p = pending;
     const box = el('ord-confirm');
     box.classList.remove('hidden');
-    const incomplete = p.merged.filter(m => m.missing?.length).length;
+
+    const noId = p.rows.filter(r => !r.forwardId).length;
+    const locked = p.rows.filter(r => r._dupe === 'locked').length;
+    const dupes = p.rows.filter(r => r._dupe === 'exists').length;
     el('ord-confirm-note').textContent =
-      `${p.merged.length} parcel(s) from ${p.fileName}` +
-      (incomplete ? ` · ${incomplete} missing some details` : '') +
-      (p.withoutTrackingId.length ? ` · ${p.withoutTrackingId.length} page(s) with no tracking ID` : '');
+      `${p.rows.length} parcel(s) from ${p.fileName}` +
+      (noId ? ` · ${noId} with no tracking ID` : '') +
+      (dupes ? ` · ${dupes} already saved` : '') +
+      (locked ? ` · ${locked} locked (already returned)` : '') +
+      ' · edit anything below before saving';
+
+    el('ord-sku-list').innerHTML = state.mappings
+      .map(m => `<option value="${esc(m.sellerSkuCode)}"></option>`).join('');
+
+    // One class attribute only — a second one is ignored by the parser, so
+    // the per-column width has to be merged in here rather than appended.
+    const cell = (i, field, value, cls = '', attrs = '') =>
+      `<input data-ord-edit="${field}" data-ord-i="${i}" value="${esc(value)}" ${attrs}
+        class="ord-cell ${cls}${value ? '' : ' ord-cell-empty'}">`;
 
     el('ord-confirm-table').innerHTML = `
       <table class="w-full text-sm">
         <thead class="sticky top-0 z-10 bg-slate-900"><tr class="text-slate-500 text-[10px] uppercase tracking-wide border-b border-white/5">
-          <th class="px-3 py-2 text-left">Keep</th>
-          <th class="px-3 py-2 text-left">Forward ID</th>
-          <th class="px-3 py-2 text-left">SellerSku</th>
-          <th class="px-3 py-2 text-right">Qty</th>
-          <th class="px-3 py-2 text-left">Customer</th>
-          <th class="px-3 py-2 text-left">Missing</th>
+          <th class="px-2 py-2 text-left">Keep</th>
+          <th class="px-2 py-2 text-left">Forward tracking ID</th>
+          <th class="px-2 py-2 text-left">Order ID</th>
+          <th class="px-2 py-2 text-left">SellerSkuCode</th>
+          <th class="px-2 py-2 text-left">Qty</th>
+          <th class="px-2 py-2 text-left">Customer</th>
+          <th class="px-2 py-2 text-left">Delivery address</th>
+          <th class="px-2 py-2 text-left">Dispatched</th>
+          <th class="px-2 py-2 text-left">Notes</th>
         </tr></thead>
-        <tbody>${p.merged.map((m, i) => `
-          <tr class="border-b border-white/5">
-            <td class="px-3 py-1.5"><input type="checkbox" data-ord-keep="${i}" ${m._keep === false ? '' : 'checked'} class="accent-emerald-500"></td>
-            <td class="px-3 py-1.5 text-slate-200 zm-mono">${esc(m.forwardId)}</td>
-            <td class="px-3 py-1.5 text-slate-400">${esc(m.sellerSkuCode) || '—'}</td>
-            <td class="px-3 py-1.5 text-right text-slate-300">${m.qty}</td>
-            <td class="px-3 py-1.5 text-slate-400 max-w-[160px] truncate">${esc(m.customer?.name || m.customer?.label || '—')}</td>
-            <td class="px-3 py-1.5">${m.missing?.length ? `<span class="ord-flag">${esc(m.missing.join(', '))}</span>` : '<span class="zm-muted">—</span>'}</td>
+        <tbody>${p.rows.map((r, i) => `
+          <tr class="border-b border-white/5${r._dupe === 'locked' ? ' ord-row-locked' : ''}">
+            <td class="px-2 py-1.5">
+              <input type="checkbox" data-ord-keep="${i}" ${r._keep ? 'checked' : ''}
+                ${r._dupe === 'locked' ? 'disabled' : ''} class="accent-emerald-500">
+            </td>
+            <td class="px-2 py-1.5 whitespace-nowrap">
+              ${cell(i, 'forwardId', r.forwardId, 'zm-mono w-44', 'placeholder="type the number"')}
+              ${SOURCE_BADGE[r.forwardIdSource] || ''}
+            </td>
+            <td class="px-2 py-1.5">${cell(i, 'orderId', r.orderId, 'w-32')}</td>
+            <td class="px-2 py-1.5">${cell(i, 'sku', r.sellerSkuCode, 'w-40', 'list="ord-sku-list" autocomplete="off"')}</td>
+            <td class="px-2 py-1.5">${cell(i, 'qty', r.qty, 'w-16', 'type="number" min="1"')}</td>
+            <td class="px-2 py-1.5">${cell(i, 'customer', r.customer?.name || '', 'w-36', 'placeholder="masked on label"')}</td>
+            <td class="px-2 py-1.5">${cell(i, 'address', r.customer?.address || '', 'w-48')}</td>
+            <td class="px-2 py-1.5">${cell(i, 'date', r.dispatchDate, 'w-36', 'type="date"')}</td>
+            <td class="px-2 py-1.5 whitespace-nowrap" data-ord-note="${i}">${noteCell(r)}</td>
           </tr>`).join('')}
         </tbody>
       </table>`;
 
-    el('ord-confirm-table').onchange = e => {
-      const cb = e.target.closest('input[data-ord-keep]');
-      if (cb) pending.merged[+cb.dataset.ordKeep]._keep = cb.checked;
-    };
   }
 
-  return { render, refresh, ingestLabel, closeReturnModal, getDispatches: () => dispatches };
+  /** Every edit lands on the pending row and nowhere else until Save. */
+  function onReviewEdit(e) {
+    const cb = e.target.closest('input[data-ord-keep]');
+    if (cb) { pending.rows[+cb.dataset.ordKeep]._keep = cb.checked; return; }
+
+    const input = e.target.closest('input[data-ord-edit]');
+    if (!input) return;
+    const row = pending.rows[+input.dataset.ordI];
+    if (!row) return;
+    const spec = EDIT_FIELDS[input.dataset.ordEdit];
+    if (!spec) return;
+
+    let value = input.value.trim();
+    if (spec.upper) value = value.toUpperCase();
+
+    if (spec.number) {
+      row.qty = Math.max(1, Math.floor(Number(value) || 1));
+    } else if (spec.path.startsWith('customer.')) {
+      row.customer = { ...(row.customer || {}), [spec.path.slice(9)]: value };
+    } else {
+      row[spec.path] = value;
+      if (spec.path === 'sellerSkuCode') {
+        // A corrected SKU has to bring its ZM code and colour with it, or the
+        // record points at a style that does not exist.
+        const known = state.mappings.find(m =>
+          String(m.sellerSkuCode).toLowerCase() === value.toLowerCase());
+        row.zmCode = known?.zmCode || '';
+        row.colourName = known?.colourName || '';
+      }
+      if (spec.path === 'forwardId') {
+        row.forwardIdSource = value ? 'manual' : '';
+        // A typed ID can collide with something already saved, so the
+        // duplicate state is re-tested rather than left at what the file said.
+        const before = row._dupe;
+        Object.assign(row, classifyAgainstSaved([{ ...row, _keep: row._keep }], dispatches)[0]);
+        // Re-classifying can untick the row. The checkbox has to follow, or
+        // the screen says "will save" while the state says otherwise.
+        if (row._dupe !== before) refreshRowState(+input.dataset.ordI, row);
+      }
+    }
+
+    // Re-key on a name or address change, then clear the flags for whatever
+    // is now filled in.
+    if (spec.rekey || spec.path === 'orderId') Object.assign(row, rekeyDispatch(row));
+    row.missing = (row.missing || []).filter(f => {
+      if (f === 'forwardId') return !row.forwardId;
+      if (f === 'orderId') return !row.orderId;
+      if (f === 'customerName') return !row.customer?.name;
+      if (f === 'address') return !row.customer?.address;
+      return true;
+    });
+
+    const note = el('ord-confirm-table').querySelector?.(`[data-ord-note="${input.dataset.ordI}"]`);
+    if (note) note.innerHTML = noteCell(row);
+    renderConfirmMeta();
+  }
+
+  /**
+   * Bring one row's tick box and warning back in line with its state, without
+   * redrawing the table — you may be mid-word in one of its inputs.
+   */
+  function refreshRowState(i, row) {
+    const table = el('ord-confirm-table');
+    const cb = table.querySelector?.(`input[data-ord-keep="${i}"]`);
+    if (cb) {
+      cb.checked = !!row._keep;
+      cb.disabled = row._dupe === 'locked';
+    }
+    const tr = cb?.closest?.('tr');
+    if (tr) tr.classList.toggle('ord-row-locked', row._dupe === 'locked');
+  }
+
+  /** Redraw only the parts that change as you type — never the inputs. */
+  function renderConfirmMeta() {
+    const p = pending;
+    if (!p) return;
+    const noId = p.rows.filter(r => !r.forwardId).length;
+    const dupes = p.rows.filter(r => r._dupe === 'exists').length;
+    const locked = p.rows.filter(r => r._dupe === 'locked').length;
+    el('ord-confirm-note').textContent =
+      `${p.rows.length} parcel(s) from ${p.fileName}` +
+      (noId ? ` · ${noId} with no tracking ID` : '') +
+      (dupes ? ` · ${dupes} already saved` : '') +
+      (locked ? ` · ${locked} locked (already returned)` : '') +
+      ` · ${p.rows.filter(r => r._keep && r._dupe !== 'locked').length} ticked to save`;
+  }
+
+  return {
+    render, refresh, ingestLabel, closeReturnModal,
+    getDispatches: () => dispatches,
+    getPendingRows: () => pending?.rows || []
+  };
 }

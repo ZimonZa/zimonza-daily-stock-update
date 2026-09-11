@@ -54,6 +54,10 @@ export function dispatchFromPageRecord(rec, { sourceFile = '', dispatchDate = ''
 
   return {
     forwardId: fields.forwardId || '',
+    // Where the tracking ID came from: the printed digits, the barcode
+    // image, or a person typing it in. Shown in the review so a decoded
+    // value is never mistaken for one the label actually printed.
+    forwardIdSource: fields.forwardIdSource || (fields.forwardId ? 'text' : ''),
     orderId: fields.orderId || '',
     customer: {
       name: fields.customerName || '',
@@ -219,6 +223,89 @@ export function offenderSummary(dispatches, { flagAbove = 0.4, minOrders = 3 } =
   }), { customers: 0, orders: 0, rto: 0, customerReturn: 0, fakeReturn: 0, flagged: 0 });
 
   return { rows, totals };
+}
+
+/** One spelling for a tracking ID, so two ways of writing it compare equal. */
+export const normForwardId = (id) =>
+  String(id ?? '').trim().toUpperCase().replace(/\s+/g, '');
+
+/**
+ * Classify each parsed row against what is already saved.
+ *
+ *   new    — not seen before; save it
+ *   exists — saved already, no return recorded; may be updated
+ *   locked — saved already AND a return is recorded
+ *
+ * `locked` is the important one. A record built from a freshly-read label
+ * says `shipped` with no return, so saving it over a parcel that came back
+ * would erase the return. Dropping the same PDF twice is an easy accident,
+ * so the row is refused rather than trusted to the person clicking.
+ */
+export function classifyAgainstSaved(rows, saved) {
+  const byId = new Map();
+  for (const d of saved || []) {
+    const k = normForwardId(d.forwardId);
+    if (k) byId.set(k, d);
+  }
+
+  return (rows || []).map(row => {
+    const k = normForwardId(row.forwardId);
+    const hit = k ? byId.get(k) : null;
+    if (!hit) return { ...row, _dupe: 'new', _keep: row._keep !== false };
+
+    const hasReturn = !!hit.return?.type;
+    return {
+      ...row,
+      _dupe: hasReturn ? 'locked' : 'exists',
+      _existingId: hit.id || '',
+      _existingReturn: hasReturn ? hit.return.type : '',
+      _update: true,
+      // Neither is ticked by default: an update is a deliberate act, and a
+      // locked row is not an act at all.
+      _keep: false
+    };
+  });
+}
+
+/**
+ * What actually gets written for one dispatch.
+ *
+ * Two things are stripped. Fields beginning `_` belong to the review table
+ * and have no business in the database. And on an UPDATE, `status` and
+ * `return` are dropped entirely: a record built from a freshly-read label
+ * always carries `status: 'shipped'` and `return: null`, so writing those
+ * over a parcel that has already come back would erase the return — and a
+ * fake-return finding is the single most expensive thing in here to lose.
+ *
+ * Correcting a customer's name must never move a parcel back to shipped.
+ */
+export function dispatchWritePayload(record) {
+  const out = {};
+  const isUpdate = record?._update === true;
+  for (const [k, v] of Object.entries(record || {})) {
+    if (k.startsWith('_')) continue;
+    if (isUpdate && (k === 'status' || k === 'return')) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * Recompute the offender key after someone edits the review.
+ *
+ * The key is derived from name → address → order ID at parse time. Typing a
+ * customer name into a row that only had an address has to move that record
+ * into the name-keyed group, or the repeat-returner counts are grouped on
+ * evidence that is no longer what the record says.
+ */
+export function rekeyDispatch(dispatch) {
+  const d = dispatch || {};
+  const { key, keyType, label } = offenderKey({
+    customerName: d.customer?.name,
+    address: d.customer?.address,
+    orderId: d.orderId
+  });
+  return { ...d, customer: { ...(d.customer || {}), key, keyType, label } };
 }
 
 /** Find a dispatch by tracking ID, tolerant of case and stray spaces. */

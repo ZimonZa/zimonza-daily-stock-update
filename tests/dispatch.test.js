@@ -1,10 +1,11 @@
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 globalThis.window = globalThis;
 
-import { extractDispatchFields } from './myntra-labels.js';
+import { extractDispatchFields, parseLabelPdf } from './myntra-labels.js';
 import {
   offenderKey, dispatchFromPageRecord, dispatchesFromLabel, mergeByForwardId,
-  applyReturn, offenderSummary, findByForwardId
+  applyReturn, offenderSummary, findByForwardId,
+  classifyAgainstSaved, rekeyDispatch, dispatchWritePayload, normForwardId
 } from './myntra-dispatch.js';
 import { generateInventoryUpdate } from './myntra.js';
 import { availableReturnStock } from './myntra-returns.js';
@@ -203,6 +204,92 @@ eq('and the row says so', belowGap.rows[0].status, 'returns_only');
 
 // Declaring is not consuming
 eq('the register is untouched by generating', register.find(r => r.id === 'x').qty, 4);
+
+// ════ 7. Duplicate guard — the data-loss rule ════
+const saved = [
+  { id: 'a', forwardId: 'SF001', return: null },
+  { id: 'b', forwardId: 'SF002', return: { type: RETURN_TYPES.FAKE_RETURN, returnId: 'R9' } }
+];
+const classed = classifyAgainstSaved(
+  [{ forwardId: 'SF003' }, { forwardId: 'sf001' }, { forwardId: ' SF 002 ' }], saved);
+
+eq('an unseen tracking ID is new', classed[0]._dupe, 'new');
+ok('and is ticked to save', classed[0]._keep === true);
+eq('a saved ID with no return can be updated', classed[1]._dupe, 'exists');
+ok('case does not hide a duplicate', classed[1]._existingId === 'a');
+ok('an update is not ticked by default', classed[1]._keep === false);
+eq('a saved ID WITH a return is locked', classed[2]._dupe, 'locked');
+eq('and says what came back', classed[2]._existingReturn, RETURN_TYPES.FAKE_RETURN);
+ok('spacing does not hide a duplicate either', classed[2]._existingId === 'b');
+
+eq('normForwardId collapses spacing and case', normForwardId(' sf 12 34 '), 'SF1234');
+
+// ════ 8. The write payload — what actually reaches Firestore ════
+const fresh = { forwardId: 'SF9', status: 'shipped', return: null, qty: 2, _keep: true, _dupe: 'new' };
+const asNew = dispatchWritePayload(fresh);
+ok('a new record keeps its status', asNew.status === 'shipped');
+ok('review-only fields never reach the database', !('_keep' in asNew) && !('_dupe' in asNew));
+
+const asUpdate = dispatchWritePayload({ ...fresh, _update: true });
+ok('THE RULE: an update carries no status', !('status' in asUpdate));
+ok('THE RULE: an update carries no return', !('return' in asUpdate));
+ok('but still carries the details being corrected', asUpdate.qty === 2 && asUpdate.forwardId === 'SF9');
+
+// ════ 9. Re-keying after an edit ════
+const addrKeyed = dispatchFromPageRecord({
+  page: 1, forwardId: 'SF5', orderId: 'O5', customerName: '', address: 'Delhi 110085', missing: ['customerName']
+});
+eq('grouped on the address to begin with', addrKeyed.customer.keyType, 'address');
+const named = rekeyDispatch({ ...addrKeyed, customer: { ...addrKeyed.customer, name: 'Asha Devi' } });
+eq('a typed name re-groups the record', named.customer.keyType, 'name');
+eq('and the key follows it', named.customer.key, 'name:asha devi');
+eq('the label follows too', named.customer.label, 'Asha Devi');
+
+const noneKeyed = rekeyDispatch({ orderId: 'O7', customer: { name: '', address: '' } });
+eq('with nothing but an order ID it falls back to that', noneKeyed.customer.keyType, 'order');
+
+// ════ 10. Where the tracking ID came from ════
+eq('a printed ID is marked as text',
+  dispatchFromPageRecord({ page: 1, forwardId: 'SF7', forwardIdSource: 'text' }).forwardIdSource, 'text');
+eq('a decoded ID is marked as barcode',
+  dispatchFromPageRecord({ page: 1, forwardId: 'SF7', forwardIdSource: 'barcode' }).forwardIdSource, 'barcode');
+eq('no ID means no claim about its source',
+  dispatchFromPageRecord({ page: 1, forwardId: '' }).forwardIdSource, '');
+
+// ════ 11. The barcode fallback in parseLabelPdf ════
+// Page 1 prints its tracking ID; page 2 does not, so only page 2 may cost a
+// rasterise. Cheap answers first is the whole design.
+globalThis.__PDF_PAGES = [
+  'AWB: SF1234567890123 Ship To: Priya Sharma Mumbai 400053 ZM-11-Purple',
+  'Ship To: Ravi Kumar Delhi 110085 ZM-11-Purple'
+];
+const fakeFile = { name: 'label.pdf', arrayBuffer: async () => new ArrayBuffer(8) };
+const maps = [{ sellerSkuCode: 'ZM-11-Purple', zmCode: 'ZM-11', colourName: 'Purple' }];
+
+const asked = [];
+const stubDecoder = async (page) => {
+  asked.push(page._page);
+  return page._page === 2 ? { value: 'SF9999888877776', format: 'code_128' } : null;
+};
+
+const withBarcode = await parseLabelPdf(fakeFile, maps, null,
+  { barcodeFallback: true, decodeBarcode: stubDecoder });
+
+eq('the decoder is asked ONLY about the page with no printed ID', asked, [2]);
+eq('the printed ID is used as-is', withBarcode.pageRecords[0].forwardId, 'SF1234567890123');
+eq('and marked as coming from text', withBarcode.pageRecords[0].forwardIdSource, 'text');
+eq('the decoded ID fills the gap', withBarcode.pageRecords[1].forwardId, 'SF9999888877776');
+eq('and is marked as coming from the barcode', withBarcode.pageRecords[1].forwardIdSource, 'barcode');
+ok('a decoded page no longer reports a missing tracking ID',
+  !withBarcode.pageRecords[1].missing.includes('forwardId'), JSON.stringify(withBarcode.pageRecords[1].missing));
+eq('and the pages that needed decoding are reported', withBarcode.barcodePages, [2]);
+
+const noBarcode = await parseLabelPdf(fakeFile, maps, null, { barcodeFallback: false });
+eq('with the fallback off nothing is decoded', noBarcode.pageRecords[1].forwardId, '');
+ok('and the gap is still flagged', noBarcode.pageRecords[1].missing.includes('forwardId'));
+eq('the fulfilment aggregate is unchanged either way', noBarcode.items, withBarcode.items);
+eq('both pieces still counted', noBarcode.items[0].qty, 2);
+delete globalThis.__PDF_PAGES;
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

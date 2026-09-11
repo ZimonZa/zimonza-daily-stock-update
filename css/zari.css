@@ -861,8 +861,70 @@ td.text-right, th.text-right { font-variant-numeric: tabular-nums; }
 /* Outstanding on a purchase order */
 .pur-short { color: var(--bad); font-weight: 600; }
 
+/* ── The editable label review ────────────────────────────────
+   Every cell is an input, so they have to read as a table and not as a
+   wall of boxes: no chrome at rest, chrome on focus. */
+.ord-cell {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-size: 12px;
+  color: var(--silk);
+  font-family: inherit;
+  max-width: 100%;
+}
+.ord-cell:hover  { border-color: var(--ink-line-soft); background: rgba(255,255,255,0.02); }
+.ord-cell:focus  {
+  outline: none;
+  border-color: var(--zari);
+  background: rgba(217,164,65,0.07);
+  box-shadow: 0 0 0 2px rgba(217,164,65,0.16);
+}
+/* An empty cell must announce itself — a blank box looks like a filled one */
+.ord-cell-empty { border-color: rgba(155,143,212,0.28); border-style: dashed; }
+.ord-cell::placeholder { color: var(--silk-4); opacity: 0.7; }
+
+/* Where a tracking ID came from. A decoded barcode is not the same
+   claim as a number the label actually printed. */
+.ord-src {
+  display: inline-block; font-family: var(--font-mono);
+  font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 1px 5px; border-radius: 4px; margin-left: 5px; vertical-align: middle;
+  background: rgba(255,255,255,0.05); color: var(--silk-4);
+  border: 1px solid var(--ink-line-soft);
+}
+.ord-src-bar { background: rgba(217,164,65,0.13); color: var(--foil-button); border-color: rgba(217,164,65,0.32); }
+.ord-src-man { background: rgba(61,190,139,0.12); color: #7FD9B4; border-color: rgba(61,190,139,0.28); }
+
+/* Already in the register */
+.ord-dupe {
+  display: inline-block; font-size: 10.5px; white-space: nowrap;
+  padding: 2px 7px; border-radius: 999px;
+  background: rgba(217,164,65,0.11); color: var(--foil-button);
+  border: 1px solid rgba(217,164,65,0.28);
+}
+/* A parcel that already came back. This one cannot be overwritten. */
+.ord-lock {
+  display: inline-block; font-size: 10.5px; font-weight: 600; white-space: nowrap;
+  padding: 2px 7px; border-radius: 999px;
+  background: rgba(229,86,91,0.12); color: #F0999C;
+  border: 1px solid rgba(229,86,91,0.30);
+}
+.ord-row-locked { background: rgba(229,86,91,0.05); }
+.ord-row-locked .ord-cell { color: var(--silk-4); }
+
 .light-mode .ord-flag     { background: rgba(93,78,160,0.10);  color: #4A3E80; }
 .light-mode .ord-keytype  { background: rgba(0,0,0,0.05);      color: #6E6553; }
 .light-mode .ord-row-fake { background: rgba(229,86,91,0.07); }
 .light-mode .ord-effect-ok  { background: rgba(16,120,85,0.09);  color: #14634A; }
 .light-mode .ord-effect-bad { background: rgba(190,40,45,0.08);  color: #9B2226; }
+.light-mode .ord-cell       { color: #241F16; }
+.light-mode .ord-cell:hover { border-color: rgba(0,0,0,0.12); background: rgba(0,0,0,0.02); }
+.light-mode .ord-cell-empty { border-color: rgba(93,78,160,0.35); }
+.light-mode .ord-src        { background: rgba(0,0,0,0.05); color: #6E6553; }
+.light-mode .ord-src-bar    { background: rgba(160,110,20,0.11); color: #7A5410; }
+.light-mode .ord-src-man    { background: rgba(16,120,85,0.10);  color: #14634A; }
+.light-mode .ord-dupe       { background: rgba(160,110,20,0.10); color: #7A5410; }
+.light-mode .ord-lock       { background: rgba(190,40,45,0.09);  color: #9B2226; }
+.light-mode .ord-row-locked { background: rgba(229,86,91,0.06); }

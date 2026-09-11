@@ -5,6 +5,7 @@
 import { db } from './firebase-config.js';
 import { COLLECTIONS, DEFAULT_PARTIES, GST_RATE_DEFAULTS, HSN_DEFAULTS, PURCHASE_DOC_TYPES, DISPATCH_STATUS } from './constants.js';
 import { normZmCode } from './utils.js';
+import { dispatchWritePayload } from './myntra-dispatch.js';
 import {
   doc, setDoc, getDoc, getDocs, deleteDoc, updateDoc,
   collection, query, orderBy, limit, serverTimestamp,
@@ -342,14 +343,25 @@ export function financialYearLabel(date = new Date()) {
 // Keyed by forward tracking ID, so a returning parcel is found by the
 // number printed on it.
 
-const dispatchId = (forwardId) => String(forwardId).trim().toUpperCase().replace(/[/\#?s]+/g, '_');
+// The tracking ID is the document id, so it must survive punctuation and
+// whitespace identically every time — "SF 123/456" and "SF123456" are one
+// parcel, and must not become two documents.
+const dispatchId = (forwardId) => String(forwardId).trim().toUpperCase().replace(/[/\\#?\s]+/g, '_');
 
-/** Save dispatch records (chunked). Existing tracking IDs are overwritten. */
+/**
+ * Save dispatch records (chunked).
+ *
+ * A record marked `_update` patches details only. Re-reading a label must
+ * never push `status: 'shipped'` and `return: null` over a parcel that has
+ * already come back — that would erase the return, and with it the evidence
+ * behind a fake-return finding.
+ */
 export async function saveDispatches(records) {
   const withId = (records || []).filter(r => r.forwardId);
   const operations = withId.map(r => (batch) => {
     const id = dispatchId(r.forwardId);
-    batch.set(doc(db, COLLECTIONS.DISPATCHES, id), { ...r, id, updatedAt: serverTimestamp() }, { merge: true });
+    batch.set(doc(db, COLLECTIONS.DISPATCHES, id),
+      { ...dispatchWritePayload(r), id, updatedAt: serverTimestamp() }, { merge: true });
   });
   await runChunkedBatch(operations);
   return withId.length;
@@ -359,7 +371,7 @@ export async function saveDispatches(records) {
 export async function addDispatch(record) {
   const col = collection(db, COLLECTIONS.DISPATCHES);
   const ref = record.forwardId ? doc(db, COLLECTIONS.DISPATCHES, dispatchId(record.forwardId)) : doc(col);
-  await setDoc(ref, { ...record, id: ref.id, updatedAt: serverTimestamp() }, { merge: true });
+  await setDoc(ref, { ...dispatchWritePayload(record), id: ref.id, updatedAt: serverTimestamp() }, { merge: true });
   return ref.id;
 }
 

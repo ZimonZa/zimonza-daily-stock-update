@@ -65,14 +65,23 @@ function build() {
     ...[...imported].filter(n => !special[n]).map(n => `export const ${n} = noop;`)
   ].join('\n'));
 
+  // A test drives this by setting globalThis.__PDF_PAGES to an array of
+  // page texts; with nothing set it behaves as an empty document.
   writeFileSync(join(sandbox, '_stub-pdfjs.js'), [
     "export const GlobalWorkerOptions = { workerSrc: '' };",
     'export const Util = { transform: () => [1,0,0,1,0,0] };',
-    'export const getDocument = () => ({ promise: Promise.resolve({',
-    '  numPages: 0,',
-    '  getPage: async () => ({ getTextContent: async () => ({ items: [] }),',
-    '                          getViewport: () => ({ width: 0, height: 0 }) })',
-    '}) });'
+    'export const getDocument = () => {',
+    '  const pages = globalThis.__PDF_PAGES || [];',
+    '  return { promise: Promise.resolve({',
+    '    numPages: pages.length,',
+    '    getPage: async (n) => ({',
+    '      _page: n,',
+    '      getTextContent: async () => ({ items: [{ str: pages[n - 1] ?? "" }] }),',
+    '      getViewport: () => ({ width: 600, height: 900 }),',
+    '      render: () => ({ promise: Promise.resolve() })',
+    '    })',
+    '  }) };',
+    '};'
   ].join('\n'));
 
   // Toasts must not need a DOM
@@ -145,7 +154,14 @@ for (const suite of suites) {
   const out = (r.stdout || '') + (r.stderr || '');
   const line = out.split('\n').filter(l => /passed,|clean\.|resolve\./.test(l)).pop() || '';
   const okRun = r.status === 0;
-  if (!okRun) { failures++; console.log(out.trim().split('\n').slice(-12).join('\n')); }
+  if (!okRun) {
+    failures++;
+    // Show the failures themselves, not just the tail — a suite that fails
+    // early would otherwise report nothing but its own summary line.
+    const lines = out.trim().split('\n');
+    const bad = lines.filter(l => /^\s*(FAIL|✗)|Error|error:/i.test(l));
+    console.log((bad.length ? bad : lines.slice(-12)).join('\n'));
+  }
   console.log(`${suite.replace('.test.js', '').padEnd(22)} ${okRun ? 'PASS' : 'FAIL'}  ${line.trim()}`);
 }
 

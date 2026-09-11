@@ -478,21 +478,27 @@
 
       <div class="p-6 space-y-4">
         <p class="text-slate-500 text-xs">
-          Dispatches are recorded when you drop a label in the <strong class="text-slate-400">Purchase</strong> tab.
-          Anything the label did not print is flagged so you can fill it in — nothing is guessed.
+          Drop a label here, or in the <strong class="text-slate-400">Purchase</strong> tab — either way you get the same review.
+          The tracking ID is read from the printed number, and from the <strong class="text-slate-400">barcode</strong> when the
+          text does not carry it. Anything the label did not print is flagged so you can type it in — nothing is guessed.
         </p>
 
-        <!-- Label review before saving -->
+        <!-- Label upload -->
+        <div id="ord-drop" class="drop-zone p-5 text-center cursor-pointer"
+          onclick="document.getElementById('ord-file').click()"></div>
+        <input type="file" id="ord-file" accept=".pdf" class="hidden">
+
+        <!-- Label review before saving — every cell is editable -->
         <div id="ord-confirm" class="hidden rounded-xl border border-emerald-500/25 bg-emerald-500/[0.05] overflow-hidden">
           <div class="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-white/5">
             <div class="flex-1 min-w-0">
-              <p class="text-white text-sm font-semibold">Record these dispatches?</p>
+              <p class="text-white text-sm font-semibold">Check these before saving — change anything that is wrong</p>
               <p id="ord-confirm-note" class="text-slate-400 text-xs"></p>
             </div>
             <button id="ord-confirm-cancel" class="btn-secondary text-xs py-2 px-3">Cancel</button>
-            <button id="ord-confirm-save" class="btn-primary text-xs py-2 px-3">Save selected</button>
+            <button id="ord-confirm-save" class="btn-primary text-xs py-2 px-3">Save ticked</button>
           </div>
-          <div id="ord-confirm-table" class="max-h-[40vh] overflow-auto"></div>
+          <div id="ord-confirm-table" class="max-h-[50vh] overflow-auto"></div>
         </div>
 
         <div id="ord-summary" class="grid grid-cols-2 sm:grid-cols-5 gap-3 hidden"></div>

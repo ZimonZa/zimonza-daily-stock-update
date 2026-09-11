@@ -6,6 +6,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { normZmCode, normColorKey } from './utils.js';
+import { decodeTrackingBarcode } from './label-barcode.js';
 
 // Same PDF.js build and worker the PDF → Excel page already uses.
 const PDFJS_URL = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.7.76/build/pdf.min.mjs';
@@ -142,12 +143,18 @@ export function aggregatePages(pageMatches) {
 
 /**
  * Read a label PDF end to end.
+ *
  * @param {File} file
  * @param {Array} mappings  state.mappings — the known SellerSkuCodes
  * @param {(page:number,total:number)=>void} onProgress
- * @returns {Promise<{pages:number, items:Array, unreadablePages:number[], hasTextLayer:boolean}>}
+ * @param {{barcodeFallback?:boolean, decodeBarcode?:Function}} opts
+ *   `barcodeFallback` rasterises and decodes the barcode on pages where the
+ *   printed text gave no tracking ID. `decodeBarcode` overrides the decoder,
+ *   so a test can run this path without a canvas.
+ * @returns {Promise<{pages:number, items:Array, unreadablePages:number[], hasTextLayer:boolean, pageRecords:Array, barcodePages:number[]}>}
  */
-export async function parseLabelPdf(file, mappings, onProgress) {
+export async function parseLabelPdf(file, mappings, onProgress, opts = {}) {
+  const { barcodeFallback = true, decodeBarcode = decodeTrackingBarcode } = opts;
   const pdfjsLib = await loadPdfJs();
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
@@ -155,6 +162,7 @@ export async function parseLabelPdf(file, mappings, onProgress) {
   const index = buildSkuIndex(mappings);
   const pageMatches = [];
   const pageRecords = [];
+  const barcodePages = [];
   let anyText = false;
 
   for (let p = 1; p <= pdf.numPages; p++) {
@@ -167,11 +175,27 @@ export async function parseLabelPdf(file, mappings, onProgress) {
     pageMatches.push(match);
     // One record per page for dispatch tracking. The aggregate above is
     // unchanged, so the fulfilment path sees exactly what it saw before.
-    pageRecords.push({ page: p, ...extractDispatchFields(text), sku: match });
+    const fields = extractDispatchFields(text);
+    fields.forwardIdSource = fields.forwardId ? 'text' : '';
+
+    // Only when the printed text gave nothing. Rasterising every page to
+    // re-read a number that is already printed would cost minutes for no
+    // extra answer.
+    if (!fields.forwardId && barcodeFallback) {
+      const hit = await decodeBarcode(page);
+      if (hit?.value) {
+        fields.forwardId = hit.value;
+        fields.forwardIdSource = 'barcode';
+        fields.missing = fields.missing.filter(f => f !== 'forwardId');
+        barcodePages.push(p);
+      }
+    }
+
+    pageRecords.push({ page: p, ...fields, sku: match });
   }
 
   const { items, unreadablePages } = aggregatePages(pageMatches);
-  return { pages: pdf.numPages, items, unreadablePages, hasTextLayer: anyText, pageRecords };
+  return { pages: pdf.numPages, items, unreadablePages, hasTextLayer: anyText, pageRecords, barcodePages };
 }
 
 // ═══════════════════════════════════════════════════════════════
