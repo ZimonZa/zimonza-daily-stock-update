@@ -1,8 +1,8 @@
 // ═══════════════════════════════════════════════════════════════
 // ZIMONZA — Myntra Label PDF Reader
 // Reads label.pdf and works out what has to go out.
-// Rule: ONE PAGE = ONE PIECE. Three pages carrying "ZM-11-Purple"
-// means three pieces of ZM-11-Purple.
+// A page is one PARCEL. Usually one piece, but Myntra prints the code
+// once per piece, so a page repeating it four times is four pieces.
 // ═══════════════════════════════════════════════════════════════
 
 import { normZmCode, normColorKey } from './utils.js';
@@ -73,66 +73,120 @@ function tidyGenericMatch(raw) {
 }
 
 /**
- * Identify the SKU on one page's text.
- * Known mapping codes win; the generic scan is the flagged fallback.
- * Returns { key, sellerSkuCode, zmCode, colourName, mapped } or null.
+ * Every SKU on one page's text, with how many PIECES of each.
+ *
+ * "One page = one piece" was wrong. A real label page can be one parcel
+ * holding several pieces, and Myntra prints the code once per piece:
+ *
+ *     ZM-36-Rani -
+ *     ZM-36-Rani -
+ *     ZM-36-Rani -
+ *     ZM-36-Rani -        Rs.41632.0  ← four lehengas, not one
+ *
+ * Counting that page as a single piece under-buys by three and records a
+ * dispatch of 1 against a parcel of 4, so a return of the other three can
+ * never be matched.
+ *
+ * Longest codes are consumed first — the index is sorted that way — so a
+ * short code that happens to be a substring of a longer one cannot steal
+ * its occurrences and be double-counted.
+ *
+ * @returns {Array<{key, sellerSkuCode, zmCode, colourName, mapped, count}>}
  */
-export function matchSkuOnPage(pageText, index) {
+export function matchSkusOnPage(pageText, index) {
   const text = String(pageText ?? '').replace(/\s+/g, ' ').trim();
-  if (!text) return null;
-  const upper = text.toUpperCase();
+  if (!text) return [];
+
+  const found = [];
+  let rest = text.toUpperCase();
 
   for (const entry of index.codes) {
-    if (upper.includes(entry.upper)) {
-      return {
+    let count = 0;
+    let first = -1;
+    let at;
+    while ((at = rest.indexOf(entry.upper)) !== -1) {
+      if (first === -1) first = at;
+      count++;
+      // Blank out what was matched so a shorter code cannot re-count it
+      rest = rest.slice(0, at) + ' '.repeat(entry.upper.length) + rest.slice(at + entry.upper.length);
+    }
+    if (count) {
+      found.push({
         key: entry.key,
         sellerSkuCode: entry.code,
         zmCode: normZmCode(entry.mapping.zmCode),
         colourName: entry.mapping.colourName,
-        mapped: true
-      };
+        mapped: true,
+        count,
+        at: first
+      });
     }
   }
+  if (found.length) {
+    // The index is sorted by code LENGTH so that longer codes match first.
+    // That order is meaningless to a reader, so hand them back in the order
+    // they appear on the page — otherwise "the page's SKU" is arbitrary.
+    found.sort((a, b) => a.at - b.at);
+    return found;
+  }
 
+  // Nothing in the mapping matched. Fall back to the generic scan, which is
+  // flagged so an unknown code is visibly unknown.
+  const byKey = new Map();
   GENERIC_SKU_RE.lastIndex = 0;
   let m;
   while ((m = GENERIC_SKU_RE.exec(text))) {
     const tidied = tidyGenericMatch(m[0]);
     if (!tidied) continue;
     const key = skuKey(tidied.zmCode, tidied.colourName);
-    // The mapping may hold this identity under different spacing/padding
     const known = index.byKey.get(key);
-    if (known) {
-      return {
-        key,
-        sellerSkuCode: known.sellerSkuCode,
-        zmCode: normZmCode(known.zmCode),
-        colourName: known.colourName,
-        mapped: true
-      };
-    }
-    return { key, ...tidied, mapped: false };
+    const row = known
+      ? { key, sellerSkuCode: known.sellerSkuCode, zmCode: normZmCode(known.zmCode), colourName: known.colourName, mapped: true }
+      : { key, ...tidied, mapped: false };
+    const seen = byKey.get(key);
+    if (seen) seen.count++;
+    else byKey.set(key, { ...row, count: 1 });
   }
-  return null;
+  return [...byKey.values()];
+}
+
+/**
+ * The first SKU on a page. Kept for callers that only want an identity and
+ * not a count.
+ */
+export function matchSkuOnPage(pageText, index) {
+  const all = matchSkusOnPage(pageText, index);
+  if (!all.length) return null;
+  const { count, ...first } = all[0];
+  return first;
 }
 
 /**
  * Aggregate per-page matches into one line per SKU.
- * qty is the number of pages — one page, one piece.
+ *
+ * `pageMatches[i]` is the ARRAY of SKUs found on page i+1, each with its own
+ * piece count, so a parcel holding four pieces contributes four.
  */
 export function aggregatePages(pageMatches) {
   const byKey = new Map();
   const unreadablePages = [];
 
-  pageMatches.forEach((match, i) => {
+  pageMatches.forEach((matches, i) => {
     const pageNo = i + 1;
-    if (!match) { unreadablePages.push(pageNo); return; }
-    const existing = byKey.get(match.key);
-    if (existing) {
-      existing.qty += 1;
-      existing.pages.push(pageNo);
-    } else {
-      byKey.set(match.key, { ...match, qty: 1, pages: [pageNo] });
+    // Tolerate a single match object, so an older caller still works
+    const list = Array.isArray(matches) ? matches : (matches ? [matches] : []);
+    if (!list.length) { unreadablePages.push(pageNo); return; }
+
+    for (const match of list) {
+      const pieces = Math.max(1, Number(match.count) || 1);
+      const existing = byKey.get(match.key);
+      if (existing) {
+        existing.qty += pieces;
+        if (!existing.pages.includes(pageNo)) existing.pages.push(pageNo);
+      } else {
+        const { count, ...rest } = match;
+        byKey.set(match.key, { ...rest, qty: pieces, pages: [pageNo] });
+      }
     }
   });
 
@@ -178,8 +232,11 @@ export async function parseLabelPdf(file, mappings, onProgress, opts = {}) {
     const lines = itemsToLines(tc.items);
     const text = lines.map(l => l.text).join(' ');
     if (text.trim()) anyText = true;
-    const match = matchSkuOnPage(text, index);
-    pageMatches.push(match);
+    // Every SKU on the page, each with its own piece count. A parcel can
+    // hold several pieces and prints its code once per piece.
+    const matches = matchSkusOnPage(text, index);
+    pageMatches.push(matches);
+    const pieces = matches.reduce((n, m) => n + (Number(m.count) || 1), 0);
 
     // One record per page for dispatch tracking. The aggregate above is
     // unchanged, so the fulfilment path sees exactly what it saw before.
@@ -189,20 +246,30 @@ export async function parseLabelPdf(file, mappings, onProgress, opts = {}) {
     const fields = looksLikeMyntraLabel(lines)
       ? extractMyntraFields(lines)
       : extractDispatchFields(text);
-    fields.forwardIdSource = fields.forwardId ? 'text' : '';
+    // Keep what the reader said about provenance — it may have said 'guess'.
+    // Overwriting that with 'text' made the "guess — check" badge dead code
+    // and, worse, made a guess look like a confident read.
+    if (!fields.forwardIdSource) fields.forwardIdSource = fields.forwardId ? 'text' : '';
+    const guessedId = fields.forwardIdSource === 'guess';
 
     // Normally only when the printed text gave nothing — rasterising every
     // page to re-read a number that is already printed would cost minutes
     // for no extra answer. `forceBarcode` overrides that and reads every
     // page, which also cross-checks the printed digits.
-    const wantBarcode = barcodeFallback && (forceBarcode || !fields.forwardId);
+    //
+    // A GUESS does not count as having an ID. On a real Myntra label the
+    // number under the barcode is artwork, not text, so the barcode is the
+    // only true source — letting a guess suppress that read would trade the
+    // right answer for a plausible one.
+    const wantBarcode = barcodeFallback && (forceBarcode || !fields.forwardId || guessedId);
     if (wantBarcode) {
       const hit = await decodeBarcode(page);
       if (hit?.value) {
-        if (!fields.forwardId) {
+        if (!fields.forwardId || guessedId) {
           fields.forwardId = hit.value;
           fields.forwardIdSource = 'barcode';
           fields.missing = fields.missing.filter(f => f !== 'forwardId');
+          delete fields.pageTextSample;
           barcodePages.push(p);
         } else if (hit.value !== fields.forwardId) {
           // The printed digits and the barcode disagree. Neither is
@@ -221,7 +288,13 @@ export async function parseLabelPdf(file, mappings, onProgress, opts = {}) {
       }
     }
 
-    pageRecords.push({ page: p, ...fields, sku: match });
+    pageRecords.push({
+      page: p, ...fields,
+      sku: matches[0] || null,
+      skus: matches,
+      // How many pieces this ONE page represents
+      pieces: pieces || 1
+    });
   }
 
   const { items, unreadablePages } = aggregatePages(pageMatches);

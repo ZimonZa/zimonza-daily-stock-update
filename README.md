@@ -99,7 +99,7 @@ Visit `http://localhost:8080`
 │   ├── myntra-purchase.js  ← Purchase cart, GST maths, bill history
 │   ├── myntra-returns.js   ← Customer returns & RTO register
 │   ├── invoice-pdf.js      ← GST bill PDF, pick slip PDF + previews
-│   ├── myntra-labels.js    ← label.pdf reader (one page = one piece)
+│   ├── myntra-labels.js    ← label.pdf reader (one page = one parcel)
 │   ├── pdf-merge.js        ← PDF sorter & merger (label/invoice grouping)
 │   ├── myntra-fulfilment.js← Label → RTO stock first, then purchase
 │   ├── myntra-dispatch.js  ← Dispatch records + return-abuse analytics

@@ -254,6 +254,72 @@ ok('the row survives with a flagged blank',
   failed.pageRecords[0].forwardId === '' && failed.pageRecords[0].missing.includes('forwardId'));
 delete globalThis.__PDF_PAGES;
 
+// ════ 7c. A page is a PARCEL, not automatically one piece ════
+// Page 4 of the real file prints "ZM-36-Rani -" four times and charges
+// Rs.41632 — four lehengas in one parcel. Counting it as one under-buys by
+// three and records a dispatch of 1 against a parcel of 4, so a return of the
+// other three could never be matched.
+const parcelMaps = [
+  { sellerSkuCode: 'ZM-36-Rani', zmCode: 'ZM-36', colourName: 'Rani' },
+  { sellerSkuCode: 'ZM-88-Chiku', zmCode: 'ZM-88', colourName: 'Chiku' }
+];
+const head = (extra) => [
+  'EK_E2E', 'KNU/KYP', '(208017)-(1509)', 'COD',
+  "Buyer's Name And Address", 'Amna', '69 Kalyanpur Kanpur 208017 India',
+  'If undelivered, Please return to', 'KUNTAL FASHION PRIVATE'
+].concat(extra).join(NL);
+
+globalThis.__PDF_PAGES = [head(['ZM-36-Rani -', 'ZM-36-Rani -', 'ZM-36-Rani -', 'ZM-36-Rani -'])];
+const four = await parseLabelPdf(file, parcelMaps, null, { barcodeFallback: false });
+eq('four printed codes are four pieces', four.items[0].qty, 4);
+eq('still one page', four.items[0].pages, [1]);
+eq('the dispatch record carries four', dispatchFromPageRecord(four.pageRecords[0], {}).qty, 4);
+
+// A MIXED parcel must not credit the whole total to whichever code came first
+globalThis.__PDF_PAGES = [head(['ZM-88-Chiku -', 'ZM-36-Rani -', 'ZM-36-Rani -'])];
+const mixed = await parseLabelPdf(file, parcelMaps, null, { barcodeFallback: false });
+eq('each code keeps its own count',
+  mixed.items.map(i => [i.sellerSkuCode, i.qty]).sort(),
+  [['ZM-36-Rani', 2], ['ZM-88-Chiku', 1]].sort());
+eq('SKUs come back in the order the PAGE prints them, not by code length',
+  mixed.pageRecords[0].skus.map(s => s.sellerSkuCode), ['ZM-88-Chiku', 'ZM-36-Rani']);
+const md = dispatchFromPageRecord(mixed.pageRecords[0], {});
+eq('the dispatch names the first-printed code', md.sellerSkuCode, 'ZM-88-Chiku');
+eq('THE RULE: and claims only ITS pieces, not the parcel total', md.qty, 1);
+eq('a mixed parcel is visibly mixed', md.mixedSkus, ['ZM-88-Chiku', 'ZM-36-Rani']);
+
+// A single-code page is completely unchanged
+globalThis.__PDF_PAGES = [head(['ZM-36-Rani -'])];
+const one = await parseLabelPdf(file, parcelMaps, null, { barcodeFallback: false });
+eq('one code is still one piece', one.items[0].qty, 1);
+ok('and carries no mixed list', !dispatchFromPageRecord(one.pageRecords[0], {}).mixedSkus);
+
+// ════ 7d. A GUESS is not an answer ════
+// The tracking number on a real Myntra label is barcode artwork, not text.
+// If a guessed ID were allowed to fill the field it would SUPPRESS the barcode
+// read — trading the only true source for a plausible one.
+const guessPage = head(['SF7788990011223', 'ZM-36-Rani -']);
+
+globalThis.__PDF_PAGES = [guessPage];
+let barcodeReads = 0;
+const gotBarcode = await parseLabelPdf(file, parcelMaps, null, {
+  decodeBarcode: async () => { barcodeReads++; return { value: 'MYEC1118733247', format: 'code_128' }; }
+});
+eq('THE RULE: a guess does NOT suppress the barcode read', barcodeReads, 1);
+eq('and the barcode wins', gotBarcode.pageRecords[0].forwardId, 'MYEC1118733247');
+eq('marked as decoded, not as printed', gotBarcode.pageRecords[0].forwardIdSource, 'barcode');
+ok('and the diagnostic is dropped once the real ID is known',
+  !gotBarcode.pageRecords[0].pageTextSample);
+
+globalThis.__PDF_PAGES = [guessPage];
+const stillGuess = await parseLabelPdf(file, parcelMaps, null, {
+  decodeBarcode: async () => ({ value: '', reason: 'no barcode found' })
+});
+eq('with no barcode the guess survives', stillGuess.pageRecords[0].forwardId, 'SF7788990011223');
+eq('and stays badged a guess, never promoted to "text"',
+  stillGuess.pageRecords[0].forwardIdSource, 'guess');
+delete globalThis.__PDF_PAGES;
+
 // ════ 8. A non-Myntra label still goes to the keyword reader ════
 const courier = itemsToLines(place(['AWB: SF1234567890123', 'Ship To: Ravi Kumar', 'Delhi 110085']));
 ok('a label with no Myntra marks is not claimed by the layout reader',

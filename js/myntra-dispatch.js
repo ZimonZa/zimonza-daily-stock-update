@@ -76,7 +76,18 @@ export function dispatchFromPageRecord(rec, { sourceFile = '', dispatchDate = ''
     sellerSkuCode,
     zmCode: sku ? normZmCode(sku.zmCode) : '',
     colourName: sku?.colourName || '',
-    qty: 1,                                    // one label page is one piece
+    // A page is one PARCEL, not automatically one piece: Myntra prints the
+    // code once per piece, so four ZM-36-Rani lines is four lehengas.
+    //
+    // On a page carrying two DIFFERENT codes the parcel total must not be
+    // credited to whichever one happened to come first — this record names
+    // one SKU, so it may only claim that SKU's own pieces.
+    qty: Math.max(1, Number(sku?.count) || Number(fields.pieces) || 1),
+    // Every code on the page, when there is more than one, so a mixed parcel
+    // is visibly mixed rather than silently reduced to its first line.
+    ...(Array.isArray(fields.skus) && fields.skus.length > 1
+      ? { mixedSkus: fields.skus.map(s => s.sellerSkuCode) }
+      : {}),
     dispatchDate: dispatchDate || today(),
     sourceFile,
     page: fields.page ?? null,
@@ -94,8 +105,10 @@ export function dispatchesFromLabel(pageRecords, opts = {}) {
 
 /**
  * Merge label pages that are the same physical parcel.
- * Myntra prints one page per piece, so two pages sharing a tracking ID
- * are two pieces in one shipment.
+ *
+ * A page normally IS the whole parcel, and carries its own piece count. Two
+ * pages sharing a tracking ID means the parcel was printed across both, so
+ * their pieces add up into one shipment.
  */
 export function mergeByForwardId(dispatches) {
   const byId = new Map();

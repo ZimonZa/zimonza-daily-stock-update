@@ -200,12 +200,12 @@ export function initFulfilmentPanel(state, tabs) {
 
       if (!result.hasTextLayer) {
         notify.error('No text found in this PDF. It looks like a scan — labels must be a text PDF.');
-        state.helpers.resetDrop(drop, 'Myntra label.pdf — one page per piece');
+        state.helpers.resetDrop(drop, 'Myntra label.pdf — one page per parcel');
         return;
       }
       if (!result.items.length) {
         notify.error(`No SellerSkuCodes found across ${result.pages} page(s). Expected codes like ZM-11-Purple.`);
-        state.helpers.resetDrop(drop, 'Myntra label.pdf — one page per piece');
+        state.helpers.resetDrop(drop, 'Myntra label.pdf — one page per parcel');
         return;
       }
 
@@ -227,11 +227,11 @@ export function initFulfilmentPanel(state, tabs) {
       if (result.unreadablePages.length) {
         notify.warning(`No SKU found on page(s) ${result.unreadablePages.slice(0, 8).join(', ')}${result.unreadablePages.length > 8 ? '…' : ''} — those pieces are not counted.`);
       }
-      state.helpers.resetDrop(drop, 'Myntra label.pdf — one page per piece');
+      state.helpers.resetDrop(drop, 'Myntra label.pdf — one page per parcel');
       render();
     } catch (err) {
       notify.error('Could not read the label PDF: ' + err.message);
-      state.helpers.resetDrop(drop, 'Myntra label.pdf — one page per piece');
+      state.helpers.resetDrop(drop, 'Myntra label.pdf — one page per parcel');
     }
   }
 

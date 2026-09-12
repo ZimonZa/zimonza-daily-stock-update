@@ -19,7 +19,7 @@
 const ZXING_URL = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/+esm';
 
 // Courier labels use 1-D symbologies; Code 128 is near-universal for AWBs.
-const FORMATS_NATIVE = ['code_128', 'code_39', 'codabar', 'itf'];
+const FORMATS_NATIVE = ['code_128', 'code_39', 'codabar', 'itf', 'data_matrix', 'qr_code', 'pdf417'];
 
 let nativeSupport = null;   // null = not asked yet
 let zxingPromise = null;
@@ -63,11 +63,9 @@ async function renderPageToCanvas(pdfPage, scale) {
 async function decodeNative(canvas) {
   const detector = new BarcodeDetector({ formats: FORMATS_NATIVE });
   const found = await detector.detect(canvas);
-  if (!found?.length) return null;
-  // The longest value is the tracking ID — short codes on a label are
-  // things like the route or the size, not the AWB.
-  const best = found.slice().sort((a, b) => String(b.rawValue).length - String(a.rawValue).length)[0];
-  return best?.rawValue ? { value: String(best.rawValue), format: best.format || 'barcode' } : null;
+  // Every value it saw — picking the right one is trackingFromDecoded's job,
+  // and a label carries several codes that are not the AWB.
+  return (found || []).map(f => String(f.rawValue ?? '')).filter(Boolean);
 }
 
 /**
@@ -98,15 +96,43 @@ export function isNotFound(zx, err) {
   return /no\s+multiformat|not\s*found/i.test(err.message || '');
 }
 
-function zxingHints(zx) {
-  const hints = new Map();
-  hints.set(zx.DecodeHintType.POSSIBLE_FORMATS, [
+/**
+ * The 2D square on a Myntra label is worth reading too — it carries shipment
+ * data that usually contains the AWB, so if the 1D strip will not scan the
+ * DataMatrix may still give up the number.
+ */
+function zxingHints(zx, { twoD = true } = {}) {
+  const formats = [
     zx.BarcodeFormat.CODE_128, zx.BarcodeFormat.CODE_39,
     zx.BarcodeFormat.CODABAR, zx.BarcodeFormat.ITF
-  ]);
+  ];
+  if (twoD) formats.push(zx.BarcodeFormat.DATA_MATRIX, zx.BarcodeFormat.QR_CODE, zx.BarcodeFormat.PDF_417);
+  const hints = new Map();
+  hints.set(zx.DecodeHintType.POSSIBLE_FORMATS, formats);
   hints.set(zx.DecodeHintType.TRY_HARDER, true);
   return hints;
 }
+
+/**
+ * Bands of the page to try, as [topFraction, heightFraction].
+ *
+ * A full A4 page is mostly text; the barcode is maybe 8% of it. ZXing's 1D
+ * reader samples a limited set of rows, so on a busy full page it can miss a
+ * strip it would read easily on its own. Cropping to a band removes the
+ * noise and multiplies the sampled rows that actually cross the barcode.
+ *
+ * The whole page is tried first because it is one pass and usually enough.
+ * The rest walk down the page, upper third first — where couriers print it.
+ */
+const BANDS = [
+  [0, 1],        // whole page
+  [0, 0.40],     // the header block, where the AWB strip lives
+  [0.05, 0.25],
+  [0.15, 0.30],
+  [0, 0.60],
+  [0.30, 0.40],
+  [0.55, 0.45]   // the bottom, for labels laid out the other way up
+];
 
 /**
  * Decode with ZXing's CORE api — MultiFormatReader over a BinaryBitmap.
@@ -116,33 +142,53 @@ function zxingHints(zx) {
  * helper's shape has moved between versions and across the ESM build. The
  * core classes have not moved, and they take raw pixels, so nothing about
  * this depends on a DOM convenience method existing.
+ *
+ * Returns EVERY value it managed to read across the bands, because the one
+ * we want may not be the first one found.
  */
 async function decodeZxing(canvas) {
   const zx = await loadZxing();
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const luminance = toLuminance(image);
+  const W = canvas.width, H = canvas.height;
 
-  const source = new zx.RGBLuminanceSource(toLuminance(image), canvas.width, canvas.height);
-  const bitmap = new zx.BinaryBitmap(new zx.HybridBinarizer(source));
   const reader = new zx.MultiFormatReader();
-  reader.setHints(zxingHints(zx));
+  const values = [];
+  let lastError = null;
 
-  let result;
-  try {
-    result = reader.decode(bitmap);
-  } catch (err) {
-    // "No barcode on this page" is a normal answer, not a fault, and must
-    // not surface as an error.
-    //
-    // Identifying it is fiddly: the CDN build is MINIFIED, so `err.name` is
-    // "N", and the message is "No MultiFormat Readers were able to detect
-    // the code" — which contains neither "not" nor "found". `getKind()`
-    // returns the static, unminified kind string, so that is what we ask.
-    if (isNotFound(zx, err)) return null;
-    throw err;
+  for (const [top, height] of BANDS) {
+    const y = Math.max(0, Math.floor(H * top));
+    const h = Math.min(H - y, Math.max(1, Math.floor(H * height)));
+    if (h < 20) continue;
+
+    // Crop on the luminance source — verified supported by this build.
+    let source = new zx.RGBLuminanceSource(luminance, W, H);
+    if (y !== 0 || h !== H) source = source.crop(0, y, W, h);
+
+    // Do NOT call reader.reset() here. It nulls MultiFormatReader's internal
+    // readers array, and on a reader that has not yet had setHints() called
+    // the next decode throws "this.readers is not iterable" — a TypeError,
+    // not a NotFoundException, so it would surface to the user as a broken
+    // decoder on every single page. Verified against the real 0.21.3 build.
+    reader.setHints(zxingHints(zx, { twoD: top === 0 && height === 1 }));
+
+    try {
+      const result = reader.decode(new zx.BinaryBitmap(new zx.HybridBinarizer(source)));
+      const value = result?.getText?.() ?? result?.text;
+      if (value) {
+        values.push(String(value));
+        // A MY-prefixed value is the one we came for; stop as soon as we see it.
+        if (MY_TOKEN.test(String(value))) break;
+      }
+    } catch (err) {
+      // "Nothing in this band" is the normal answer, not a fault.
+      if (!isNotFound(zx, err)) lastError = err;
+    }
   }
-  const value = result?.getText?.() ?? result?.text;
-  return value ? { value: String(value), format: 'barcode' } : null;
+
+  if (!values.length && lastError) throw lastError;
+  return values;
 }
 
 /** Tracking IDs are alphanumeric; couriers print separators that are not part of it. */
@@ -150,6 +196,30 @@ const tidy = (v) => String(v ?? '').trim().toUpperCase().replace(/\s+/g, '');
 
 /** Long enough to be a courier ID, and carrying at least one digit. */
 const plausible = (v) => v.length >= 8 && v.length <= 30 && /\d/.test(v);
+
+/** Myntra's own tracking shape — MYC…, MYEC…, MYEP… */
+const MY_TOKEN = /MY[A-Z]{0,4}\d{6,}/i;
+
+/**
+ * Pull a tracking ID out of whatever a barcode actually contained.
+ *
+ * A 1D strip decodes to the number itself. A DataMatrix decodes to a blob of
+ * shipment data with the number buried in it, so the MY token is searched for
+ * before the whole string is considered.
+ */
+export function trackingFromDecoded(values) {
+  const list = (Array.isArray(values) ? values : [values]).filter(Boolean).map(String);
+
+  for (const raw of list) {
+    const hit = MY_TOKEN.exec(raw.replace(/\s+/g, ''));
+    if (hit) return { value: hit[0].toUpperCase(), confident: true };
+  }
+  for (const raw of list) {
+    const v = tidy(raw);
+    if (plausible(v)) return { value: v, confident: false };
+  }
+  return { value: '', confident: false };
+}
 
 /**
  * Decode the tracking barcode on one PDF page.
@@ -159,42 +229,56 @@ const plausible = (v) => v.length >= 8 && v.length <= 30 && /\d/.test(v);
  *
  * @returns {Promise<{value:string, format:string}|null>}
  */
-export async function decodeTrackingBarcode(pdfPage, { scale = 3 } = {}) {
+export async function decodeTrackingBarcode(pdfPage, { scale = 3, retryScale = 5 } = {}) {
   if (!pdfPage || typeof document === 'undefined') {
     return { value: '', format: '', reason: 'no page to read' };
   }
 
-  let canvas;
-  try {
-    canvas = await renderPageToCanvas(pdfPage, scale);
-  } catch (err) {
-    return { value: '', format: '', reason: 'could not render the page: ' + (err?.message || err) };
-  }
+  const notes = [];
+  let best = null;      // a plausible-but-unconfident value, kept as a last resort
 
-  const tried = [];
-  let lastError = '';
-  for (const [name, decode] of [
-    ['browser', (await hasNativeDetector()) ? decodeNative : null],
-    ['zxing', decodeZxing]
-  ]) {
-    if (!decode) continue;
-    tried.push(name);
+  // Escalate only as far as needed: most pages answer on the first pass.
+  for (const px of [scale, retryScale]) {
+    let canvas;
     try {
-      const hit = await decode(canvas);
-      if (!hit) continue;
-      const value = tidy(hit.value);
-      // A short code on a label is the route or the size, not the AWB.
-      if (plausible(value)) return { value, format: hit.format, decoder: name, reason: '' };
-      lastError = `decoded "${value}" but it is not a tracking ID`;
+      canvas = await renderPageToCanvas(pdfPage, px);
     } catch (err) {
-      lastError = `${name}: ${err?.message || err}`;
+      notes.push(`render at ${px}x failed: ${err?.message || err}`);
+      continue;
+    }
+
+    for (const [name, decode] of [
+      ['browser', (await hasNativeDetector()) ? decodeNative : null],
+      ['zxing', decodeZxing]
+    ]) {
+      if (!decode) continue;
+      try {
+        const raw = await decode(canvas);
+        const values = Array.isArray(raw) ? raw : (raw?.value ? [raw.value] : []);
+        if (!values.length) continue;
+
+        const hit = trackingFromDecoded(values);
+        if (hit.confident) {
+          return { value: hit.value, format: 'barcode', decoder: name, scale: px, reason: '' };
+        }
+        // Something decoded, but it does not look like a Myntra AWB. Hold it
+        // in case nothing better turns up, and say so rather than pretending.
+        if (hit.value && !best) {
+          best = { value: hit.value, format: 'barcode', decoder: name, scale: px,
+                   reason: `decoded "${hit.value}", which is not a MY… tracking number — check it` };
+        }
+      } catch (err) {
+        notes.push(`${name} at ${px}x: ${err?.message || err}`);
+      }
     }
   }
+
+  if (best) return best;
 
   // Say WHY, so "no tracking ID" can be told apart from "the decoder broke".
   return {
     value: '', format: '',
-    reason: lastError || (tried.length ? 'no barcode found on the page' : 'no decoder available')
+    reason: notes.length ? notes[0] : 'no barcode could be decoded on this page'
   };
 }
 

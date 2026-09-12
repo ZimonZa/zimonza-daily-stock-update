@@ -68,7 +68,7 @@ export function initOrdersTab(state) {
   // Same dropzone helpers the Purchase and Returns uploads use, so
   // drag-over and click-to-browse behave identically everywhere.
   state.helpers.bindDrop(el('ord-drop'), el('ord-file'), onLabelFile);
-  state.helpers.resetDrop(el('ord-drop'), 'Myntra label.pdf — one page per piece');
+  state.helpers.resetDrop(el('ord-drop'), 'Myntra label.pdf — one page per parcel');
 
   el('ord-confirm-save').addEventListener('click', commitLabel);
   el('ord-confirm-cancel').addEventListener('click', () => {
@@ -123,7 +123,7 @@ export function initOrdersTab(state) {
    */
   async function onLabelFile(file) {
     const drop = el('ord-drop');
-    const hint = 'Myntra label.pdf — one page per piece';
+    const hint = 'Myntra label.pdf — one page per parcel';
     drop.innerHTML = `<p class="text-slate-300 text-sm font-medium">Reading ${esc(file.name)}…</p>
       <p id="ord-drop-progress" class="text-slate-500 text-xs mt-1">page 1</p>`;
     try {
