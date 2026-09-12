@@ -99,30 +99,57 @@ const plausible = (v) => v.length >= 8 && v.length <= 30 && /\d/.test(v);
  * @returns {Promise<{value:string, format:string}|null>}
  */
 export async function decodeTrackingBarcode(pdfPage, { scale = 3 } = {}) {
-  if (!pdfPage || typeof document === 'undefined') return null;
+  if (!pdfPage || typeof document === 'undefined') {
+    return { value: '', format: '', reason: 'no page to read' };
+  }
 
   let canvas;
   try {
     canvas = await renderPageToCanvas(pdfPage, scale);
-  } catch {
-    return null;   // cannot rasterise; nothing more to try
+  } catch (err) {
+    return { value: '', format: '', reason: 'could not render the page: ' + (err?.message || err) };
   }
 
-  for (const decode of [
-    (await hasNativeDetector()) ? decodeNative : null,
-    decodeZxing
+  const tried = [];
+  let lastError = '';
+  for (const [name, decode] of [
+    ['browser', (await hasNativeDetector()) ? decodeNative : null],
+    ['zxing', decodeZxing]
   ]) {
     if (!decode) continue;
+    tried.push(name);
     try {
       const hit = await decode(canvas);
       if (!hit) continue;
       const value = tidy(hit.value);
-      if (plausible(value)) return { value, format: hit.format };
-    } catch {
-      // This decoder could not read it. Try the next one.
+      // A short code on a label is the route or the size, not the AWB.
+      if (plausible(value)) return { value, format: hit.format, decoder: name, reason: '' };
+      lastError = `decoded "${value}" but it is not a tracking ID`;
+    } catch (err) {
+      lastError = `${name}: ${err?.message || err}`;
     }
   }
-  return null;
+
+  // Say WHY, so "no tracking ID" can be told apart from "the decoder broke".
+  return {
+    value: '', format: '',
+    reason: lastError || (tried.length ? 'no barcode found on the page' : 'no decoder available')
+  };
+}
+
+/**
+ * Is barcode decoding usable in this browser at all?
+ * Answered without decoding anything, so the UI can say so up front.
+ */
+export async function barcodeSupport() {
+  if (typeof document === 'undefined') return { native: false, zxing: false, ready: false };
+  const native = await hasNativeDetector();
+  return {
+    native,
+    zxing: true,               // always reachable; it is only a download away
+    ready: true,
+    detail: native ? 'this browser decodes barcodes itself' : 'ZXing will be downloaded when first needed'
+  };
 }
 
 /** Told from the outside so a test need not stand up a canvas. */

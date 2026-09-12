@@ -73,8 +73,6 @@ export function dispatchFromPageRecord(rec, { sourceFile = '', dispatchDate = ''
     sellerSkuCode,
     zmCode: sku ? normZmCode(sku.zmCode) : '',
     colourName: sku?.colourName || '',
-    // The size the label printed beside the code
-    size: fields.size || '',
     qty: 1,                                    // one label page is one piece
     dispatchDate: dispatchDate || today(),
     sourceFile,

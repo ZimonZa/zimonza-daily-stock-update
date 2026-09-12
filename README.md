@@ -141,16 +141,28 @@ So the coordinates PDF.js already provides are kept, the lines are rebuilt in re
 | **Tracking ID** | the `MY`-prefixed token under the barcode — `MYC…`, `MYEC…` |
 | **Customer name** | the first line under **"Buyer's Name And Address"** |
 | **Delivery address** | every line after the name, until **"If undelivered"** |
-| **SellerSkuCode** | the bracketed code, `[ZM-43-Rani - T]` — size kept separately |
+| **SellerSkuCode** | the bracketed code, `[ZM-43-Rani - T]` → `ZM-43-Rani`; the size after the dash is dropped |
 
 Reading *downward from an anchor* is what makes the seller's own address impossible to mistake for the buyer's. Everything from "If undelivered" onward belongs to Kuntal Fashion, and the reader stops there. A wide horizontal gap between two runs is treated as a column break rather than a space, so a name never gets glued to whatever is printed beside it.
+
+**The tracking ID survives being split.** PDF.js breaks one printed string into however many runs it likes, so `MYEC1118733669` commonly arrives as `MYEC` + `1118733669` and reads back as `MYEC 1118733669`. A boundary-anchored pattern misses that, and the ID — the one field the whole returns flow is keyed on — was being lost in silence. Each line is now tried as printed, then rejoined with no spaces and tried again. Never across lines: fusing two rows could manufacture an ID that was never on the label.
 
 A label with no Myntra markings falls back to the old keyword reader, so other couriers still work.
 
 **Then, cheap answers first.**
 
 1. **The printed text**, read by layout as above. This costs nothing.
-2. **The barcode itself**, but *only* on a page where the text gave no tracking ID. That page is rendered to an image and decoded — with the browser's own `BarcodeDetector` where it exists (Chrome, Edge: no download at all), and ZXing from the CDN otherwise, imported lazily so a session that never needs it never fetches it.
+2. **The barcode itself.** The page is rendered to an image and decoded — with the browser's own `BarcodeDetector` where it exists (Chrome, Edge: no download at all), and ZXing from the CDN otherwise, imported lazily so a session that never needs it never fetches it.
+
+   By default this runs *only* where the text gave no tracking ID. Tick **Read every barcode** on the Orders tab and it decodes every page and checks each against the printed number:
+
+   | Outcome | Badge |
+   |---|---|
+   | they agree | `text ✓ barcode` |
+   | **they disagree** | `text ≠ barcode` — **neither is chosen for you**; the printed value is kept and the barcode value stored beside it |
+   | nothing printed, barcode read | `barcode` |
+
+   A decode that fails now reports **why**. "No barcode found on the page" reads very differently from "the decoder threw", and a decoder that quietly returns nothing is indistinguishable from a label that has no barcode.
 
 Rasterising all 200 pages to re-read a number that is already printed would cost minutes for the same answer, so the expensive path runs only where the cheap one came up empty. **Every row shows which route its ID came from** — `text`, `barcode` or `typed` — because a decoded value is not the same claim as one the label actually printed.
 

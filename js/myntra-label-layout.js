@@ -40,7 +40,38 @@ const BLOCK_END = /if\s*undelivered|please\s*return\s*to|seller\s*details|buyer\
  */
 const MYNTRA_TRACKING = /\bMY[A-Z]{0,4}\d{6,}\b/;
 
-/** The SellerSkuCode, printed in square brackets with the size after it: [ZM-43-Rani - T] */
+/** The same shape without word boundaries, for a line rejoined with no spaces. */
+const MYNTRA_TRACKING_TIGHT = /MY[A-Z]{0,4}\d{6,}/;
+
+/**
+ * Find the tracking ID on the page.
+ *
+ * PDF.js splits one printed string into however many runs it likes, so
+ * "MYEC1118733669" commonly arrives as "MYEC" + "1118733669" and reads back
+ * as "MYEC 1118733669" — which the boundary-anchored pattern misses, and the
+ * ID is then silently lost. That is the single most important field on the
+ * label, so losing it quietly is not acceptable.
+ *
+ * Try each line as printed, then each line REJOINED WITHOUT SPACES. Never
+ * across lines: joining two lines could manufacture an ID that was never
+ * printed on the label.
+ */
+function findTrackingId(rows) {
+  for (const l of rows) {
+    const hit = MYNTRA_TRACKING.exec(l.text);
+    if (hit) return hit[0].toUpperCase();
+  }
+  for (const l of rows) {
+    const hit = MYNTRA_TRACKING_TIGHT.exec(l.text.replace(/\s+/g, ''));
+    if (hit) return hit[0].toUpperCase();
+  }
+  return '';
+}
+
+/**
+ * The SellerSkuCode, printed in square brackets. A trailing "- T" is the
+ * size; it is matched only so it can be dropped, leaving a clean code.
+ */
 const BRACKET_SKU = /\[\s*([A-Za-z]{1,4}-\d+-[A-Za-z][A-Za-z0-9 ]*?)\s*(?:-\s*([A-Za-z0-9]{1,6})\s*)?\]/;
 
 /** A 6-digit Indian PIN. Never used to FIND the address, only to confirm it. */
@@ -141,28 +172,25 @@ function readBuyerBlock(lines, startIdx) {
 /**
  * Pull every field this app needs out of one laid-out label page.
  *
- * Returns the same shape the old text reader did, plus `size` and
- * `layout: true` so a caller can tell which reader answered.
+ * Returns the same shape the old text reader did, plus `layout: true`
+ * so a caller can tell which reader answered.
  */
 export function extractMyntraFields(lines) {
   const out = {
     forwardId: '', forwardIdSource: '', orderId: '',
-    customerName: '', address: '', sellerSkuCode: '', size: '',
+    customerName: '', address: '', sellerSkuCode: '',
     layout: true, missing: []
   };
   const rows = Array.isArray(lines) ? lines : [];
   const all = rows.map(l => l.text).join(' ');
 
   // ── Tracking ID — the MY-prefixed token under the barcode ──
-  const track = MYNTRA_TRACKING.exec(all);
-  if (track) { out.forwardId = track[0].toUpperCase(); out.forwardIdSource = 'text'; }
+  const track = findTrackingId(rows);
+  if (track) { out.forwardId = track; out.forwardIdSource = 'text'; }
 
-  // ── SellerSkuCode — bracketed, with the size after the dash ──
+  // ── SellerSkuCode — bracketed; the size after the dash is discarded ──
   const sku = BRACKET_SKU.exec(all);
-  if (sku) {
-    out.sellerSkuCode = sku[1].replace(/\s+/g, ' ').trim();
-    out.size = (sku[2] || '').trim();
-  }
+  if (sku) out.sellerSkuCode = sku[1].replace(/\s+/g, ' ').trim();
 
   // ── Order ID, when the label carries one ──
   const order = /order\s*(?:id|no\.?|number)\s*[:#-]?\s*([A-Z0-9][A-Z0-9-]{5,24})/i.exec(all);

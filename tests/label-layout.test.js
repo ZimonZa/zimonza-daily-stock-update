@@ -92,7 +92,8 @@ const f = extractMyntraFields(lines);
 eq('YELLOW BOX — tracking ID', f.forwardId, 'MYEC1118733669');
 eq('RED BOX — customer name', f.customerName, 'Akanksha');
 eq('BLUE BOX — SellerSkuCode', f.sellerSkuCode, 'ZM-43-Rani');
-eq('and the size printed beside it', f.size, 'T');
+ok('the size after the dash is stripped, not glued on', !/- ?T/.test(f.sellerSkuCode), f.sellerSkuCode);
+ok('and no size field is carried', !('size' in f), JSON.stringify(Object.keys(f)));
 
 // ORANGE BOX — the address, and only the address
 ok('starts where the name ends', f.address.startsWith('Qtr no 400/B'), f.address);
@@ -128,6 +129,27 @@ eq('MYEC is read', withPrefix('MYEC1118733669'), 'MYEC1118733669');
 eq('a longer MY prefix is read', withPrefix('MYNT9988776655'), 'MYNT9988776655');
 eq('a plain number is not mistaken for one', withPrefix('801105'), '');
 
+// ════ 5b. PDF.js SPLITS the printed string into runs ════
+// This is the common case, not the edge case, and it silently lost the
+// tracking ID — the one field the whole returns flow is keyed on.
+const splitRuns = (gap) => extractMyntraFields(itemsToLines([
+  { str: 'MYEC', width: 24, height: 10, transform: [1, 0, 0, 10, 150, 700] },
+  { str: '1118733669', width: 60, height: 10, transform: [1, 0, 0, 10, 150 + gap, 700] },
+  { str: "Buyer's Name And Address", width: 100, height: 10, transform: [1, 0, 0, 10, 40, 650] },
+  { str: 'Akanksha', width: 44, height: 10, transform: [1, 0, 0, 10, 40, 636] }
+])).forwardId;
+eq('a tracking ID split across adjacent runs is rejoined', splitRuns(28), 'MYEC1118733669');
+eq('even when the runs sit a column apart', splitRuns(50), 'MYEC1118733669');
+eq('three runs still rejoin', extractMyntraFields(itemsToLines([
+  { str: 'MY', width: 12, height: 10, transform: [1, 0, 0, 10, 150, 700] },
+  { str: 'EC11187', width: 40, height: 10, transform: [1, 0, 0, 10, 164, 700] },
+  { str: '33669', width: 30, height: 10, transform: [1, 0, 0, 10, 206, 700] }
+])).forwardId, 'MYEC1118733669');
+
+// But never ACROSS lines — that would manufacture an ID off two unrelated rows
+eq('two separate lines are never fused into an ID', extractMyntraFields(itemsToLines(place(
+  ['MY', '1118733669', "Buyer's Name And Address", 'Asha']))).forwardId, '');
+
 // ════ 6. A label missing a field is flagged, never invented ════
 const noName = extractMyntraFields(itemsToLines(place(
   ['MYC1112223334', "Buyer's Name And Address", 'If undelivered, Please return to', 'KUNTAL FASHION PRIVATE'])));
@@ -155,9 +177,55 @@ const d = dispatchFromPageRecord(result.pageRecords[0], { sourceFile: 'label.pdf
 eq('the dispatch record carries the name', d.customer.name, 'Akanksha');
 eq('grouped by name, not by a masked address', d.customer.keyType, 'name');
 eq('the dispatch carries the SKU', d.sellerSkuCode, 'ZM-43-Rani');
-eq('and the size', d.size, 'T');
+ok('and no size rides along', !('size' in d), JSON.stringify(Object.keys(d)));
 eq('and the address, for when there is no name next time', d.customer.address,
   'Qtr no 400/B medical colony road no 3 , Near railway hospital Khagaul Patna 801105 India');
+delete globalThis.__PDF_PAGES;
+
+// ════ 7b. The barcode reader — what it does and what it admits to ════
+const NL = String.fromCharCode(10);
+const NO_ID = LABEL.split(NL).filter(l => l !== 'MYEC1118733669').join(NL);
+
+// Fallback: only pages with no printed number cost a decode
+globalThis.__PDF_PAGES = [LABEL, NO_ID];
+const asked = [];
+const decoder = async (page) => {
+  asked.push(page._page);
+  return { value: 'MYEC7777666655', format: 'code_128' };
+};
+const fb = await parseLabelPdf(file, maps, null, { decodeBarcode: decoder });
+eq('only the page missing a printed ID is decoded', asked, [2]);
+eq('page 1 keeps its printed ID', fb.pageRecords[0].forwardId, 'MYEC1118733669');
+eq('page 2 gets its ID from the barcode', fb.pageRecords[1].forwardId, 'MYEC7777666655');
+eq('and is marked as such', fb.pageRecords[1].forwardIdSource, 'barcode');
+eq('the pages that needed it are reported', fb.barcodePages, [2]);
+
+// Force: every page decoded, and agreement is stated rather than assumed
+asked.length = 0;
+const agree = async (page) => { asked.push(page._page); return { value: 'MYEC1118733669', format: 'code_128' }; };
+globalThis.__PDF_PAGES = [LABEL, LABEL];
+const forced = await parseLabelPdf(file, maps, null, { forceBarcode: true, decodeBarcode: agree });
+eq('force reads EVERY page', asked, [1, 2]);
+eq('agreement is recorded', forced.pageRecords[0].forwardIdSource, 'text+barcode');
+eq('and no mismatch raised', forced.barcodeMismatchPages, []);
+
+// Disagreement: neither value is silently preferred
+const disagree = async () => ({ value: 'MYEC9999000011', format: 'code_128' });
+const clash = await parseLabelPdf(file, maps, null, { forceBarcode: true, decodeBarcode: disagree });
+eq('the printed number is NOT overwritten', clash.pageRecords[0].forwardId, 'MYEC1118733669');
+eq('the barcode value is kept beside it', clash.pageRecords[0].barcodeValue, 'MYEC9999000011');
+eq('and the row is flagged for a human', clash.pageRecords[0].forwardIdSource, 'text-barcode-mismatch');
+eq('both pages reported', clash.barcodeMismatchPages, [1, 2]);
+
+// A decoder that fails must say WHY, not vanish
+globalThis.__PDF_PAGES = [NO_ID];
+const broken = async () => ({ value: '', format: '', reason: 'no barcode found on the page' });
+const failed = await parseLabelPdf(file, maps, null, { decodeBarcode: broken });
+eq('the failure is reported, not swallowed', failed.barcodeFailures.length, 1);
+eq('with the page', failed.barcodeFailures[0].page, 1);
+ok('and a reason', /no barcode found/.test(failed.barcodeFailures[0].reason), failed.barcodeFailures[0].reason);
+ok('the row survives with a flagged blank',
+  failed.pageRecords[0].forwardId === '' && failed.pageRecords[0].missing.includes('forwardId'));
 delete globalThis.__PDF_PAGES;
 
 // ════ 8. A non-Myntra label still goes to the keyword reader ════

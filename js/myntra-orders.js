@@ -27,7 +27,6 @@ const EXPORT_COLUMNS = [
   { key: 'customerName',  label: 'Customer' },
   { key: 'customerKey',   label: 'Grouped by' },
   { key: 'sellerSkuCode', label: 'SellerSkuCode' },
-  { key: 'size',          label: 'Size' },
   { key: 'colourName',    label: 'Colour' },
   { key: 'qty',           label: 'Qty' },
   { key: 'dispatchDate',  label: 'Dispatched' },
@@ -128,30 +127,59 @@ export function initOrdersTab(state) {
     drop.innerHTML = `<p class="text-slate-300 text-sm font-medium">Reading ${esc(file.name)}…</p>
       <p id="ord-drop-progress" class="text-slate-500 text-xs mt-1">page 1</p>`;
     try {
+      const force = !!el('ord-force-barcode')?.checked;
       const result = await parseLabelPdf(file, state.mappings, (p, total) => {
         const line = el('ord-drop-progress');
-        if (line) line.textContent = `page ${p} of ${total}`;
-      });
+        if (line) {
+          line.textContent = force
+            ? `reading the barcode on page ${p} of ${total}…`
+            : `page ${p} of ${total}`;
+        }
+      }, { forceBarcode: force });
 
-      // Say which of the two ways in actually failed, rather than guessing
-      // at the cause on the user's behalf.
+      // Say which of the ways in actually failed, rather than guessing at
+      // the cause on the user's behalf.
       const anyId = (result.pageRecords || []).some(r => r.forwardId);
       if (!result.hasTextLayer && !anyId) {
         notify.error('This PDF has no text layer and no barcode could be decoded — nothing to read.');
         state.helpers.resetDrop(drop, hint);
         return;
       }
-      if (!anyId) {
-        notify.warning(`No tracking ID found on any of ${result.pages} page(s). The rows are listed anyway — type the IDs in.`);
-      } else if (result.barcodePages?.length) {
-        notify.info(`${result.barcodePages.length} tracking ID(s) read from the barcode because the text did not carry them.`);
-      }
 
+      reportBarcodes(result, anyId);
       ingestLabel(result, file.name);
       state.helpers.resetDrop(drop, hint);
     } catch (err) {
       notify.error('Could not read the label PDF: ' + err.message);
       state.helpers.resetDrop(drop, hint);
+    }
+  }
+
+  /**
+   * Say what the barcode reader actually did.
+   *
+   * A decoder that quietly returns nothing is indistinguishable from a
+   * label that carries no barcode, and the difference matters: one is the
+   * label, the other is a bug worth reporting.
+   */
+  function reportBarcodes(result, anyId) {
+    const read = result.barcodePages?.length || 0;
+    const failed = result.barcodeFailures || [];
+    const clash = result.barcodeMismatchPages || [];
+
+    if (!anyId) {
+      notify.warning(`No tracking ID found on any of ${result.pages} page(s) — not in the text, not in a barcode. The rows are listed anyway; type the IDs in.`);
+    } else if (read) {
+      notify.info(`${read} tracking ID(s) confirmed from the barcode.`);
+    }
+
+    if (clash.length) {
+      notify.error(`Page(s) ${clash.join(', ')}: the printed number and the barcode DISAGREE. Neither was chosen for you — check those rows.`);
+    }
+    if (failed.length) {
+      // One reason is enough; they are almost always all the same.
+      const why = failed[0].reason;
+      notify.warning(`Barcode unread on ${failed.length} page(s) — ${why}. Those rows use the printed number where there was one.`);
     }
   }
 
@@ -265,7 +293,7 @@ export function initOrdersTab(state) {
     el('ord-ret-title').textContent = `Return against ${dispatch.forwardId || '(no tracking ID)'}`;
     el('ord-ret-sub').innerHTML =
       `${dispatch.colourName ? swatchDot(dispatch.colourName) + ' ' : ''}` +
-      `${esc(dispatch.sellerSkuCode) || '—'}${dispatch.size ? ' · size ' + esc(dispatch.size) : ''} · ${dispatch.qty} pc(s) · ` +
+      `${esc(dispatch.sellerSkuCode) || '—'} · ${dispatch.qty} pc(s) · ` +
       `${esc(dispatch.customer?.name || dispatch.customer?.label || 'customer not printed')}`;
     el('ord-ret-id').value = dispatch.return?.returnId || '';
     el('ord-ret-type').value = dispatch.return?.type || RETURN_TYPES.CUSTOMER_RETURN;
@@ -361,7 +389,6 @@ export function initOrdersTab(state) {
     customerName: d.customer?.name || '',
     customerKey: d.customer?.keyType || '',
     sellerSkuCode: d.sellerSkuCode,
-    size: d.size || '',
     colourName: d.colourName,
     qty: d.qty,
     dispatchDate: d.dispatchDate,
@@ -437,12 +464,13 @@ export function initOrdersTab(state) {
           <th class="text-left px-4 py-2.5">Customer</th>
           ${th(view, 'dispatchDate', 'Dispatched')}
           <th class="text-left px-4 py-2.5">Status</th>
+          <th class="text-left px-4 py-2.5">Return ID</th>
           <th class="px-4 py-2.5"></th>
         </tr></thead>
         <tbody>${rows.map(d => `
           <tr class="border-b border-white/5 hover:bg-white/[0.02] ${d.return?.type === RETURN_TYPES.FAKE_RETURN ? 'ord-row-fake' : ''}">
             <td class="px-4 py-2 text-slate-200 font-medium whitespace-nowrap zm-mono">${esc(d.forwardId) || '<span class="ord-flag">no tracking ID</span>'}</td>
-            <td class="px-4 py-2 text-slate-300">${esc(d.sellerSkuCode) || '—'}${d.size ? `<span class="ord-size">${esc(d.size)}</span>` : ''}</td>
+            <td class="px-4 py-2 text-slate-300">${esc(d.sellerSkuCode) || '—'}</td>
             <td class="px-4 py-2">${d.colourName ? swatchDot(d.colourName) + ' ' + esc(d.colourName) : '<span class="zm-muted">—</span>'}</td>
             <td class="px-4 py-2 text-right text-slate-200 font-semibold">${d.qty}</td>
             <td class="px-4 py-2 text-slate-400 max-w-[180px] truncate" title="${esc(d.customer?.address || '')}">
@@ -451,6 +479,10 @@ export function initOrdersTab(state) {
             </td>
             <td class="px-4 py-2 text-slate-500 whitespace-nowrap">${esc(formatDateDisplay(d.dispatchDate) || d.dispatchDate) || '—'}</td>
             <td class="px-4 py-2">${statusChip(d)}</td>
+            <td class="px-4 py-2 whitespace-nowrap zm-mono text-slate-300">${
+              d.return?.returnId ? esc(d.return.returnId)
+                : d.return?.type ? '<span class="ord-flag">no return ID</span>'
+                : '<span class="zm-muted">—</span>'}</td>
             <td class="px-4 py-2 text-right whitespace-nowrap">
               <button data-ord-action="open" data-ord-id="${esc(d.id)}" class="btn-secondary text-xs py-1.5 px-2.5" title="Record a return">Open</button>
               <button data-ord-action="unfulfillable" data-ord-id="${esc(d.id)}" class="text-slate-600 hover:text-amber-400 transition ml-2" title="Cannot be shipped"><i data-lucide="ban" class="w-3.5 h-3.5"></i></button>
@@ -519,7 +551,6 @@ export function initOrdersTab(state) {
     forwardId: { path: 'forwardId', upper: true },
     orderId: { path: 'orderId', upper: true },
     sku: { path: 'sellerSkuCode' },
-    size: { path: 'size' },
     qty: { path: 'qty', number: true },
     customer: { path: 'customer.name', rekey: true },
     address: { path: 'customer.address', rekey: true },
@@ -529,6 +560,8 @@ export function initOrdersTab(state) {
   const SOURCE_BADGE = {
     text: '<span class="ord-src" title="printed on the label">text</span>',
     barcode: '<span class="ord-src ord-src-bar" title="decoded from the barcode image">barcode</span>',
+    'text+barcode': '<span class="ord-src ord-src-ok" title="the printed number and the barcode agree">text ✓ barcode</span>',
+    'text-barcode-mismatch': '<span class="ord-src ord-src-clash" title="the printed number and the barcode do not match — check this one">text ≠ barcode</span>',
     manual: '<span class="ord-src ord-src-man" title="you typed this">typed</span>'
   };
 
@@ -577,7 +610,6 @@ export function initOrdersTab(state) {
           <th class="px-2 py-2 text-left">Forward tracking ID</th>
           <th class="px-2 py-2 text-left">Order ID</th>
           <th class="px-2 py-2 text-left">SellerSkuCode</th>
-          <th class="px-2 py-2 text-left">Size</th>
           <th class="px-2 py-2 text-left">Qty</th>
           <th class="px-2 py-2 text-left">Customer</th>
           <th class="px-2 py-2 text-left">Delivery address</th>
@@ -596,7 +628,6 @@ export function initOrdersTab(state) {
             </td>
             <td class="px-2 py-1.5">${cell(i, 'orderId', r.orderId, 'w-32')}</td>
             <td class="px-2 py-1.5">${cell(i, 'sku', r.sellerSkuCode, 'w-40', 'list="ord-sku-list" autocomplete="off"')}</td>
-            <td class="px-2 py-1.5">${cell(i, 'size', r.size || '', 'w-16')}</td>
             <td class="px-2 py-1.5">${cell(i, 'qty', r.qty, 'w-16', 'type="number" min="1"')}</td>
             <td class="px-2 py-1.5">${cell(i, 'customer', r.customer?.name || '', 'w-36', 'placeholder="masked on label"')}</td>
             <td class="px-2 py-1.5">${cell(i, 'address', r.customer?.address || '', 'w-48')}</td>

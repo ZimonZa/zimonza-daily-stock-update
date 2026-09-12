@@ -488,6 +488,15 @@
           onclick="document.getElementById('ord-file').click()"></div>
         <input type="file" id="ord-file" accept=".pdf" class="hidden">
 
+        <label class="flex items-start gap-2.5 cursor-pointer select-none">
+          <input type="checkbox" id="ord-force-barcode" class="accent-emerald-500 mt-0.5">
+          <span class="text-slate-400 text-xs">
+            <strong class="text-slate-300">Read every barcode</strong> — decodes the barcode image on every page
+            and checks it against the printed number, flagging any that disagree.
+            Slower (a second or so per page). Leave off and the barcode is read only where the number was not printed.
+          </span>
+        </label>
+
         <!-- Label review before saving — every cell is editable -->
         <div id="ord-confirm" class="hidden rounded-xl border border-emerald-500/25 bg-emerald-500/[0.05] overflow-hidden">
           <div class="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-white/5">

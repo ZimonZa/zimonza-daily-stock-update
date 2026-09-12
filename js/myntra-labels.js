@@ -155,7 +155,7 @@ export function aggregatePages(pageMatches) {
  * @returns {Promise<{pages:number, items:Array, unreadablePages:number[], hasTextLayer:boolean, pageRecords:Array, barcodePages:number[]}>}
  */
 export async function parseLabelPdf(file, mappings, onProgress, opts = {}) {
-  const { barcodeFallback = true, decodeBarcode = decodeTrackingBarcode } = opts;
+  const { barcodeFallback = true, forceBarcode = false, decodeBarcode = decodeTrackingBarcode } = opts;
   const pdfjsLib = await loadPdfJs();
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
@@ -164,6 +164,8 @@ export async function parseLabelPdf(file, mappings, onProgress, opts = {}) {
   const pageMatches = [];
   const pageRecords = [];
   const barcodePages = [];
+  const barcodeFailures = [];
+  const barcodeMismatchPages = [];
   let anyText = false;
 
   for (let p = 1; p <= pdf.numPages; p++) {
@@ -189,16 +191,33 @@ export async function parseLabelPdf(file, mappings, onProgress, opts = {}) {
       : extractDispatchFields(text);
     fields.forwardIdSource = fields.forwardId ? 'text' : '';
 
-    // Only when the printed text gave nothing. Rasterising every page to
-    // re-read a number that is already printed would cost minutes for no
-    // extra answer.
-    if (!fields.forwardId && barcodeFallback) {
+    // Normally only when the printed text gave nothing — rasterising every
+    // page to re-read a number that is already printed would cost minutes
+    // for no extra answer. `forceBarcode` overrides that and reads every
+    // page, which also cross-checks the printed digits.
+    const wantBarcode = barcodeFallback && (forceBarcode || !fields.forwardId);
+    if (wantBarcode) {
       const hit = await decodeBarcode(page);
       if (hit?.value) {
-        fields.forwardId = hit.value;
-        fields.forwardIdSource = 'barcode';
-        fields.missing = fields.missing.filter(f => f !== 'forwardId');
-        barcodePages.push(p);
+        if (!fields.forwardId) {
+          fields.forwardId = hit.value;
+          fields.forwardIdSource = 'barcode';
+          fields.missing = fields.missing.filter(f => f !== 'forwardId');
+          barcodePages.push(p);
+        } else if (hit.value !== fields.forwardId) {
+          // The printed digits and the barcode disagree. Neither is
+          // silently preferred — the row is flagged for a human.
+          fields.barcodeValue = hit.value;
+          fields.forwardIdSource = 'text-barcode-mismatch';
+          barcodeMismatchPages.push(p);
+        } else {
+          fields.forwardIdSource = 'text+barcode';
+          barcodePages.push(p);
+        }
+      } else {
+        // Why it failed, so "nothing printed" reads differently from
+        // "the decoder could not cope".
+        barcodeFailures.push({ page: p, reason: hit?.reason || 'no barcode found' });
       }
     }
 
@@ -206,7 +225,10 @@ export async function parseLabelPdf(file, mappings, onProgress, opts = {}) {
   }
 
   const { items, unreadablePages } = aggregatePages(pageMatches);
-  return { pages: pdf.numPages, items, unreadablePages, hasTextLayer: anyText, pageRecords, barcodePages };
+  return {
+    pages: pdf.numPages, items, unreadablePages, hasTextLayer: anyText, pageRecords,
+    barcodePages, barcodeFailures, barcodeMismatchPages
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════

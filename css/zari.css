@@ -929,12 +929,9 @@ td.text-right, th.text-right { font-variant-numeric: tabular-nums; }
 .light-mode .ord-lock       { background: rgba(190,40,45,0.09);  color: #9B2226; }
 .light-mode .ord-row-locked { background: rgba(229,86,91,0.06); }
 
-/* The size the label printed beside the SellerSkuCode: [ZM-43-Rani - T] */
-.ord-size {
-  display: inline-block; font-family: var(--font-mono);
-  font-size: 9.5px; letter-spacing: 0.05em;
-  padding: 1px 5px; border-radius: 4px; margin-left: 6px;
-  background: rgba(255,255,255,0.05); color: var(--silk-4);
-  border: 1px solid var(--ink-line-soft);
-}
-.light-mode .ord-size { background: rgba(0,0,0,0.05); color: #6E6553; }
+
+/* The printed number and the barcode agree — or do not */
+.ord-src-ok    { background: rgba(61,190,139,0.12); color: #7FD9B4; border-color: rgba(61,190,139,0.28); }
+.ord-src-clash { background: rgba(229,86,91,0.14);  color: #F0999C; border-color: rgba(229,86,91,0.34); font-weight: 600; }
+.light-mode .ord-src-ok    { background: rgba(16,120,85,0.10); color: #14634A; }
+.light-mode .ord-src-clash { background: rgba(190,40,45,0.09); color: #9B2226; }
