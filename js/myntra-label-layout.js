@@ -38,10 +38,28 @@ const BLOCK_END = /if\s*undelivered|please\s*return\s*to|seller\s*details|buyer\
  * prefix — MYC, MYEC and friends — so the letters after MY are not
  * pinned down, only the shape.
  */
-const MYNTRA_TRACKING = /\bMY[A-Z]{0,4}\d{6,}\b/;
+const MYNTRA_TRACKING = /\bMY[A-Z]{0,4}\d{6,}\b/i;
 
 /** The same shape without word boundaries, for a line rejoined with no spaces. */
-const MYNTRA_TRACKING_TIGHT = /MY[A-Z]{0,4}\d{6,}/;
+const MYNTRA_TRACKING_TIGHT = /MY[A-Z]{0,4}\d{6,}/i;
+
+/**
+ * A courier ID when there is no MY-prefixed one — a merged file can carry
+ * labels from more than one courier, and a blank is useless to the person
+ * who has to match a returning parcel.
+ *
+ * Anything found this way is a GUESS and is badged as one. It is never
+ * treated as equal to a value read from the MY pattern or the barcode.
+ */
+const GENERIC_ID = /\b(?=[A-Z0-9]{10,24}\b)(?=[A-Z0-9]*\d)[A-Z][A-Z0-9]{9,23}\b|\b\d{11,18}\b/i;
+
+/** Things that look like an ID but are not one. */
+const NOT_AN_ID = [
+  /^[1-9]\d{5}$/,                    // a PIN code
+  /^\d{10}$/,                        // a phone number
+  /^\d{2}[A-Z]{5}\d{4}[A-Z]\d[A-Z]\d$/i,  // a GSTIN
+  /^ZM[-_]?\d/i                      // our own SellerSkuCode
+];
 
 /**
  * Find the tracking ID on the page.
@@ -59,13 +77,26 @@ const MYNTRA_TRACKING_TIGHT = /MY[A-Z]{0,4}\d{6,}/;
 function findTrackingId(rows) {
   for (const l of rows) {
     const hit = MYNTRA_TRACKING.exec(l.text);
-    if (hit) return hit[0].toUpperCase();
+    if (hit) return { value: hit[0].toUpperCase(), confident: true };
   }
   for (const l of rows) {
     const hit = MYNTRA_TRACKING_TIGHT.exec(l.text.replace(/\s+/g, ''));
-    if (hit) return hit[0].toUpperCase();
+    if (hit) return { value: hit[0].toUpperCase(), confident: true };
   }
-  return '';
+
+  // No MY-prefixed ID anywhere. Offer the best courier-shaped token as a
+  // clearly-marked guess rather than leaving the field blank — the review
+  // is checked before anything saves, so a flagged guess can be corrected,
+  // and a blank cannot be corrected because it says nothing.
+  for (const l of rows) {
+    for (const token of l.text.replace(/[^A-Za-z0-9\s]/g, ' ').split(/\s+/)) {
+      const t = token.toUpperCase();
+      if (!GENERIC_ID.test(t)) continue;
+      if (NOT_AN_ID.some(re => re.test(t))) continue;
+      return { value: t, confident: false };
+    }
+  }
+  return { value: '', confident: false };
 }
 
 /**
@@ -186,7 +217,17 @@ export function extractMyntraFields(lines) {
 
   // ── Tracking ID — the MY-prefixed token under the barcode ──
   const track = findTrackingId(rows);
-  if (track) { out.forwardId = track; out.forwardIdSource = 'text'; }
+  if (track.value) {
+    out.forwardId = track.value;
+    out.forwardIdSource = track.confident ? 'text' : 'guess';
+  }
+
+  // When no ID was printed, keep a sample of what the page DID say. A blank
+  // field with no explanation is impossible to act on; this makes the cause
+  // visible instead of leaving it to guesswork.
+  if (!track.confident) {
+    out.pageTextSample = rows.map(l => l.text).join(' | ').slice(0, 400);
+  }
 
   // ── SellerSkuCode — bracketed; the size after the dash is discarded ──
   const sku = BRACKET_SKU.exec(all);

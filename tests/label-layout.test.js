@@ -150,6 +150,32 @@ eq('three runs still rejoin', extractMyntraFields(itemsToLines([
 eq('two separate lines are never fused into an ID', extractMyntraFields(itemsToLines(place(
   ['MY', '1118733669', "Buyer's Name And Address", 'Asha']))).forwardId, '');
 
+// ════ 5c. Case, and the last-resort guess ════
+eq('a lower-case tracking ID is still read', withPrefix('myec1118733669'), 'MYEC1118733669');
+eq('and normalised to upper case', withPrefix('MyEc1118733669'), 'MYEC1118733669');
+
+// A merged file can hold labels from another courier with no MY prefix.
+// A blank field cannot be corrected because it says nothing; a flagged
+// guess can. It is badged, and never treated as confidently read.
+const guessed = extractMyntraFields(itemsToLines(place(
+  ['SF7788990011223', "Buyer's Name And Address", 'Asha Devi', '12 MG Road 400053'])));
+eq('a courier-shaped token is offered', guessed.forwardId, 'SF7788990011223');
+eq('but only as a guess', guessed.forwardIdSource, 'guess');
+ok('and the page text is kept so the guess can be checked',
+  /SF7788990011223/.test(guessed.pageTextSample || ''), guessed.pageTextSample);
+
+// A confident read must NOT be downgraded, nor carry the diagnostic
+eq('a real MY id is confident', f.forwardIdSource, 'text');
+ok('and needs no diagnostic', !f.pageTextSample);
+
+// Things that look like IDs but are not
+const notId = (line) => extractMyntraFields(itemsToLines(place(
+  [line, "Buyer's Name And Address", 'Asha']))).forwardId;
+eq('a PIN code is not a tracking ID', notId('801105'), '');
+eq('a phone number is not a tracking ID', notId('9876543210'), '');
+eq('a GSTIN is not a tracking ID', notId('24AAACC1206D1ZM'), '');
+eq('our own SellerSkuCode is not a tracking ID', notId('ZM-43-Rani'), '');
+
 // ════ 6. A label missing a field is flagged, never invented ════
 const noName = extractMyntraFields(itemsToLines(place(
   ['MYC1112223334', "Buyer's Name And Address", 'If undelivered, Please return to', 'KUNTAL FASHION PRIVATE'])));

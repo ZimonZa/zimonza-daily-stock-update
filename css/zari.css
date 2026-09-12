@@ -935,3 +935,19 @@ td.text-right, th.text-right { font-variant-numeric: tabular-nums; }
 .ord-src-clash { background: rgba(229,86,91,0.14);  color: #F0999C; border-color: rgba(229,86,91,0.34); font-weight: 600; }
 .light-mode .ord-src-ok    { background: rgba(16,120,85,0.10); color: #14634A; }
 .light-mode .ord-src-clash { background: rgba(190,40,45,0.09); color: #9B2226; }
+
+/* Why a tracking ID is blank: what the page actually said */
+.ord-why { margin-top: 4px; max-width: 320px; }
+.ord-why summary {
+  cursor: pointer; font-size: 10px; color: var(--silk-4);
+  font-family: var(--font-mono); letter-spacing: 0.04em;
+}
+.ord-why summary:hover { color: var(--zari); }
+.ord-why code {
+  display: block; margin-top: 4px; padding: 6px 8px;
+  max-height: 120px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  font-size: 10px; line-height: 1.5; border-radius: 6px;
+  background: rgba(255,255,255,0.04); color: var(--silk-2);
+  border: 1px solid var(--ink-line-soft);
+}
+.light-mode .ord-why code { background: rgba(0,0,0,0.04); color: #3A352C; }

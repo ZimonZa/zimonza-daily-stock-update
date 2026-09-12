@@ -70,17 +70,78 @@ async function decodeNative(canvas) {
   return best?.rawValue ? { value: String(best.rawValue), format: best.format || 'barcode' } : null;
 }
 
-async function decodeZxing(canvas) {
-  const zx = await loadZxing();
+/**
+ * Grayscale, one byte per pixel, which is what ZXing's luminance source
+ * wants. The green channel carries most of the perceived brightness, so
+ * this is the standard ITU-R luma weighting.
+ */
+function toLuminance(imageData) {
+  const { data, width, height } = imageData;
+  const out = new Uint8ClampedArray(width * height);
+  for (let i = 0, p = 0; p < out.length; i += 4, p++) {
+    out[p] = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) | 0;
+  }
+  return out;
+}
+
+/**
+ * Is this error just "nothing to decode here"?
+ *
+ * Three ways, because the CDN build is minified and only one of them is a
+ * stable string: `getKind()` returns the static kind, `instanceof` works
+ * against the exported class, and the message is the last resort.
+ */
+export function isNotFound(zx, err) {
+  if (!err) return false;
+  if (typeof err.getKind === 'function' && err.getKind() === 'NotFoundException') return true;
+  if (zx?.NotFoundException && err instanceof zx.NotFoundException) return true;
+  return /no\s+multiformat|not\s*found/i.test(err.message || '');
+}
+
+function zxingHints(zx) {
   const hints = new Map();
   hints.set(zx.DecodeHintType.POSSIBLE_FORMATS, [
     zx.BarcodeFormat.CODE_128, zx.BarcodeFormat.CODE_39,
     zx.BarcodeFormat.CODABAR, zx.BarcodeFormat.ITF
   ]);
   hints.set(zx.DecodeHintType.TRY_HARDER, true);
-  const reader = new zx.BrowserMultiFormatReader(hints);
-  const result = reader.decodeFromCanvas(canvas);
-  const value = result?.getText?.();
+  return hints;
+}
+
+/**
+ * Decode with ZXing's CORE api — MultiFormatReader over a BinaryBitmap.
+ *
+ * The browser wrapper (`BrowserMultiFormatReader.decodeFromCanvas`) was
+ * used here first and threw "decodeFromCanvas is not a function": that
+ * helper's shape has moved between versions and across the ESM build. The
+ * core classes have not moved, and they take raw pixels, so nothing about
+ * this depends on a DOM convenience method existing.
+ */
+async function decodeZxing(canvas) {
+  const zx = await loadZxing();
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+  const source = new zx.RGBLuminanceSource(toLuminance(image), canvas.width, canvas.height);
+  const bitmap = new zx.BinaryBitmap(new zx.HybridBinarizer(source));
+  const reader = new zx.MultiFormatReader();
+  reader.setHints(zxingHints(zx));
+
+  let result;
+  try {
+    result = reader.decode(bitmap);
+  } catch (err) {
+    // "No barcode on this page" is a normal answer, not a fault, and must
+    // not surface as an error.
+    //
+    // Identifying it is fiddly: the CDN build is MINIFIED, so `err.name` is
+    // "N", and the message is "No MultiFormat Readers were able to detect
+    // the code" — which contains neither "not" nor "found". `getKind()`
+    // returns the static, unminified kind string, so that is what we ask.
+    if (isNotFound(zx, err)) return null;
+    throw err;
+  }
+  const value = result?.getText?.() ?? result?.text;
   return value ? { value: String(value), format: 'barcode' } : null;
 }
 

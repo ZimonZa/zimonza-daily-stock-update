@@ -562,6 +562,7 @@ export function initOrdersTab(state) {
     barcode: '<span class="ord-src ord-src-bar" title="decoded from the barcode image">barcode</span>',
     'text+barcode': '<span class="ord-src ord-src-ok" title="the printed number and the barcode agree">text ✓ barcode</span>',
     'text-barcode-mismatch': '<span class="ord-src ord-src-clash" title="the printed number and the barcode do not match — check this one">text ≠ barcode</span>',
+    guess: '<span class="ord-src ord-src-clash" title="no MY… number was printed on this page — this is the closest courier-shaped token found. Check it.">guess — check</span>',
     manual: '<span class="ord-src ord-src-man" title="you typed this">typed</span>'
   };
 
@@ -576,7 +577,12 @@ export function initOrdersTab(state) {
   function noteCell(r) {
     const dupe = dupeFlag(r);
     const missing = r.missing?.length ? `<span class="ord-flag">${esc(r.missing.join(', '))}</span>` : '';
-    return (dupe + ' ' + missing).trim() || '<span class="zm-muted">—</span>';
+    // No tracking ID means the page did not print one where we looked. Show
+    // what it DID say, so the reason is visible rather than left to guesswork.
+    const why = (!r.forwardId && r.pageTextSample)
+      ? `<details class="ord-why"><summary>what the page said</summary><code>${esc(r.pageTextSample)}</code></details>`
+      : '';
+    return ((dupe + ' ' + missing).trim() || '<span class="zm-muted">—</span>') + why;
   }
 
   function renderConfirm() {
@@ -632,7 +638,7 @@ export function initOrdersTab(state) {
             <td class="px-2 py-1.5">${cell(i, 'customer', r.customer?.name || '', 'w-36', 'placeholder="masked on label"')}</td>
             <td class="px-2 py-1.5">${cell(i, 'address', r.customer?.address || '', 'w-48')}</td>
             <td class="px-2 py-1.5">${cell(i, 'date', r.dispatchDate, 'w-36', 'type="date"')}</td>
-            <td class="px-2 py-1.5 whitespace-nowrap" data-ord-note="${i}">${noteCell(r)}</td>
+            <td class="px-2 py-1.5" data-ord-note="${i}">${noteCell(r)}</td>
           </tr>`).join('')}
         </tbody>
       </table>`;

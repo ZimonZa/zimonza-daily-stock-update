@@ -62,6 +62,9 @@ export function dispatchFromPageRecord(rec, { sourceFile = '', dispatchDate = ''
     // image, or a person typing it in. Shown in the review so a decoded
     // value is never mistaken for one the label actually printed.
     forwardIdSource: fields.forwardIdSource || (fields.forwardId ? 'text' : ''),
+    // What the page actually said, kept only when no ID was confidently
+    // read, so a blank field can explain itself instead of just sitting there.
+    pageTextSample: fields.pageTextSample || '',
     orderId: fields.orderId || '',
     customer: {
       name: fields.customerName || '',
