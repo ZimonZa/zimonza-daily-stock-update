@@ -348,5 +348,33 @@ chk('search by forward id narrows the table',
   el('ord-table').innerHTML.includes('SF002') && !el('ord-table').innerHTML.includes('SF001'),
   el('ord-count').textContent);
 
+// ── AUDIT C: one tracking ID typed onto two rows must not save ──
+// Both rows would be written to the same document and the second would
+// silently replace the first — one parcel's products and customer, gone.
+DISPATCHES.length = 0;
+await tab.refresh();
+tab.ingestLabel({ pages: 2, pageRecords: [
+  { page: 1, forwardId: 'MYEC5000000001', customerName: 'Asha', address: 'Delhi 110085', missing: [],
+    skus: [{ sellerSkuCode: 'ZM-11-Purple', zmCode: 'ZM-11', colourName: 'Purple', count: 1 }] },
+  { page: 2, forwardId: 'MYEC5000000002', customerName: 'Ravi', address: 'Pune 411001', missing: [],
+    skus: [{ sellerSkuCode: 'ZM-11-Purple', zmCode: 'ZM-11', colourName: 'Purple', count: 1 }] }
+] }, 'two.pdf');
+// Type row 2's ID over with row 1's
+el('ord-confirm-table').fire('input', {
+  target: { closest: sel => sel === 'input[data-ord-edit]'
+    ? { dataset: { ordEdit: 'forwardId', ordI: '1' }, value: 'myec5000000001' } : null }
+});
+// Tick row 2 again so both would be saved
+el('ord-confirm-table').fire('change', {
+  target: { closest: sel => sel === 'input[data-ord-keep]' ? { dataset: { ordKeep: '1' }, checked: true } : null }
+});
+writes.dispatches.length = 0; writes.added.length = 0;
+notify._clear?.();
+await el('ord-confirm-save')._listeners.click[0]();
+chk('THE RULE: two rows with one tracking ID are refused, nothing saved',
+  writes.dispatches.length === 0 && writes.added.length === 0, JSON.stringify(writes.dispatches.map(d => d.forwardId)));
+chk('and the user is told which ID clashes',
+  (notify._sink || []).some(m => /MYEC5000000001/.test(m) && /more than one row/.test(m)), JSON.stringify(notify._sink));
+
 console.log(fails ? `\n${fails} FAILURE(S)` : '\nOrders UI test clean.');
 process.exit(fails ? 1 : 0);

@@ -28,15 +28,29 @@ const BORDER_COLORS = {
   info: 'border-blue-500/40'
 };
 
+// Toast messages are PLAIN TEXT. They carry customer names read from label
+// PDFs, decoded barcode values, file names and spreadsheet cells — all
+// untrusted — and inserting them as HTML let a crafted value inject markup.
+// It also mangled honest text: "ZM-<no>-<colour>" rendered as "ZM--",
+// because the browser parsed <no> and <colour> as tags.
+export const escapeText = (s) => String(s ?? '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+// A counter, not the clock. Toasts raised in the same millisecond used to
+// share an id, so each dismiss timer found only the first one and the rest
+// stayed on screen for good.
+let toastSeq = 0;
+
 /**
  * Show a toast notification
- * @param {string} message
+ * @param {string} message  plain text — it is escaped, never parsed as HTML
  * @param {'success'|'error'|'warning'|'info'} type
  * @param {number} duration ms (0 = permanent)
  */
 export function toast(message, type = 'info', duration = 4000) {
   const c = getContainer();
-  const id = `toast-${Date.now()}`;
+  const id = `toast-${Date.now()}-${++toastSeq}`;
   const border = BORDER_COLORS[type] || BORDER_COLORS.info;
 
   const el = document.createElement('div');
@@ -47,7 +61,7 @@ export function toast(message, type = 'info', duration = 4000) {
 
   el.innerHTML = `
     ${ICONS[type] || ICONS.info}
-    <span class="flex-1 leading-snug">${message}</span>
+    <span class="flex-1 leading-snug">${escapeText(message)}</span>
     <button onclick="this.closest('[id^=toast]').remove()" class="text-slate-400 hover:text-white ml-1 flex-shrink-0">
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
     </button>`;

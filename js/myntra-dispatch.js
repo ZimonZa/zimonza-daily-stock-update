@@ -312,7 +312,21 @@ export function classifyAgainstSaved(rows, saved) {
   return (rows || []).map(row => {
     const k = normForwardId(row.forwardId);
     const hit = k ? byId.get(k) : null;
-    if (!hit) return { ...row, _dupe: 'new', _keep: row._keep !== false };
+    if (!hit) {
+      // Clear EVERY duplicate marker, not just _dupe. A row re-classified after
+      // its tracking ID was corrected carries the old `_update: true` in
+      // `...row`; left in place, dispatchWritePayload strips `status` and
+      // `return`, and a brand-new parcel is saved with no status at all —
+      // missing from "Still out" and showing a blank status chip.
+      return {
+        ...row,
+        _dupe: 'new',
+        _update: false,
+        _existingId: '',
+        _existingReturn: '',
+        _keep: row._keep !== false
+      };
+    }
 
     const hasReturn = !!hit.return?.type;
     return {
@@ -326,6 +340,25 @@ export function classifyAgainstSaved(rows, saved) {
       _keep: false
     };
   });
+}
+
+/**
+ * Tracking IDs that appear on more than one row of the same save.
+ *
+ * The tracking ID is the document id, so two rows sharing one are written to
+ * the SAME document and the second silently replaces the first — one parcel's
+ * products and customer simply vanish. Pages read from a file are already
+ * merged, but an ID typed into the review is not, so this is checked at save.
+ *
+ * @returns {string[]} the repeated IDs, normalised
+ */
+export function repeatedIds(rows) {
+  const seen = new Map();
+  for (const r of rows || []) {
+    const k = normForwardId(r.forwardId);
+    if (k) seen.set(k, (seen.get(k) || 0) + 1);
+  }
+  return [...seen].filter(([, n]) => n > 1).map(([k]) => k);
 }
 
 /**

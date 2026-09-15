@@ -88,6 +88,34 @@ export function computeTotals(lines) {
 
 // ═══════════════════ Purchase tab UI ═══════════════════
 
+/**
+ * What a supplier has not yet sent against a bill.
+ *
+ * PURE, and at module level so it can be tested — it used to live inside the
+ * tab's closure, where nothing could reach it. Receipts are stored beside the
+ * bill and never alter its figures; this only compares the two.
+ *
+ * @returns {{pcs:number, value:number, lines:Array}} value is taxable (ex-GST)
+ */
+export function shortfallOf(bill) {
+  if (!bill || bill.isReturn) return { pcs: 0, value: 0, lines: [] };
+  const received = new Map((bill.receipts || []).map(r => [r.sellerSkuCode, Number(r.received) || 0]));
+  const lines = [];
+  let pcs = 0, value = 0;
+  for (const l of bill.lines || []) {
+    // No receipts recorded yet: nothing is short. Receipts recorded but this
+    // line absent from them: nothing of it arrived.
+    const got = received.has(l.sellerSkuCode) ? received.get(l.sellerSkuCode) : (bill.receipts ? 0 : l.qty);
+    const short = Math.max(0, (Number(l.qty) || 0) - got);
+    if (short > 0) {
+      lines.push({ ...l, received: got, short });
+      pcs += short;
+      value += round2(short * (Number(l.rate) || 0));
+    }
+  }
+  return { pcs, value: round2(value), lines };
+}
+
 export function initPurchaseTab(state) {
   const el = id => document.getElementById(id);
 
@@ -705,22 +733,6 @@ export function initPurchaseTab(state) {
    * What a purchase order is still owed.
    * PURE — the bill's own figures are never altered; receipts sit alongside.
    */
-  function shortfallOf(bill) {
-    if (!bill || bill.isReturn) return { pcs: 0, value: 0, lines: [] };
-    const received = new Map((bill.receipts || []).map(r => [r.sellerSkuCode, Number(r.received) || 0]));
-    const lines = [];
-    let pcs = 0, value = 0;
-    for (const l of bill.lines || []) {
-      const got = received.has(l.sellerSkuCode) ? received.get(l.sellerSkuCode) : (bill.receipts ? 0 : l.qty);
-      const short = Math.max(0, (Number(l.qty) || 0) - got);
-      if (short > 0) {
-        lines.push({ ...l, received: got, short });
-        pcs += short;
-        value += round2(short * (Number(l.rate) || 0));
-      }
-    }
-    return { pcs, value: round2(value), lines };
-  }
 
   let receiveBill = null;
 
@@ -787,11 +799,23 @@ export function initPurchaseTab(state) {
     const btn = el('receive-save');
     btn.disabled = true;
     try {
-      const receipts = [...el('receive-body').querySelectorAll('input[data-recv]')].map(inp => ({
-        sellerSkuCode: inp.dataset.recv,
-        ordered: Number(inp.dataset.ordered) || 0,
-        received: Math.max(0, Math.min(Number(inp.dataset.ordered) || 0, Math.floor(Number(inp.value) || 0)))
-      }));
+      // Receipts record against what was ORDERED, so a count above it is
+      // capped. That used to happen in silence: type 5 against an order of 3
+      // and 3 was saved with no sign the other 2 had been dropped.
+      const over = [];
+      const receipts = [...el('receive-body').querySelectorAll('input[data-recv]')].map(inp => {
+        const ordered = Number(inp.dataset.ordered) || 0;
+        const typed = Math.floor(Number(inp.value) || 0);
+        if (typed > ordered) over.push(`${inp.dataset.recv} (${typed} typed, ${ordered} ordered)`);
+        return {
+          sellerSkuCode: inp.dataset.recv,
+          ordered,
+          received: Math.max(0, Math.min(ordered, typed))
+        };
+      });
+      if (over.length) {
+        notify.warning(`More arrived than was ordered on ${over.length} line(s) — recorded as the ordered quantity: ${over.slice(0, 3).join(', ')}${over.length > 3 ? '…' : ''}. Put the extra pieces on a separate bill.`, 8000);
+      }
       await savePurchaseReceipts(receiveBill.id, receipts);
       el('receive-modal').classList.add('hidden');
       await refreshBills();

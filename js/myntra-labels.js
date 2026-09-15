@@ -100,15 +100,28 @@ export function matchSkusOnPage(pageText, index) {
   const found = [];
   let rest = text.toUpperCase();
 
+  // A code only counts when it stands on its own. Without this, "ZM-11-Pink"
+  // matched inside "ZM-11-Pinkish" and "ZM-1-Red" inside "XZM-1-Red" — a
+  // different product recorded, with no sign anything was wrong.
+  const isWordChar = (ch) => !!ch && /[A-Z0-9]/.test(ch);
+
   for (const entry of index.codes) {
     let count = 0;
     let first = -1;
+    let from = 0;
     let at;
-    while ((at = rest.indexOf(entry.upper)) !== -1) {
+    while ((at = rest.indexOf(entry.upper, from)) !== -1) {
+      const end = at + entry.upper.length;
+      if (isWordChar(rest[at - 1]) || isWordChar(rest[end])) {
+        from = at + 1;              // part of a longer token — not this code
+        continue;
+      }
       if (first === -1) first = at;
       count++;
-      // Blank out what was matched so a shorter code cannot re-count it
-      rest = rest.slice(0, at) + ' '.repeat(entry.upper.length) + rest.slice(at + entry.upper.length);
+      // Blank out what was matched so a shorter code cannot re-count it.
+      // Same length, so every later index stays valid.
+      rest = rest.slice(0, at) + ' '.repeat(entry.upper.length) + rest.slice(end);
+      from = end;
     }
     if (count) {
       found.push({
@@ -264,7 +277,21 @@ export async function parseLabelPdf(file, mappings, onProgress, opts = {}) {
     const wantBarcode = barcodeFallback && (forceBarcode || !fields.forwardId || guessedId);
     if (wantBarcode) {
       const hit = await decodeBarcode(page);
-      if (hit?.value) {
+      // A decoder can read SOMETHING that is not a Myntra tracking number — a
+      // route code, or DataMatrix shipment data. It says so with
+      // confident:false, and that must reach the badge: presenting an unsure
+      // decode as a trusted "barcode" read is exactly the confidently-wrong
+      // failure this reader exists to avoid.
+      if (hit?.value && hit.confident === false) {
+        // Only ever fills a blank. It never replaces a printed number, and a
+        // text guess is no worse than it, so that is left alone too.
+        if (!fields.forwardId) {
+          fields.forwardId = hit.value;
+          fields.forwardIdSource = 'barcode-guess';
+          fields.missing = fields.missing.filter(f => f !== 'forwardId');
+        }
+        barcodeFailures.push({ page: p, reason: hit.reason || 'decoded a value that is not a tracking number' });
+      } else if (hit?.value) {
         if (!fields.forwardId || guessedId) {
           fields.forwardId = hit.value;
           fields.forwardIdSource = 'barcode';
@@ -295,7 +322,15 @@ export async function parseLabelPdf(file, mappings, onProgress, opts = {}) {
       // How many pieces this ONE page represents
       pieces: pieces || 1
     });
+
+    // Let PDF.js drop this page's fonts, operator lists and render caches.
+    // Without it a 200-page file keeps every page's resources alive until the
+    // whole read ends.
+    page.cleanup?.();
   }
+
+  // And the document itself, once every page has been read
+  pdf.cleanup?.();
 
   const { items, unreadablePages } = aggregatePages(pageMatches);
   return {

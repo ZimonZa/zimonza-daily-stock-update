@@ -11,7 +11,7 @@ globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} }
 globalThis.window = globalThis;
 
 import { itemsToLines, extractMyntraFields, looksLikeMyntraLabel } from './myntra-label-layout.js';
-import { extractDispatchFields, parseLabelPdf } from './myntra-labels.js';
+import { extractDispatchFields, parseLabelPdf, buildSkuIndex, matchSkusOnPage } from './myntra-labels.js';
 import { dispatchFromPageRecord, dispatchesFromLabel, mergeByForwardId, productsOf, productsLabel } from './myntra-dispatch.js';
 
 let pass = 0, fail = 0;
@@ -110,7 +110,10 @@ ok('the routing code at the top is not the address',
 ok('the courier hub is not the address', !/lakhnibigha/i.test(f.address), f.address);
 ok('the buyer declaration is not the address', !/declare|resale/i.test(f.address), f.address);
 ok('the block stops at "If undelivered"', !/undelivered/i.test(f.address), f.address);
-eq('only the order ID is reported missing', f.missing, ['orderId']);
+// A Myntra label never prints an order ID. Flagging it put EVERY order under
+// "Need Details" and made that count meaningless.
+eq('a complete Myntra label reports nothing missing', f.missing, []);
+ok('THE RULE: the order ID is not flagged on a label that never prints one', !f.missing.includes('orderId'));
 
 // ════ 4. The old reader got this wrong — why the change was needed ════
 const flat = lines.map(l => l.text).join(' ');
@@ -374,6 +377,49 @@ eq('an old single-code record still shows its product',
 eq('the one-line summary lists every product',
   productsLabel({ products: [{ sellerSkuCode: 'ZM-49-Pyazi', qty: 1 }, { sellerSkuCode: 'ZM-43-Chiku', qty: 1 }] }),
   'ZM-49-Pyazi ×1, ZM-43-Chiku ×1');
+
+// ════ AUDIT E. A code only counts when it stands on its own ════
+// "ZM-11-Pink" was matched inside "ZM-11-Pinkish", and "ZM-1-Red" inside
+// "XZM-1-Red" — a different product recorded with no sign of it.
+const pinkIdx = buildSkuIndex([{ sellerSkuCode: 'ZM-11-Pink', zmCode: 'ZM-11', colourName: 'Pink' }]);
+// The mapped code must refuse it. The generic scan then reads it as its OWN
+// code and flags it unmapped — an unknown code is picked up, never dropped,
+// and never passed off as a code it is not.
+const pinkish = matchSkusOnPage('ZM-11-Pinkish -', pinkIdx);
+ok('THE RULE: a longer colour is not the shorter one',
+  !pinkish.some(m => m.sellerSkuCode === 'ZM-11-Pink'), JSON.stringify(pinkish));
+eq('it is read as its own code, flagged unmapped',
+  pinkish.map(m => [m.sellerSkuCode, m.mapped]), [['ZM-11-Pinkish', false]]);
+eq('nor is a code buried in a longer token',
+  matchSkusOnPage('XZM-1-Red -', buildSkuIndex([{ sellerSkuCode: 'ZM-1-Red', zmCode: 'ZM-1', colourName: 'Red' }])), []);
+const longer = matchSkusOnPage('ZM-111-Pink -', pinkIdx);
+ok('nor a longer number', !longer.some(m => m.sellerSkuCode === 'ZM-11-Pink'), JSON.stringify(longer));
+eq('which is also read as its own unmapped code', longer.map(m => [m.sellerSkuCode, m.mapped]), [['ZM-111-Pink', false]]);
+eq('but the real code still matches', matchSkusOnPage('ZM-11-Pink -', pinkIdx).map(m => m.count), [1]);
+eq('inside brackets too', matchSkusOnPage('[ZM-11-Pink - T]', pinkIdx).map(m => m.count), [1]);
+eq('and repeated, every one counts', matchSkusOnPage('ZM-11-Pink - ZM-11-Pink - ZM-11-Pink -', pinkIdx)[0].count, 3);
+eq('with both mapped, the longer colour wins its own lines',
+  matchSkusOnPage('ZM-11-Pinkish - ZM-11-Pink -', buildSkuIndex([
+    { sellerSkuCode: 'ZM-11-Pink', zmCode: 'ZM-11', colourName: 'Pink' },
+    { sellerSkuCode: 'ZM-11-Pinkish', zmCode: 'ZM-11', colourName: 'Pinkish' }
+  ])).map(m => [m.sellerSkuCode, m.count]), [['ZM-11-Pinkish', 1], ['ZM-11-Pink', 1]]);
+
+// ════ AUDIT B. An unsure barcode is never presented as a trusted read ════
+globalThis.__PDF_PAGES = [["Buyer's Name And Address", 'Asha Devi', '12 MG Road 400053', 'If undelivered', 'ZM-43-Rani -'].join(NL)];
+const unsure = await parseLabelPdf(file, maps, null, {
+  decodeBarcode: async () => ({ value: 'LKO12345678RBY', confident: false, reason: 'not a MY number' })
+});
+eq('THE RULE: an unsure decode is badged as a guess', unsure.pageRecords[0].forwardIdSource, 'barcode-guess');
+eq('it still fills the blank so it can be checked', unsure.pageRecords[0].forwardId, 'LKO12345678RBY');
+eq('and the uncertainty is reported', unsure.barcodeFailures.length, 1);
+
+globalThis.__PDF_PAGES = [LABEL];
+const keepsPrinted = await parseLabelPdf(file, maps, null, {
+  decodeBarcode: async () => ({ value: 'LKO12345678RBY', confident: false, reason: 'not a MY number' })
+}).then(r => r, e => { throw e; });
+delete globalThis.__PDF_PAGES;
+eq('an unsure decode never replaces a printed number',
+  keepsPrinted.pageRecords[0].forwardId, 'MYEC1118733669');
 
 // ════ 7d. A GUESS is not an answer ════
 // The tracking number on a real Myntra label is barcode artwork, not text.

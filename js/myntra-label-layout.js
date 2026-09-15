@@ -252,7 +252,10 @@ export function extractMyntraFields(lines) {
     out.address = address;
   }
 
-  for (const f of ['forwardId', 'orderId', 'customerName', 'address']) {
+  // Flag only what a Myntra label actually prints. It never carries an order
+  // ID, so listing that as "missing" put EVERY order under Need Details and
+  // made the count meaningless. The order ID is still read if a label has one.
+  for (const f of ['forwardId', 'customerName', 'address']) {
     if (!out[f]) out.missing.push(f);
   }
   return out;

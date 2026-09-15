@@ -177,7 +177,7 @@ A label with no Myntra markings falls back to the old keyword reader, so other c
 
    A decode that fails now reports **why**. "No barcode found on the page" reads very differently from "the decoder threw", and a decoder that quietly returns nothing is indistinguishable from a label that has no barcode.
 
-Rasterising all 200 pages to re-read a number that is already printed would cost minutes for the same answer, so the expensive path runs only where the cheap one came up empty. **Every row shows which route its ID came from** — `text`, `barcode` or `typed` — because a decoded value is not the same claim as one the label actually printed.
+On a real Myntra label the text never carries the tracking number — it is barcode artwork — so in practice the barcode is read on **every** page. That makes its cost per-page, which is why the decoder tries the header band where the strip actually sits before the far more expensive whole-page pass (measured at 2.5× the cost), and frees each page's pixels as soon as it is done. **Every row shows which route its ID came from** — `text`, `barcode`, `barcode? check` (read, but not a MY… number) or `typed` — because a decoded value is not the same claim as one the label actually printed.
 
 Tracking ID, order ID, customer name and address are each read independently, and **anything the label did not print is flagged rather than invented** — an empty buyer block yields two flagged blanks, never a guess.
 

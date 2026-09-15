@@ -1,13 +1,13 @@
 // ═══════════════════════════════════════════════════════════════
 // ZIMONZA — Reading the barcode off a label page
 //
-// The tracking ID is normally printed as digits under the barcode, and
-// reading that text costs nothing. This is the fallback for when it is
-// not: the page is rasterised and the barcode itself is decoded.
+// The page is rasterised and the barcode itself is decoded.
 //
-// It runs ONLY on a page where the text layer gave no tracking ID. On a
-// 200-page label file that is usually nought to two pages, so the cost
-// lands where the value is instead of on every page.
+// It runs on a page where the text layer gave no tracking ID. On a real
+// MYNTRA label that is EVERY page: the number under the barcode is part of
+// the barcode artwork, not text — confirmed on four real label files. So
+// this is the primary source there, not a rare fallback, and its cost is
+// paid per page: see BANDS for why the cheap band goes first.
 //
 // Two decoders, in order of cost:
 //   1. The browser's own BarcodeDetector — Chrome and Edge have it, and
@@ -22,6 +22,7 @@ const ZXING_URL = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/+esm';
 const FORMATS_NATIVE = ['code_128', 'code_39', 'codabar', 'itf', 'data_matrix', 'qr_code', 'pdf417'];
 
 let nativeSupport = null;   // null = not asked yet
+let nativeFormats = [];     // the subset of FORMATS_NATIVE this browser handles
 let zxingPromise = null;
 
 /** Does this browser decode barcodes itself? Asked once. */
@@ -31,7 +32,8 @@ async function hasNativeDetector() {
   try {
     if (typeof BarcodeDetector === 'function') {
       const supported = await BarcodeDetector.getSupportedFormats();
-      nativeSupport = FORMATS_NATIVE.some(f => supported.includes(f));
+      nativeFormats = FORMATS_NATIVE.filter(f => supported.includes(f));
+      nativeSupport = nativeFormats.length > 0;
     }
   } catch { nativeSupport = false; }
   return nativeSupport;
@@ -60,8 +62,17 @@ async function renderPageToCanvas(pdfPage, scale) {
   return canvas;
 }
 
+/** Zero the canvas so its backing store is released straight away. */
+function releaseCanvas(canvas) {
+  if (!canvas) return;
+  try { canvas.width = 0; canvas.height = 0; } catch { /* already gone */ }
+}
+
 async function decodeNative(canvas) {
-  const detector = new BarcodeDetector({ formats: FORMATS_NATIVE });
+  // Only the formats this browser actually supports. Asking for one it does
+  // not can make the constructor throw, and the native decoder would then
+  // fail on every page and never be used at all.
+  const detector = new BarcodeDetector({ formats: nativeFormats.length ? nativeFormats : FORMATS_NATIVE });
   const found = await detector.detect(canvas);
   // Every value it saw — picking the right one is trackingFromDecoded's job,
   // and a label carries several codes that are not the AWB.
@@ -121,12 +132,17 @@ function zxingHints(zx, { twoD = true } = {}) {
  * strip it would read easily on its own. Cropping to a band removes the
  * noise and multiplies the sampled rows that actually cross the barcode.
  *
- * The whole page is tried first because it is one pass and usually enough.
- * The rest walk down the page, upper third first — where couriers print it.
+ * The HEADER band goes first. On every real Myntra label seen so far the AWB
+ * strip sits 13–22% of the way down the page, and the whole-page pass — which
+ * also looks for 2D codes — was measured against the real library at 2.5x
+ * the cost of the header band. Running it first spent that on every page of
+ * a file before trying where the barcode actually is; and since the number is
+ * barcode artwork on these labels, EVERY page pays it. The whole page (with
+ * the DataMatrix) is now the second resort, the rest walk down the page.
  */
 const BANDS = [
-  [0, 1],        // whole page
   [0, 0.40],     // the header block, where the AWB strip lives
+  [0, 1],        // whole page, 2D codes included
   [0.05, 0.25],
   [0.15, 0.30],
   [0, 0.60],
@@ -247,29 +263,38 @@ export async function decodeTrackingBarcode(pdfPage, { scale = 3, retryScale = 5
       continue;
     }
 
-    for (const [name, decode] of [
-      ['browser', (await hasNativeDetector()) ? decodeNative : null],
-      ['zxing', decodeZxing]
-    ]) {
-      if (!decode) continue;
-      try {
-        const raw = await decode(canvas);
-        const values = Array.isArray(raw) ? raw : (raw?.value ? [raw.value] : []);
-        if (!values.length) continue;
+    try {
+      for (const [name, decode] of [
+        ['browser', (await hasNativeDetector()) ? decodeNative : null],
+        ['zxing', decodeZxing]
+      ]) {
+        if (!decode) continue;
+        try {
+          const raw = await decode(canvas);
+          const values = Array.isArray(raw) ? raw : (raw?.value ? [raw.value] : []);
+          if (!values.length) continue;
 
-        const hit = trackingFromDecoded(values);
-        if (hit.confident) {
-          return { value: hit.value, format: 'barcode', decoder: name, scale: px, reason: '' };
+          const hit = trackingFromDecoded(values);
+          if (hit.confident) {
+            return { value: hit.value, format: 'barcode', decoder: name, scale: px, confident: true, reason: '' };
+          }
+          // Something decoded, but it does not look like a Myntra AWB. Hold it
+          // in case nothing better turns up, and say so rather than pretending.
+          if (hit.value && !best) {
+            // confident:false travels with it, so the parser can badge this as
+            // a guess instead of presenting it as a trusted barcode read.
+            best = { value: hit.value, format: 'barcode', decoder: name, scale: px, confident: false,
+                     reason: `decoded "${hit.value}", which is not a MY… tracking number — check it` };
+          }
+        } catch (err) {
+          notes.push(`${name} at ${px}x: ${err?.message || err}`);
         }
-        // Something decoded, but it does not look like a Myntra AWB. Hold it
-        // in case nothing better turns up, and say so rather than pretending.
-        if (hit.value && !best) {
-          best = { value: hit.value, format: 'barcode', decoder: name, scale: px,
-                   reason: `decoded "${hit.value}", which is not a MY… tracking number — check it` };
-        }
-      } catch (err) {
-        notes.push(`${name} at ${px}x: ${err?.message || err}`);
       }
+    } finally {
+      // Free the pixels now rather than whenever the collector gets round to
+      // it. A 3x A4 page is ~18 MB of RGBA and a 5x retry ~50 MB; across a
+      // 200-page file, holding them until GC is what makes a tab stall.
+      releaseCanvas(canvas);
     }
   }
 
@@ -298,4 +323,4 @@ export async function barcodeSupport() {
 }
 
 /** Told from the outside so a test need not stand up a canvas. */
-export const __testing = { tidy, plausible };
+export const __testing = { tidy, plausible, BANDS, releaseCanvas };

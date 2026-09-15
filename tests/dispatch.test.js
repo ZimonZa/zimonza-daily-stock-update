@@ -5,7 +5,7 @@ import { extractDispatchFields, parseLabelPdf } from './myntra-labels.js';
 import {
   offenderKey, dispatchFromPageRecord, dispatchesFromLabel, mergeByForwardId,
   applyReturn, offenderSummary, findByForwardId,
-  classifyAgainstSaved, rekeyDispatch, dispatchWritePayload, normForwardId
+  classifyAgainstSaved, rekeyDispatch, dispatchWritePayload, normForwardId, repeatedIds
 } from './myntra-dispatch.js';
 import { generateInventoryUpdate } from './myntra.js';
 import { availableReturnStock } from './myntra-returns.js';
@@ -232,6 +232,25 @@ eq('and says what came back', classed[2]._existingReturn, RETURN_TYPES.FAKE_RETU
 ok('spacing does not hide a duplicate either', classed[2]._existingId === 'b');
 
 eq('normForwardId collapses spacing and case', normForwardId(' sf 12 34 '), 'SF1234');
+
+// ════ AUDIT A. Correcting a duplicate's ID must not leave it an "update" ════
+// A row read as an existing parcel is an update, and an update's payload drops
+// status and return. If the user corrects the ID to a NEW parcel and the old
+// flag survives, that new parcel is saved with no status at all.
+let corrected = classifyAgainstSaved([{ forwardId: 'SF001', status: 'shipped', return: null }], saved)[0];
+eq('read as an existing parcel', [corrected._dupe, corrected._update], ['exists', true]);
+Object.assign(corrected, { forwardId: 'SF777' });
+Object.assign(corrected, classifyAgainstSaved([{ ...corrected }], saved)[0]);
+eq('corrected to a new ID it is new', corrected._dupe, 'new');
+eq('THE RULE: and no longer an update', corrected._update, false);
+eq('with no stale link to the old parcel', [corrected._existingId, corrected._existingReturn], ['', '']);
+ok('so it is saved WITH its status', 'status' in dispatchWritePayload(corrected));
+
+// ════ AUDIT C. One tracking ID on two rows of one save ════
+eq('no repeats, nothing reported', repeatedIds([{ forwardId: 'A1' }, { forwardId: 'B2' }]), []);
+eq('THE RULE: a repeated ID is caught', repeatedIds([{ forwardId: 'A1' }, { forwardId: 'B2' }, { forwardId: 'a1' }]), ['A1']);
+eq('spacing does not hide a repeat', repeatedIds([{ forwardId: 'MY EC1' }, { forwardId: 'myec1' }]), ['MYEC1']);
+eq('rows with no ID are not a clash', repeatedIds([{ forwardId: '' }, { forwardId: '' }]), []);
 
 // ════ 8. The write payload — what actually reaches Firestore ════
 const fresh = { forwardId: 'SF9', status: 'shipped', return: null, qty: 2, _keep: true, _dupe: 'new' };

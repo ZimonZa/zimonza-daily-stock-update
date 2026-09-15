@@ -102,6 +102,11 @@ function build() {
     '};'
   ].join('\n'));
 
+  // The REAL toast module, kept under another name. The stub below replaces
+  // it for every other suite, which would otherwise leave the real one —
+  // and its HTML escaping — completely untested.
+  cpSync(join(repo, 'js', 'notifications.js'), join(sandbox, '_real-notifications.js'));
+
   // Toasts must not need a DOM
   writeFileSync(join(sandbox, 'notifications.js'), [
     'const sink = [];',

@@ -7,7 +7,7 @@
 import { RETURN_TYPES, RETURN_TYPE_LABELS, DISPATCH_STATUS } from './constants.js';
 import {
   dispatchesFromLabel, mergeByForwardId, applyReturn, offenderSummary, offenderKey,
-  classifyAgainstSaved, rekeyDispatch, productsOf, productsLabel
+  classifyAgainstSaved, rekeyDispatch, productsOf, productsLabel, repeatedIds
 } from './myntra-dispatch.js';
 import { parseLabelPdf } from './myntra-labels.js';
 import {
@@ -207,6 +207,15 @@ export function initOrdersTab(state) {
     const keep = pending.rows.filter(r => r._keep && r._dupe !== 'locked');
     if (!keep.length) { notify.warning('Nothing ticked to save'); return; }
 
+    // Two ticked rows with one tracking ID would be written to the same
+    // document, and the second would silently replace the first. Refuse, and
+    // say which, rather than lose a parcel.
+    const clash = repeatedIds(keep);
+    if (clash.length) {
+      notify.error(`The same tracking ID is on more than one row: ${clash.join(', ')}. Correct or untick one before saving.`);
+      return;
+    }
+
     const btn = el('ord-confirm-save');
     btn.disabled = true;
     try {
@@ -383,7 +392,7 @@ export function initOrdersTab(state) {
         break;
       }
       case 'delete':
-        if (!confirm(`Delete the record for ${d.forwardId}? Any stock it already added stays in the register.`)) return;
+        if (!confirm(`Delete the record for ${d.forwardId}? This removes it from the report only — stock is not affected.`)) return;
         store.deleteDispatch(d.id)
           .then(() => { notify.success('Record deleted'); return refresh(); })
           .catch(err => notify.error('Delete failed: ' + err.message));
@@ -586,6 +595,7 @@ export function initOrdersTab(state) {
     barcode: '<span class="ord-src ord-src-bar" title="decoded from the barcode image">barcode</span>',
     'text+barcode': '<span class="ord-src ord-src-ok" title="the printed number and the barcode agree">text ✓ barcode</span>',
     'text-barcode-mismatch': '<span class="ord-src ord-src-clash" title="the printed number and the barcode do not match — check this one">text ≠ barcode</span>',
+    'barcode-guess': '<span class="ord-src ord-src-clash" title="a barcode was read, but it is not a MY… tracking number — check it">barcode? check</span>',
     guess: '<span class="ord-src ord-src-clash" title="no MY… number was printed on this page — this is the closest courier-shaped token found. Check it.">guess — check</span>',
     manual: '<span class="ord-src ord-src-man" title="you typed this">typed</span>'
   };
