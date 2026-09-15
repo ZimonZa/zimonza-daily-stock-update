@@ -7,12 +7,12 @@
 import { RETURN_TYPES, RETURN_TYPE_LABELS, DISPATCH_STATUS } from './constants.js';
 import {
   dispatchesFromLabel, mergeByForwardId, applyReturn, offenderSummary, offenderKey,
-  classifyAgainstSaved, rekeyDispatch
+  classifyAgainstSaved, rekeyDispatch, productsOf, productsLabel
 } from './myntra-dispatch.js';
 import { parseLabelPdf } from './myntra-labels.js';
 import {
   saveDispatches, addDispatch, getAllDispatches, updateDispatch, deleteDispatch,
-  markDispatchUnfulfillable, addMyntraReturns
+  markDispatchUnfulfillable
 } from './firestore-service.js';
 import { swatchDot } from './swatches.js';
 import { debounce, toCSV, downloadFile, formatDateDisplay, today } from './utils.js';
@@ -26,13 +26,14 @@ const EXPORT_COLUMNS = [
   { key: 'orderId',       label: 'Order ID' },
   { key: 'customerName',  label: 'Customer' },
   { key: 'customerKey',   label: 'Grouped by' },
-  { key: 'sellerSkuCode', label: 'SellerSkuCode' },
-  { key: 'colourName',    label: 'Colour' },
-  { key: 'qty',           label: 'Qty' },
+  { key: 'products',      label: 'Products' },
+  { key: 'productCount',  label: 'Products (count)' },
+  { key: 'qty',           label: 'Total Pieces' },
   { key: 'dispatchDate',  label: 'Dispatched' },
   { key: 'status',        label: 'Status' },
   { key: 'returnType',    label: 'Return Type' },
   { key: 'returnId',      label: 'Return ID' },
+  { key: 'condition',     label: 'Condition' },
   { key: 'foundInside',   label: 'Found Inside' }
 ];
 
@@ -43,7 +44,7 @@ export function initOrdersTab(state) {
   // Production passes nothing and gets the real thing.
   const store = {
     getAllDispatches, saveDispatches, addDispatch, updateDispatch,
-    deleteDispatch, markDispatchUnfulfillable, addMyntraReturns,
+    deleteDispatch, markDispatchUnfulfillable,
     ...(state.storage || {})
   };
   const view = { q: '', status: 'all', sortKey: 'dispatchDate', sortDir: -1 };
@@ -79,6 +80,7 @@ export function initOrdersTab(state) {
   // is not, so this never accumulates duplicate listeners.
   el('ord-confirm-table').addEventListener('input', onReviewEdit);
   el('ord-confirm-table').addEventListener('change', onReviewEdit);
+  el('ord-confirm-table').addEventListener('click', onProductClick);
 
   // ── Manual add ─────────────────────────────────────────────
   el('ord-add-btn').addEventListener('click', openAddModal);
@@ -118,8 +120,8 @@ export function initOrdersTab(state) {
   }
 
   /**
-   * Read a label dropped on THIS tab. The Purchase tab still calls
-   * `ingestLabel` with its own parse, so there is one review either way.
+   * Read a label dropped on this tab — the ONLY way labels reach it.
+   * Orders is a standalone report: the Purchase tab no longer feeds it.
    */
   async function onLabelFile(file) {
     const drop = el('ord-drop');
@@ -265,6 +267,14 @@ export function initOrdersTab(state) {
         zmCode: known?.zmCode || '',
         colourName: known?.colourName || '',
         qty: Math.max(1, Math.floor(Number(el('ord-add-qty').value) || 1)),
+        // Same shape as a label-read parcel, so every record lists its products
+        products: sku ? [{
+          sellerSkuCode: known?.sellerSkuCode || sku,
+          zmCode: known?.zmCode || '',
+          colourName: known?.colourName || '',
+          qty: Math.max(1, Math.floor(Number(el('ord-add-qty').value) || 1)),
+          mapped: !!known
+        }] : [],
         dispatchDate: el('ord-add-date').value || today(),
         sourceFile: 'manual',
         status: DISPATCH_STATUS.SHIPPED,
@@ -291,14 +301,14 @@ export function initOrdersTab(state) {
   function openReturnModal(dispatch) {
     openDispatch = dispatch;
     el('ord-ret-title').textContent = `Return against ${dispatch.forwardId || '(no tracking ID)'}`;
+    // The whole parcel, not just its first product
     el('ord-ret-sub').innerHTML =
-      `${dispatch.colourName ? swatchDot(dispatch.colourName) + ' ' : ''}` +
-      `${esc(dispatch.sellerSkuCode) || '—'} · ${dispatch.qty} pc(s) · ` +
+      `${esc(productsLabel(dispatch) || 'no product read')} · ${dispatch.qty} pc(s) · ` +
       `${esc(dispatch.customer?.name || dispatch.customer?.label || 'customer not printed')}`;
     el('ord-ret-id').value = dispatch.return?.returnId || '';
     el('ord-ret-type').value = dispatch.return?.type || RETURN_TYPES.CUSTOMER_RETURN;
     el('ord-ret-found').value = dispatch.return?.foundInside || '';
-    el('ord-ret-condition').value = '';
+    el('ord-ret-condition').value = dispatch.return?.condition || '';
     el('ord-ret-date').value = dispatch.return?.date || today();
     syncReturnForm();
     el('ord-return-modal').classList.remove('hidden');
@@ -310,15 +320,17 @@ export function initOrdersTab(state) {
     const fake = el('ord-ret-type').value === RETURN_TYPES.FAKE_RETURN;
     el('ord-ret-found-wrap').classList.toggle('hidden', !fake);
     el('ord-ret-condition-wrap').classList.toggle('hidden', fake);
+    // Report only: this tab never touches stock, and says so plainly so no
+    // one expects the Returns & RTO register to change.
     el('ord-ret-effect').textContent = fake
-      ? 'No stock is added — the product did not come back.'
-      : 'This adds the piece to the Returns & RTO register as usable stock.';
+      ? 'Recorded in this report as a FAKE return, and counted against the customer. Stock is not changed.'
+      : 'Recorded in this report only. Stock is not changed — add returned pieces in the Returns & RTO tab.';
     el('ord-ret-effect').className = fake ? 'ord-effect ord-effect-bad' : 'ord-effect ord-effect-ok';
   }
 
   async function saveReturn() {
     if (!openDispatch) return;
-    const { dispatchPatch, returnRow, error } = applyReturn(openDispatch, {
+    const { dispatchPatch, error } = applyReturn(openDispatch, {
       returnId: el('ord-ret-id').value,
       type: el('ord-ret-type').value,
       foundInside: el('ord-ret-found').value,
@@ -330,15 +342,13 @@ export function initOrdersTab(state) {
     const btn = el('ord-ret-save');
     btn.disabled = true;
     try {
-      // The record first, then the stock — the order used everywhere else,
-      // so a failure leaves a visible record rather than phantom stock.
+      // Report only. The dispatch record is the whole write — nothing is sent
+      // to the Returns & RTO register, by design.
       await store.updateDispatch(openDispatch.id, dispatchPatch);
-      if (returnRow) {
-        await store.addMyntraReturns([returnRow]);
-        await state.refreshReturns?.();
-        notify.success(`${RETURN_TYPE_LABELS[dispatchPatch.return.type]} recorded — ${returnRow.qty} pc(s) back in the register`);
+      if (dispatchPatch.return.type === RETURN_TYPES.FAKE_RETURN) {
+        notify.warning(`Fake return recorded against ${openDispatch.customer?.label || 'this customer'}`);
       } else {
-        notify.warning(`Fake return recorded against ${openDispatch.customer?.label || 'this customer'} — no stock added`);
+        notify.success(`${RETURN_TYPE_LABELS[dispatchPatch.return.type]} recorded in the report`);
       }
       closeReturnModal();
       await refresh();
@@ -388,15 +398,32 @@ export function initOrdersTab(state) {
     orderId: d.orderId,
     customerName: d.customer?.name || '',
     customerKey: d.customer?.keyType || '',
-    sellerSkuCode: d.sellerSkuCode,
-    colourName: d.colourName,
+    products: productsLabel(d, '; '),
+    productCount: productsOf(d).length,
     qty: d.qty,
     dispatchDate: d.dispatchDate,
     status: d.status,
     returnType: d.return?.type ? RETURN_TYPE_LABELS[d.return.type] : '',
     returnId: d.return?.returnId || '',
+    condition: d.return?.condition || '',
     foundInside: d.return?.foundInside || ''
   }));
+
+  /**
+   * Every product in a parcel, one line each with its colour and pieces.
+   * A combo parcel is listed in full — never reduced to its first product.
+   */
+  function productList(d) {
+    const list = productsOf(d);
+    if (!list.length) return '<span class="ord-flag">no product read</span>';
+    const combo = list.length > 1 ? `<span class="ord-combo">${list.length} products</span>` : '';
+    return `<div class="ord-products">${combo}${list.map(p => `
+      <div class="ord-product">
+        ${p.colourName ? swatchDot(p.colourName) : ''}
+        <span class="zm-mono text-slate-200">${esc(p.sellerSkuCode)}</span>
+        <span class="ord-pcs">×${p.qty}</span>
+      </div>`).join('')}</div>`;
+  }
 
   function matches(d) {
     if (view.status === 'shipped' && d.status !== DISPATCH_STATUS.SHIPPED) return false;
@@ -408,7 +435,8 @@ export function initOrdersTab(state) {
     const q = view.q.toLowerCase();
     if (!q) return true;
     return [d.forwardId, d.orderId, d.customer?.name, d.customer?.address,
-            d.sellerSkuCode, d.colourName, d.return?.returnId]
+            d.return?.returnId,
+            ...productsOf(d).flatMap(p => [p.sellerSkuCode, p.colourName])]
       .some(v => String(v ?? '').toLowerCase().includes(q));
   }
 
@@ -445,7 +473,7 @@ export function initOrdersTab(state) {
 
     const tableEl = el('ord-table');
     if (!dispatches.length) {
-      tableEl.innerHTML = `<p class="text-slate-500 text-sm text-center py-6">Nothing tracked yet — drop a label in the Purchase tab, or add an order by hand.</p>`;
+      tableEl.innerHTML = `<p class="text-slate-500 text-sm text-center py-6">Nothing tracked yet — drop a label above, or add an order by hand.</p>`;
       return;
     }
     if (!rows.length) {
@@ -458,9 +486,8 @@ export function initOrdersTab(state) {
       <table class="w-full text-sm">
         <thead class="sticky top-0 z-10 bg-slate-900"><tr class="text-slate-500 text-xs uppercase tracking-wide border-b border-white/5">
           ${th(view, 'forwardId', 'Forward ID')}
-          ${th(view, 'sellerSkuCode', 'SellerSkuCode')}
-          <th class="text-left px-4 py-2.5">Colour</th>
-          ${th(view, 'qty', 'Qty', true)}
+          ${th(view, 'sellerSkuCode', 'Products')}
+          ${th(view, 'qty', 'Pieces', true)}
           <th class="text-left px-4 py-2.5">Customer</th>
           ${th(view, 'dispatchDate', 'Dispatched')}
           <th class="text-left px-4 py-2.5">Status</th>
@@ -470,8 +497,7 @@ export function initOrdersTab(state) {
         <tbody>${rows.map(d => `
           <tr class="border-b border-white/5 hover:bg-white/[0.02] ${d.return?.type === RETURN_TYPES.FAKE_RETURN ? 'ord-row-fake' : ''}">
             <td class="px-4 py-2 text-slate-200 font-medium whitespace-nowrap zm-mono">${esc(d.forwardId) || '<span class="ord-flag">no tracking ID</span>'}</td>
-            <td class="px-4 py-2 text-slate-300">${esc(d.sellerSkuCode) || '—'}</td>
-            <td class="px-4 py-2">${d.colourName ? swatchDot(d.colourName) + ' ' + esc(d.colourName) : '<span class="zm-muted">—</span>'}</td>
+            <td class="px-4 py-2">${productList(d)}</td>
             <td class="px-4 py-2 text-right text-slate-200 font-semibold">${d.qty}</td>
             <td class="px-4 py-2 text-slate-400 max-w-[180px] truncate" title="${esc(d.customer?.address || '')}">
               ${esc(d.customer?.name || d.customer?.label || '—')}
@@ -550,8 +576,6 @@ export function initOrdersTab(state) {
   const EDIT_FIELDS = {
     forwardId: { path: 'forwardId', upper: true },
     orderId: { path: 'orderId', upper: true },
-    sku: { path: 'sellerSkuCode' },
-    qty: { path: 'qty', number: true },
     customer: { path: 'customer.name', rekey: true },
     address: { path: 'customer.address', rekey: true },
     date: { path: 'dispatchDate' }
@@ -615,8 +639,7 @@ export function initOrdersTab(state) {
           <th class="px-2 py-2 text-left">Keep</th>
           <th class="px-2 py-2 text-left">Forward tracking ID</th>
           <th class="px-2 py-2 text-left">Order ID</th>
-          <th class="px-2 py-2 text-left">SellerSkuCode</th>
-          <th class="px-2 py-2 text-left">Qty</th>
+          <th class="px-2 py-2 text-left">Products in this parcel</th>
           <th class="px-2 py-2 text-left">Customer</th>
           <th class="px-2 py-2 text-left">Delivery address</th>
           <th class="px-2 py-2 text-left">Dispatched</th>
@@ -633,8 +656,7 @@ export function initOrdersTab(state) {
               ${SOURCE_BADGE[r.forwardIdSource] || ''}
             </td>
             <td class="px-2 py-1.5">${cell(i, 'orderId', r.orderId, 'w-32')}</td>
-            <td class="px-2 py-1.5">${cell(i, 'sku', r.sellerSkuCode, 'w-40', 'list="ord-sku-list" autocomplete="off"')}</td>
-            <td class="px-2 py-1.5">${cell(i, 'qty', r.qty, 'w-16', 'type="number" min="1"')}</td>
+            <td class="px-2 py-1.5 align-top" data-ord-products="${i}">${productEditor(r, i)}</td>
             <td class="px-2 py-1.5">${cell(i, 'customer', r.customer?.name || '', 'w-36', 'placeholder="masked on label"')}</td>
             <td class="px-2 py-1.5">${cell(i, 'address', r.customer?.address || '', 'w-48')}</td>
             <td class="px-2 py-1.5">${cell(i, 'date', r.dispatchDate, 'w-36', 'type="date"')}</td>
@@ -645,10 +667,75 @@ export function initOrdersTab(state) {
 
   }
 
+  /**
+   * Every product in one parcel, each editable, with its own piece count.
+   * A combo label lists them all here — nothing is folded into the first.
+   */
+  function productEditor(r, i) {
+    const list = r.products || [];
+    const lines = list.map((p, j) => `
+      <div class="ord-prod-line">
+        <input data-ord-prod="sku" data-ord-i="${i}" data-ord-j="${j}" value="${esc(p.sellerSkuCode)}"
+          list="ord-sku-list" autocomplete="off" placeholder="SellerSkuCode"
+          class="ord-cell zm-mono w-36${p.sellerSkuCode ? '' : ' ord-cell-empty'}${p.mapped === false && p.sellerSkuCode ? ' ord-cell-unmapped' : ''}">
+        <span class="ord-times">×</span>
+        <input data-ord-prod="qty" data-ord-i="${i}" data-ord-j="${j}" value="${p.qty}" type="number" min="1"
+          class="ord-cell w-14">
+        <button type="button" data-ord-prod-remove="${i}:${j}" class="ord-prod-btn" title="Remove this product">×</button>
+      </div>`).join('');
+    return `<div class="ord-prod-editor">${lines || '<span class="ord-flag">no product read</span>'}
+      <button type="button" data-ord-prod-add="${i}" class="ord-prod-add">+ product</button>
+      ${list.length > 1 ? `<span class="ord-combo">${list.length} products · ${r.qty} pcs</span>` : ''}
+    </div>`;
+  }
+
+  /** Keep the parcel's summary fields in step with its products. */
+  function syncFromProducts(row) {
+    const list = (row.products || []).filter(p => p.sellerSkuCode);
+    const first = list[0];
+    row.sellerSkuCode = first?.sellerSkuCode || '';
+    row.zmCode = first?.zmCode || '';
+    row.colourName = first?.colourName || '';
+    row.qty = list.length ? list.reduce((n, p) => n + (Number(p.qty) || 1), 0) : 1;
+  }
+
+  function redrawProducts(i) {
+    const row = pending?.rows[i];
+    const cellEl = el('ord-confirm-table').querySelector?.(`[data-ord-products="${i}"]`);
+    if (row && cellEl) cellEl.innerHTML = productEditor(row, i);
+    renderConfirmMeta();
+  }
+
+  function onProductClick(e) {
+    if (!pending) return;
+    const add = e.target.closest?.('button[data-ord-prod-add]');
+    if (add) {
+      const i = +add.dataset.ordProdAdd;
+      const row = pending.rows[i];
+      if (!row) return;
+      row.products = [...(row.products || []), { sellerSkuCode: '', zmCode: '', colourName: '', qty: 1, mapped: false }];
+      syncFromProducts(row);
+      redrawProducts(i);
+      return;
+    }
+    const remove = e.target.closest?.('button[data-ord-prod-remove]');
+    if (remove) {
+      const [i, j] = remove.dataset.ordProdRemove.split(':').map(Number);
+      const row = pending.rows[i];
+      if (!row) return;
+      row.products = (row.products || []).filter((_, k) => k !== j);
+      syncFromProducts(row);
+      redrawProducts(i);
+    }
+  }
+
   /** Every edit lands on the pending row and nowhere else until Save. */
   function onReviewEdit(e) {
     const cb = e.target.closest('input[data-ord-keep]');
     if (cb) { pending.rows[+cb.dataset.ordKeep]._keep = cb.checked; return; }
+
+    const prodInput = e.target.closest('input[data-ord-prod]');
+    if (prodInput) { onProductEdit(prodInput); return; }
 
     const input = e.target.closest('input[data-ord-edit]');
     if (!input) return;
@@ -660,20 +747,10 @@ export function initOrdersTab(state) {
     let value = input.value.trim();
     if (spec.upper) value = value.toUpperCase();
 
-    if (spec.number) {
-      row.qty = Math.max(1, Math.floor(Number(value) || 1));
-    } else if (spec.path.startsWith('customer.')) {
+    if (spec.path.startsWith('customer.')) {
       row.customer = { ...(row.customer || {}), [spec.path.slice(9)]: value };
     } else {
       row[spec.path] = value;
-      if (spec.path === 'sellerSkuCode') {
-        // A corrected SKU has to bring its ZM code and colour with it, or the
-        // record points at a style that does not exist.
-        const known = state.mappings.find(m =>
-          String(m.sellerSkuCode).toLowerCase() === value.toLowerCase());
-        row.zmCode = known?.zmCode || '';
-        row.colourName = known?.colourName || '';
-      }
       if (spec.path === 'forwardId') {
         row.forwardIdSource = value ? 'manual' : '';
         // A typed ID can collide with something already saved, so the
@@ -699,6 +776,34 @@ export function initOrdersTab(state) {
 
     const note = el('ord-confirm-table').querySelector?.(`[data-ord-note="${input.dataset.ordI}"]`);
     if (note) note.innerHTML = noteCell(row);
+    renderConfirmMeta();
+  }
+
+  /**
+   * One product line changed. A corrected code brings its ZM code and colour
+   * with it, or the record would point at a style that does not exist; the
+   * parcel total follows every quantity change.
+   */
+  function onProductEdit(input) {
+    const i = +input.dataset.ordI, j = +input.dataset.ordJ;
+    const row = pending?.rows[i];
+    const prod = row?.products?.[j];
+    if (!prod) return;
+
+    if (input.dataset.ordProd === 'qty') {
+      prod.qty = Math.max(1, Math.floor(Number(input.value) || 1));
+    } else {
+      const value = input.value.trim();
+      const known = state.mappings.find(m =>
+        String(m.sellerSkuCode).toLowerCase() === value.toLowerCase());
+      prod.sellerSkuCode = known?.sellerSkuCode || value;
+      prod.zmCode = known?.zmCode || '';
+      prod.colourName = known?.colourName || '';
+      prod.mapped = !!known;
+      input.classList?.toggle?.('ord-cell-empty', !value);
+      input.classList?.toggle?.('ord-cell-unmapped', !!value && !known);
+    }
+    syncFromProducts(row);
     renderConfirmMeta();
   }
 

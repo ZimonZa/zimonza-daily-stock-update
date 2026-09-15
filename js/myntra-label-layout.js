@@ -108,8 +108,15 @@ const BRACKET_SKU = /\[\s*([A-Za-z]{1,4}-\d+-[A-Za-z][A-Za-z0-9 ]*?)\s*(?:-\s*([
 /** A 6-digit Indian PIN. Never used to FIND the address, only to confirm it. */
 const PIN = /\b([1-9]\d{5})\b/;
 
-/** Lines that are label furniture rather than an address. */
-const NOT_ADDRESS = /^(?:cod|prepaid|normal\s*-?\s*fwd|amount\s*to\s*be\s*paid|rs\.?\s*[\d.,]+|[\d\s\-()/]+)$/i;
+/**
+ * Lines that are label furniture rather than an address.
+ *
+ * The routing code is matched by its SHAPE — "(229001)-(1007)", with the
+ * brackets — and not as "any line of digits and slashes". That broader rule
+ * silently threw away "397/21", the house number on a real combo label, which
+ * is the single most specific line of the whole address.
+ */
+const NOT_ADDRESS = /^(?:cod|prepaid(?:\s*\(no\s*amount)?|on|normal\s*-?\s*fwd|amount\s*to\s*be\s*paid|rs\.?\s*[\d.,]+|\(\s*\d+\s*\)\s*-\s*\(\s*\d+\s*\))$/i;
 
 /**
  * Rebuild text lines from positioned PDF.js text items.

@@ -193,10 +193,14 @@ export function initFulfilmentPanel(state, tabs) {
     }
     drop.innerHTML = `<div class="flex flex-col items-center gap-2 py-2"><div class="spinner"></div><p class="text-slate-400 text-xs" id="ful-progress">Reading ${esc(file.name)}…</p></div>`;
     try {
+      // Purchase needs SKUs and piece counts, nothing else. The tracking ID on
+      // a Myntra label is barcode artwork, so leaving the barcode fallback on
+      // here would rasterise and decode EVERY page for a value this tab never
+      // uses — Orders & Fake Returns reads labels on its own.
       const result = await parseLabelPdf(file, state.mappings, (p, total) => {
         const node = el('ful-progress');
         if (node) node.textContent = `Reading ${file.name} — page ${p} of ${total}…`;
-      });
+      }, { barcodeFallback: false });
 
       if (!result.hasTextLayer) {
         notify.error('No text found in this PDF. It looks like a scan — labels must be a text PDF.');
@@ -220,9 +224,6 @@ export function initFulfilmentPanel(state, tabs) {
       el('ful-source').textContent =
         `${file.name} · ${result.pages} page(s) · ${result.items.length} SKU(s) · ${found} pc(s)` +
         (result.unreadablePages.length ? ` · ${result.unreadablePages.length} page(s) with no code` : '');
-
-      // Hand the pages to dispatch tracking, so who received what is recorded
-      state.onLabelParsed?.(result, file.name);
 
       if (result.unreadablePages.length) {
         notify.warning(`No SKU found on page(s) ${result.unreadablePages.slice(0, 8).join(', ')}${result.unreadablePages.length > 8 ? '…' : ''} — those pieces are not counted.`);

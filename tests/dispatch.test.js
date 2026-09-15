@@ -98,26 +98,35 @@ ok('a page with no tracking id is kept, not dropped', withoutTrackingId[0].order
 eq('find by id, case tolerant', findByForwardId(ds, ' sf001 ')?.forwardId, 'SF001');
 eq('find by unknown id', findByForwardId(ds, 'NOPE'), null);
 
-// ════ 4. Return intake — the rule that matters ════
+// ════ 4. Return intake — a REPORT, never stock ════
+// Orders & Fake Returns is deliberately not linked to the Returns & RTO
+// register or to Purchase. Recording any kind of return here must produce a
+// dispatch patch and NOTHING that could be written as stock.
 const parcel = { id: 'd1', forwardId: 'SF001', sellerSkuCode: 'ZM-11-Purple', zmCode: 'ZM-11',
   colourName: 'Purple', qty: 2 };
 
-const rto = applyReturn(parcel, { returnId: 'R1', type: RETURN_TYPES.RTO, date: '2026-09-05' });
+const rto = applyReturn(parcel, { returnId: 'R1', type: RETURN_TYPES.RTO, condition: 'good', date: '2026-09-05' });
 eq('RTO: no error', rto.error, null);
 eq('RTO: dispatch marked returned', rto.dispatchPatch.status, DISPATCH_STATUS.RETURNED);
-ok('RTO: a stock row IS created', !!rto.returnRow);
-eq('RTO: stock row qty follows the parcel', rto.returnRow.qty, 2);
-eq('RTO: linked back to the dispatch', rto.returnRow.dispatchId, 'd1');
 eq('RTO: return id recorded', rto.dispatchPatch.return.returnId, 'R1');
+eq('RTO: condition recorded in the report', rto.dispatchPatch.return.condition, 'good');
+ok('THE RULE: RTO produces NO stock row', !('returnRow' in rto), JSON.stringify(Object.keys(rto)));
 
 const cust = applyReturn(parcel, { returnId: 'R2', type: RETURN_TYPES.CUSTOMER_RETURN });
-ok('Customer Return: a stock row IS created', !!cust.returnRow);
-eq('Customer Return: type carried', cust.returnRow.type, RETURN_TYPES.CUSTOMER_RETURN);
+eq('Customer Return: type carried', cust.dispatchPatch.return.type, RETURN_TYPES.CUSTOMER_RETURN);
+ok('THE RULE: a customer return produces NO stock row', !('returnRow' in cust));
 
-const fake = applyReturn(parcel, { returnId: 'R3', type: RETURN_TYPES.FAKE_RETURN, foundInside: 'empty box' });
-eq('FAKE RETURN: NO stock row', fake.returnRow, null);
+const fake = applyReturn(parcel, { returnId: 'R3', type: RETURN_TYPES.FAKE_RETURN, foundInside: 'empty box', condition: 'good' });
+ok('FAKE RETURN: no stock row either', !('returnRow' in fake));
 eq('FAKE RETURN: still marks the dispatch returned', fake.dispatchPatch.status, DISPATCH_STATUS.RETURNED);
 eq('FAKE RETURN: records what was inside', fake.dispatchPatch.return.foundInside, 'empty box');
+eq('FAKE RETURN: a condition makes no sense and is not kept', fake.dispatchPatch.return.condition, '');
+eq('a genuine return never carries "found inside"',
+  applyReturn(parcel, { type: RETURN_TYPES.RTO, foundInside: 'stray text' }).dispatchPatch.return.foundInside, '');
+
+// The patch touches the dispatch and nothing else — no quantity, no SKU,
+// nothing a stock writer could pick up.
+eq('the patch carries only status and return', Object.keys(rto.dispatchPatch).sort(), ['return', 'status']);
 
 eq('a return with no type is refused', applyReturn(parcel, { returnId: 'R4' }).error, 'Pick a return type');
 eq('a return against nothing is refused', applyReturn(null, { type: RETURN_TYPES.RTO }).error,

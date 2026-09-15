@@ -2,14 +2,16 @@
 // ZIMONZA — Dispatch records & return abuse analytics
 //
 // Every label page that goes out becomes a dispatch, keyed by its
-// forward tracking ID. When a parcel comes back you find it by that ID,
-// classify it, and — if the product genuinely came back — it becomes
-// stock again.
+// forward tracking ID. When a parcel comes back you find it by that ID
+// and classify it.
+//
+// A REPORT, and nothing else. It is not linked to Purchase or to the
+// Returns & RTO register: nothing here ever changes stock.
 //
 // Pure functions only. Nothing here touches Firestore or the DOM.
 // ═══════════════════════════════════════════════════════════════
 
-import { DISPATCH_STATUS, RETURN_TYPES, isStockReturn } from './constants.js';
+import { DISPATCH_STATUS, RETURN_TYPES } from './constants.js';
 import { normZmCode, today } from './utils.js';
 
 /**
@@ -45,11 +47,34 @@ export function offenderKey({ customerName, address, orderId } = {}) {
  */
 export function dispatchFromPageRecord(rec, { sourceFile = '', dispatchDate = '' } = {}) {
   const fields = rec || {};
-  const sku = fields.sku || null;
-  // The layout reader also reads the bracketed code, e.g. [ZM-43-Rani - T].
-  // It is the fallback for a SKU the mapping does not know yet, so an
-  // unmapped style still lands on the record instead of vanishing.
-  const sellerSkuCode = sku?.sellerSkuCode || fields.sellerSkuCode || '';
+
+  // Every product in the parcel. A Myntra combo label prints one line per
+  // piece — "ZM-49-Pyazi -" then "ZM-43-Chiku -" — and all of them belong on
+  // this one record, not just the first.
+  let products = (Array.isArray(fields.skus) ? fields.skus : []).map(s => ({
+    sellerSkuCode: s.sellerSkuCode || '',
+    zmCode: normZmCode(s.zmCode || ''),
+    colourName: s.colourName || '',
+    qty: Math.max(1, Number(s.count) || 1),
+    mapped: s.mapped !== false
+  })).filter(p => p.sellerSkuCode);
+
+  // Older parses carry a single `sku`; the layout reader may also have read a
+  // bracketed code the mapping does not know. Either still lands on the record.
+  if (!products.length) {
+    const code = fields.sku?.sellerSkuCode || fields.sellerSkuCode || '';
+    if (code) {
+      products = [{
+        sellerSkuCode: code,
+        zmCode: normZmCode(fields.sku?.zmCode || ''),
+        colourName: fields.sku?.colourName || '',
+        qty: Math.max(1, Number(fields.pieces) || 1),
+        mapped: !!fields.sku
+      }];
+    }
+  }
+
+  const first = products[0] || null;
   const { key, keyType, label } = offenderKey({
     customerName: fields.customerName,
     address: fields.address,
@@ -73,21 +98,18 @@ export function dispatchFromPageRecord(rec, { sourceFile = '', dispatchDate = ''
       keyType,
       label
     },
-    sellerSkuCode,
-    zmCode: sku ? normZmCode(sku.zmCode) : '',
-    colourName: sku?.colourName || '',
-    // A page is one PARCEL, not automatically one piece: Myntra prints the
-    // code once per piece, so four ZM-36-Rani lines is four lehengas.
-    //
-    // On a page carrying two DIFFERENT codes the parcel total must not be
-    // credited to whichever one happened to come first — this record names
-    // one SKU, so it may only claim that SKU's own pieces.
-    qty: Math.max(1, Number(sku?.count) || Number(fields.pieces) || 1),
-    // Every code on the page, when there is more than one, so a mixed parcel
-    // is visibly mixed rather than silently reduced to its first line.
-    ...(Array.isArray(fields.skus) && fields.skus.length > 1
-      ? { mixedSkus: fields.skus.map(s => s.sellerSkuCode) }
-      : {}),
+    // Every product in the parcel, each with its own piece count.
+    products,
+    // The first product, kept at the top level so search, sorting and any
+    // older record that predates `products` still have something to read.
+    sellerSkuCode: first?.sellerSkuCode || '',
+    zmCode: first?.zmCode || '',
+    colourName: first?.colourName || '',
+    // The parcel's total pieces — the sum of its products, so a combo of one
+    // Pyazi and one Chiku is 2, and four Rani lines is 4.
+    qty: products.length
+      ? products.reduce((n, p) => n + p.qty, 0)
+      : Math.max(1, Number(fields.pieces) || 1),
     dispatchDate: dispatchDate || today(),
     sourceFile,
     page: fields.page ?? null,
@@ -117,16 +139,18 @@ export function mergeByForwardId(dispatches) {
   for (const d of dispatches || []) {
     if (!d.forwardId) { noId.push(d); continue; }
     const existing = byId.get(d.forwardId);
-    if (!existing) { byId.set(d.forwardId, { ...d, pages: d.page ? [d.page] : [] }); continue; }
-    // Same parcel, another piece
-    if (existing.sellerSkuCode === d.sellerSkuCode) {
-      existing.qty += d.qty;
-    } else {
-      // Different SKUs under one tracking ID — keep both visible
-      existing.mixedSkus = existing.mixedSkus || [existing.sellerSkuCode];
-      if (!existing.mixedSkus.includes(d.sellerSkuCode)) existing.mixedSkus.push(d.sellerSkuCode);
-      existing.qty += d.qty;
+    if (!existing) {
+      byId.set(d.forwardId, {
+        ...d,
+        products: productsOf(d).map(p => ({ ...p })),
+        pages: d.page ? [d.page] : []
+      });
+      continue;
     }
+    // The same parcel continued on another page: fold its products in,
+    // adding to a code already listed rather than listing it twice.
+    existing.products = mergeProducts(existing.products, productsOf(d));
+    existing.qty = existing.products.reduce((n, p) => n + p.qty, 0);
     if (d.page) existing.pages.push(d.page);
   }
 
@@ -134,53 +158,70 @@ export function mergeByForwardId(dispatches) {
 }
 
 /**
+ * The products in a parcel, for any record — including one saved before
+ * records carried a `products` list, which is rebuilt from its single code.
+ */
+export function productsOf(d) {
+  if (Array.isArray(d?.products) && d.products.length) return d.products;
+  if (!d?.sellerSkuCode) return [];
+  return [{
+    sellerSkuCode: d.sellerSkuCode,
+    zmCode: d.zmCode || '',
+    colourName: d.colourName || '',
+    qty: Math.max(1, Number(d.qty) || 1)
+  }];
+}
+
+/** Add products together by code, keeping the order they were first seen. */
+export function mergeProducts(a, b) {
+  const out = (a || []).map(p => ({ ...p }));
+  for (const p of b || []) {
+    const hit = out.find(x => String(x.sellerSkuCode).toUpperCase() === String(p.sellerSkuCode).toUpperCase());
+    if (hit) hit.qty += Math.max(1, Number(p.qty) || 1);
+    else out.push({ ...p, qty: Math.max(1, Number(p.qty) || 1) });
+  }
+  return out;
+}
+
+/** "ZM-49-Pyazi ×1, ZM-43-Chiku ×1" — for exports, search and one-line summaries. */
+export function productsLabel(d, sep = ', ') {
+  return productsOf(d).map(p => `${p.sellerSkuCode} ×${p.qty}`).join(sep);
+}
+
+/**
  * Record a return against a dispatch. PURE — returns what should be
  * written, and writes nothing itself.
  *
- * @returns {{ dispatchPatch:object, returnRow:object|null, error:string|null }}
+ * REPORT ONLY. Orders & Fake Returns is a record of what went out and what
+ * came back, and it is deliberately not linked to the Returns & RTO register
+ * or to Purchase: recording a return here never creates, moves or removes a
+ * single piece of stock. Stock comes back through the Returns & RTO tab.
+ *
+ * @returns {{ dispatchPatch:object|null, error:string|null }}
  */
 export function applyReturn(dispatch, { returnId, type, foundInside, date, condition } = {}) {
   if (!dispatch) {
-    return { dispatchPatch: null, returnRow: null, error: 'No dispatch to return against' };
+    return { dispatchPatch: null, error: 'No dispatch to return against' };
   }
   if (!type || !Object.values(RETURN_TYPES).includes(type)) {
-    return { dispatchPatch: null, returnRow: null, error: 'Pick a return type' };
+    return { dispatchPatch: null, error: 'Pick a return type' };
   }
 
-  const when = date || today();
+  const fake = type === RETURN_TYPES.FAKE_RETURN;
   const dispatchPatch = {
     status: DISPATCH_STATUS.RETURNED,
     return: {
       returnId: String(returnId ?? '').trim(),
       type,
-      foundInside: String(foundInside ?? '').trim(),
-      date: when
+      // What was actually inside a fake return; how a genuine one came back.
+      // Both are part of the report and nothing else.
+      foundInside: fake ? String(foundInside ?? '').trim() : '',
+      condition: fake ? '' : String(condition ?? '').trim(),
+      date: date || today()
     }
   };
 
-  // A fake return means the product did not come back. There is nothing to
-  // put on a shelf, so no stock row is created — that is the whole point of
-  // recording it separately.
-  if (!isStockReturn(type)) {
-    return { dispatchPatch, returnRow: null, error: null };
-  }
-
-  const returnRow = {
-    type,
-    sellerSkuCode: dispatch.sellerSkuCode || '',
-    zmCode: normZmCode(dispatch.zmCode || ''),
-    colourName: dispatch.colourName || '',
-    kuntalCode: dispatch.kuntalCode || '',
-    qty: Math.max(1, Number(dispatch.qty) || 1),
-    date: when,
-    condition: condition || '',
-    reason: '',
-    notes: `Return ${dispatchPatch.return.returnId || '(no id)'} against ${dispatch.forwardId || 'unknown parcel'}`,
-    source: 'dispatch',
-    dispatchId: dispatch.id || dispatch.forwardId || ''
-  };
-
-  return { dispatchPatch, returnRow, error: null };
+  return { dispatchPatch, error: null };
 }
 
 /**

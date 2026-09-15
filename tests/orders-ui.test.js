@@ -1,6 +1,7 @@
 // Drives the real Orders tab handlers through a fake DOM with recorded
-// listeners. The rule under test: a genuine return puts stock back, a fake
-// return does not.
+// listeners. The rules under test: Orders & Fake Returns is a REPORT — no
+// return of any kind ever writes stock — and a combo parcel lists every
+// product it carries.
 
 const store = new Map();
 const writes = { dispatches: [], added: [], returns: [], updates: [] };
@@ -64,6 +65,9 @@ const storage = {
     const d = DISPATCHES.find(x => x.id === id);
     if (d) Object.assign(d, patch);
   },
+  // A TRIPWIRE. Orders is a report and must never write to the Returns & RTO
+  // register. If it ever calls this again, writes.returns grows and the
+  // "no stock row" assertions below go red.
   addMyntraReturns: async (rows) => { writes.returns.push(...rows); },
   deleteDispatch: async () => {},
   markDispatchUnfulfillable: async () => {}
@@ -136,8 +140,34 @@ DISPATCHES = [
     colourName: 'Purple', qty: 2, dispatchDate: '2026-09-01', status: DISPATCH_STATUS.SHIPPED, return: null,
     customer: { name: '', address: 'Delhi 110085', key: 'addr:delhi 110085', keyType: 'address', label: 'Delhi 110085' }, missing: ['customerName'] }
 ];
+// A combo parcel saved with two products
+DISPATCHES.push({
+  id: 'd3', forwardId: 'MYEP1126210472', sellerSkuCode: 'ZM-49-Pyazi', zmCode: 'ZM-49', colourName: 'Pyazi',
+  qty: 2, dispatchDate: '2026-09-15', status: DISPATCH_STATUS.SHIPPED, return: null, missing: ['orderId'],
+  products: [
+    { sellerSkuCode: 'ZM-49-Pyazi', zmCode: 'ZM-49', colourName: 'Pyazi', qty: 1 },
+    { sellerSkuCode: 'ZM-43-Chiku', zmCode: 'ZM-43', colourName: 'Chiku', qty: 1 }
+  ],
+  customer: { name: 'OM PRAKASH DIXIT', address: '397/21 OPPOSITE MAHATAMA GANDHI INTER COLLEGE AMARNAGAR',
+    key: 'name:om prakash dixit', keyType: 'name', label: 'OM PRAKASH DIXIT' }
+});
 await tab.refresh();
 chk('orders render', el('ord-table').innerHTML.includes('SF001'));
+const tableHtml = el('ord-table').innerHTML;
+chk('COMBO: the table lists BOTH products of the parcel',
+  tableHtml.includes('ZM-49-Pyazi') && tableHtml.includes('ZM-43-Chiku'));
+chk('COMBO: and marks it as a combo', /ord-combo[^>]*>2 products/.test(tableHtml));
+chk('an old single-code record still shows its product', tableHtml.includes('ZM-11-Purple'));
+
+// Search finds a combo parcel by its SECOND product, not just its first
+el('ord-search').fire('input', { target: { value: 'chiku' } });
+await new Promise(r => setTimeout(r, 350));
+chk('search finds a parcel by any product in it',
+  el('ord-table').innerHTML.includes('MYEP1126210472') && !el('ord-table').innerHTML.includes('SF001'));
+el('ord-search').fire('input', { target: { value: '' } });
+await new Promise(r => setTimeout(r, 350));
+DISPATCHES.pop();
+await tab.refresh();
 chk('a key type that is not a name is shown', el('ord-table').innerHTML.includes('ord-keytype'));
 
 // ── A FAKE return: no stock may be created ──
@@ -152,7 +182,7 @@ el('ord-ret-type').fire('change', {});
 chk('a fake return asks what was inside', !el('ord-ret-found-wrap').classList.contains('hidden'));
 chk('and stops asking about condition', el('ord-ret-condition-wrap').classList.contains('hidden'));
 chk('the consequence is stated before saving',
-  /No stock is added/i.test(el('ord-ret-effect').textContent), el('ord-ret-effect').textContent);
+  /Stock is not changed/i.test(el('ord-ret-effect').textContent), el('ord-ret-effect').textContent);
 
 el('ord-ret-id').value = 'R-FAKE-1';
 el('ord-ret-found').value = 'empty box';
@@ -172,16 +202,21 @@ el('ord-table').fire('click', {
 el('ord-ret-type').value = RETURN_TYPES.CUSTOMER_RETURN;
 el('ord-ret-type').fire('change', {});
 chk('a genuine return asks the condition instead', !el('ord-ret-condition-wrap').classList.contains('hidden'));
-chk('and says stock will be added', /usable stock/i.test(el('ord-ret-effect').textContent));
+chk('and says plainly it is a report, not stock',
+  /report only/i.test(el('ord-ret-effect').textContent) && /Stock is not changed/i.test(el('ord-ret-effect').textContent),
+  el('ord-ret-effect').textContent);
 
 el('ord-ret-id').value = 'R-REAL-1';
 el('ord-ret-condition').value = 'good';
 await el('ord-ret-save')._listeners.click[0]();
 
-chk('THE RULE: a genuine return DOES create a stock row', writes.returns.length === 1, String(writes.returns.length));
-chk('the quantity follows the parcel', writes.returns[0]?.qty === 2, String(writes.returns[0]?.qty));
-chk('the row links back to the dispatch', writes.returns[0]?.dispatchId === 'd2');
-chk('the condition is carried', writes.returns[0]?.condition === 'good');
+// UNLINKED: Orders & Fake Returns is a report. A genuine return is recorded
+// on the dispatch and goes NOWHERE near the Returns & RTO register.
+chk('THE RULE: a genuine return creates NO stock row either', writes.returns.length === 0, String(writes.returns.length));
+chk('but the dispatch is marked returned',
+  writes.updates.some(u => u.id === 'd2' && u.patch.status === DISPATCH_STATUS.RETURNED));
+chk('with its return ID', writes.updates.some(u => u.patch.return?.returnId === 'R-REAL-1'));
+chk('and the condition kept as report data', writes.updates.some(u => u.patch.return?.condition === 'good'));
 
 // ── Closing the modal must release the parcel it was holding ──
 writes.returns.length = 0; writes.updates.length = 0;
@@ -258,12 +293,37 @@ chk('the filled field stops being flagged as missing',
   !edited.missing.includes('customerName'), JSON.stringify(edited.missing));
 chk('a field left blank stays flagged', edited.missing.includes('forwardId'), JSON.stringify(edited.missing));
 
-editRow(2, 'sku', 'ZM-11-Purple');
-chk('a corrected SKU brings its ZM code with it', tab.getPendingRows()[2].zmCode === 'ZM-11');
-editRow(2, 'qty', '4');
-chk('quantity is taken as a number', tab.getPendingRows()[2].qty === 4);
-editRow(2, 'qty', '-3');
-chk('and never drops below one', tab.getPendingRows()[2].qty === 1);
+// Products are edited line by line; the parcel total follows
+const editProduct = (i, j, field, value) => el('ord-confirm-table').fire('input', {
+  target: { closest: sel => sel === 'input[data-ord-prod]'
+    ? { dataset: { ordProd: field, ordI: String(i), ordJ: String(j) }, value, classList: { toggle() {} } } : null }
+});
+const clickTable = (attr, value) => el('ord-confirm-table').fire('click', {
+  target: { closest: sel => sel === `button[${attr}]`
+    ? { dataset: attr === 'data-ord-prod-add' ? { ordProdAdd: value } : { ordProdRemove: value } } : null }
+});
+
+chk('the page arrives with its product', tab.getPendingRows()[2].products?.length === 1,
+  JSON.stringify(tab.getPendingRows()[2].products));
+editProduct(2, 0, 'sku', 'zm-11-purple');
+chk('a corrected code is matched to the mapping', tab.getPendingRows()[2].products[0].sellerSkuCode === 'ZM-11-Purple');
+chk('and brings its ZM code with it', tab.getPendingRows()[2].products[0].zmCode === 'ZM-11');
+editProduct(2, 0, 'qty', '4');
+chk('a product quantity is taken as a number', tab.getPendingRows()[2].products[0].qty === 4);
+chk('and the parcel total follows it', tab.getPendingRows()[2].qty === 4);
+editProduct(2, 0, 'qty', '-3');
+chk('and never drops below one', tab.getPendingRows()[2].products[0].qty === 1);
+
+// A combo parcel: add a second product by hand
+clickTable('data-ord-prod-add', '2');
+chk('+ product adds a line', tab.getPendingRows()[2].products.length === 2);
+editProduct(2, 1, 'sku', 'ZM-11-Purple');
+editProduct(2, 1, 'qty', '2');
+chk('the parcel total is the sum of every product', tab.getPendingRows()[2].qty === 3,
+  String(tab.getPendingRows()[2].qty));
+clickTable('data-ord-prod-remove', '2:1');
+chk('× removes that product', tab.getPendingRows()[2].products.length === 1);
+chk('and the total drops with it', tab.getPendingRows()[2].qty === 1, String(tab.getPendingRows()[2].qty));
 
 // Typing an ID that belongs to an already-returned parcel must lock the row
 editRow(2, 'forwardId', 'sf001');

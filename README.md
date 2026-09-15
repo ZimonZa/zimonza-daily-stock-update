@@ -128,7 +128,20 @@ Visit `http://localhost:8080`
 
 Sixth tab on the Myntra page. Every label that ships becomes a **dispatch**, keyed by the forward tracking ID under its barcode — so when a parcel comes back, you find it by the number written on it.
 
-**Getting labels in.** Drop `label.pdf` on the Orders tab, or on the Purchase tab — either gives you the same review. The Purchase tab reads the file once and hands the same parse to dispatch tracking, so one upload still does both jobs.
+**A report, and nothing else.** Orders & Fake Returns is deliberately **not linked** to Purchase or to Returns & RTO. Labels reach it only by being dropped on this tab — the Purchase tab no longer feeds it — and nothing recorded here ever creates, moves or removes stock. Returned pieces go back into stock through the Returns & RTO tab, by hand.
+
+Because Purchase no longer shares its parse, it also no longer decodes barcodes: it needs SKUs and piece counts only, and the tracking ID on a Myntra label is barcode artwork, so leaving that on would rasterise every page for a value it never used.
+
+**Getting labels in.** Drop `label.pdf` on this tab.
+
+**Combo parcels.** One label page is one parcel, and a parcel can carry several products — Myntra prints one line per piece:
+
+```
+ZM-49-Pyazi -
+ZM-43-Chiku -        ← one parcel, two products, two pieces
+```
+
+Every product is read and kept on the **one** parcel record, each with its own piece count; the parcel total is their sum. The review lists them all, editable line by line, with **+ product** and **×** to correct a misread. The orders table shows each product with its colour chip, and search finds a parcel by any product in it — not just the first. A parcel printed across two pages under one tracking ID folds into a single record, adding up by code rather than listing a product twice.
 
 **Reading the label — by its layout, not by keywords.**
 
@@ -185,13 +198,13 @@ Tracking ID, order ID, customer name and address are each read independently, an
 
 An update writes the details only: `status` and `return` are stripped from the payload entirely, so correcting a customer's name can never push a returned parcel back to `shipped` or erase the return. That last row matters most — a fake-return record is the evidence against a customer, and dropping the same PDF twice used to destroy it.
 
-**Recording a return.** Search the forward ID, hit Open, enter the return ID and pick the type:
+**Recording a return.** Search the forward ID, hit Open, enter the return ID and pick the type. Every type is **recorded in the report only** — no stock changes:
 
 | Type | Effect |
 |---|---|
-| RTO | A row appears in the Returns & RTO register — the piece is usable stock again |
+| RTO | Marked returned, with its return ID and the condition it came back in |
 | Customer Return | Same |
-| **Fake Return** | **No stock row.** The product did not come back. What *was* inside is recorded instead, and it counts against the customer |
+| **Fake Return** | Marked returned, with **what was actually inside** — and it counts against the customer |
 
 The modal states which of these will happen before you save.
 
@@ -286,7 +299,7 @@ One page (`myntra.html`), six sections:
 | **Pricing** | Upload `Myntra Pricing.xlsx`. Flags mapped styles that have no price (those cannot be billed). |
 | **Purchase** | Cart → GST bill → PDF. Saved, auto-numbered, re-downloadable. Also GR credit notes, short-receive, and the per-bill note. |
 | **Returns & RTO** | Register of goods coming back, with a stock summary. A label can be filled from it, and the inventory update can declare it. |
-| **Orders** | Drop a label here. Every dispatch tracked to its customer by forward tracking ID, with an editable review before saving. Return intake, fake-return recording, repeat-returner analytics. |
+| **Orders** | A standalone report, not linked to Purchase or Returns & RTO. Drop a label here; every parcel is tracked to its customer by forward tracking ID, with every product in a combo parcel listed. Return recording, fake returns, repeat-returner analytics. |
 
 ### Including returns in the inventory update
 
@@ -371,7 +384,7 @@ A blank Myntra MRP stays blank — it is never coerced to 0.
 
 ### Returns & RTO
 
-Stored in their own `myntra_returns` collection. Rows arrive from the Myntra returns report (columns auto-detected, reviewed before saving), by hand, or automatically when a return is recorded against a dispatched order.
+Stored in their own `myntra_returns` collection. Rows arrive from the Myntra returns report (columns auto-detected, reviewed before saving) or by hand. Recording a return in Orders & Fake Returns does **not** add a row here — the two are deliberately separate.
 
 Pieces leave the register only through a **pick slip** or a **Goods Return**. The inventory update can *declare* them to Myntra when you tick **Include usable Returns & RTO stock** — but generating a file never consumes anything here. Declaring what you hold is not spending it. In the Add Row form a **Kuntal Code** suggests the SellerSkuCodes it covers (one code, many colours) and a SellerSkuCode fills the Kuntal Code back — whichever you type first. The Purchase product search also matches on Kuntal Code, priced or not.
 

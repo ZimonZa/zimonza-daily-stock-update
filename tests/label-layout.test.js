@@ -12,7 +12,7 @@ globalThis.window = globalThis;
 
 import { itemsToLines, extractMyntraFields, looksLikeMyntraLabel } from './myntra-label-layout.js';
 import { extractDispatchFields, parseLabelPdf } from './myntra-labels.js';
-import { dispatchFromPageRecord } from './myntra-dispatch.js';
+import { dispatchFromPageRecord, dispatchesFromLabel, mergeByForwardId, productsOf, productsLabel } from './myntra-dispatch.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => {
@@ -284,15 +284,96 @@ eq('each code keeps its own count',
 eq('SKUs come back in the order the PAGE prints them, not by code length',
   mixed.pageRecords[0].skus.map(s => s.sellerSkuCode), ['ZM-88-Chiku', 'ZM-36-Rani']);
 const md = dispatchFromPageRecord(mixed.pageRecords[0], {});
-eq('the dispatch names the first-printed code', md.sellerSkuCode, 'ZM-88-Chiku');
-eq('THE RULE: and claims only ITS pieces, not the parcel total', md.qty, 1);
-eq('a mixed parcel is visibly mixed', md.mixedSkus, ['ZM-88-Chiku', 'ZM-36-Rani']);
+// ONE parcel, ONE record, EVERY product listed with its own count
+eq('THE RULE: every product is on the record, in page order',
+  md.products.map(p => [p.sellerSkuCode, p.qty]), [['ZM-88-Chiku', 1], ['ZM-36-Rani', 2]]);
+eq('the parcel total is the sum of its products', md.qty, 3);
+eq('the first product is still at the top level for search and sorting', md.sellerSkuCode, 'ZM-88-Chiku');
+eq('each product keeps its own colour', md.products.map(p => p.colourName), ['Chiku', 'Rani']);
 
 // A single-code page is completely unchanged
 globalThis.__PDF_PAGES = [head(['ZM-36-Rani -'])];
 const one = await parseLabelPdf(file, parcelMaps, null, { barcodeFallback: false });
 eq('one code is still one piece', one.items[0].qty, 1);
-ok('and carries no mixed list', !dispatchFromPageRecord(one.pageRecords[0], {}).mixedSkus);
+eq('and lists exactly one product', dispatchFromPageRecord(one.pageRecords[0], {}).products.length, 1);
+
+// ════ 7c-2. The REAL combo label: Combo_Label.PDF ════
+// One page, one parcel, two different products: ZM-49-Pyazi and ZM-43-Chiku,
+// shipped to OM PRAKASH DIXIT. Transcribed in visual order. The tracking
+// number MYEP1126210472 is barcode artwork, not text.
+const COMBO = [
+  'EK_E2E', 'LKO/RBY', '(229001)-(1007)', 'NORMAL - Fwd',
+  "Buyer's Name And Address",
+  'OM PRAKASH DIXIT',
+  '397/21',
+  'OPPOSITE MAHATAMA GANDHI INTER',
+  'COLLEGE',
+  'AMARNAGAR',
+  'If undelivered, Please return to',
+  'KUNTAL FASHION PRIVATE LIMITED',
+  'GROUND FLOOR, PLOT NO 44 AND 45, SIDHHI',
+  'VINAYAK ESTATE, OPP NEW BOMBAY MARKET,',
+  'UMARWADA, Surat, Surat, Gujarat, 395010, Surat -',
+  '395010, GUJARAT, India',
+  'Seller Details', 'KUNTAL FASHION PRIVATE', 'LIMITED',
+  'ZM-49-Pyazi -',
+  'ZM-43-Chiku -',
+  'H',
+  'Buyer Declaration', 'Purchase made',
+  'I,OM PRAKASH DIXIT,declare that the goods in this shipment are for personal use and not for',
+  'resale.'
+].join(NL);
+
+const comboMaps = [
+  { sellerSkuCode: 'ZM-49-Pyazi', zmCode: 'ZM-49', colourName: 'Pyazi' },
+  { sellerSkuCode: 'ZM-43-Chiku', zmCode: 'ZM-43', colourName: 'Chiku' }
+];
+globalThis.__PDF_PAGES = [COMBO];
+const combo = await parseLabelPdf({ name: 'Combo_Label.PDF', arrayBuffer: async () => new ArrayBuffer(8) },
+  comboMaps, null, { decodeBarcode: async () => ({ value: 'MYEP1126210472', format: 'code_128' }) });
+const cd = dispatchFromPageRecord(combo.pageRecords[0], { sourceFile: 'Combo_Label.PDF' });
+
+eq('COMBO: both products are read', cd.products.map(p => p.sellerSkuCode), ['ZM-49-Pyazi', 'ZM-43-Chiku']);
+eq('COMBO: one piece of each', cd.products.map(p => p.qty), [1, 1]);
+eq('COMBO: two pieces in the parcel', cd.qty, 2);
+eq('COMBO: one record, not two', combo.pageRecords.length, 1);
+eq('COMBO: the customer', cd.customer.name, 'OM PRAKASH DIXIT');
+eq('COMBO: the tracking ID, from the barcode', [cd.forwardId, cd.forwardIdSource], ['MYEP1126210472', 'barcode']);
+
+// The address spans four lines and has NO pin code of its own
+eq('COMBO: the whole address, house number first',
+  cd.customer.address, '397/21 OPPOSITE MAHATAMA GANDHI INTER COLLEGE AMARNAGAR');
+ok('THE RULE: "397/21" is the house number, not label furniture',
+  cd.customer.address.startsWith('397/21'), cd.customer.address);
+ok('COMBO: the routing code is not the address', !/229001|1007/.test(cd.customer.address), cd.customer.address);
+ok('COMBO: the courier hub "H" is not the address', !/\bH\b/.test(cd.customer.address), cd.customer.address);
+ok('COMBO: the seller block is not the address', !/kuntal|gujarat|395010/i.test(cd.customer.address));
+ok('COMBO: the declaration is not the name', !/declare/i.test(cd.customer.name));
+
+// The fulfilment aggregate sees both products too
+eq('COMBO: purchase sees both products',
+  combo.items.map(i => [i.sellerSkuCode, i.qty]).sort(), [['ZM-43-Chiku', 1], ['ZM-49-Pyazi', 1]]);
+delete globalThis.__PDF_PAGES;
+
+// A combo printed across TWO pages under one tracking ID folds into one record
+const halves = dispatchesFromLabel([
+  { page: 1, forwardId: 'MYEP1', skus: [{ sellerSkuCode: 'ZM-49-Pyazi', zmCode: 'ZM-49', colourName: 'Pyazi', count: 1 }] },
+  { page: 2, forwardId: 'MYEP1', skus: [{ sellerSkuCode: 'ZM-43-Chiku', zmCode: 'ZM-43', colourName: 'Chiku', count: 1 },
+                                         { sellerSkuCode: 'ZM-49-Pyazi', zmCode: 'ZM-49', colourName: 'Pyazi', count: 1 }] }
+]);
+const folded = mergeByForwardId(halves).merged;
+eq('a parcel split over two pages is ONE record', folded.length, 1);
+eq('its products are added up by code, not listed twice',
+  folded[0].products.map(p => [p.sellerSkuCode, p.qty]), [['ZM-49-Pyazi', 2], ['ZM-43-Chiku', 1]]);
+eq('and the total follows', folded[0].qty, 3);
+
+// A record saved before products existed still reads as a product list
+eq('an old single-code record still shows its product',
+  productsOf({ sellerSkuCode: 'ZM-11-Purple', colourName: 'Purple', qty: 2 }).map(p => [p.sellerSkuCode, p.qty]),
+  [['ZM-11-Purple', 2]]);
+eq('the one-line summary lists every product',
+  productsLabel({ products: [{ sellerSkuCode: 'ZM-49-Pyazi', qty: 1 }, { sellerSkuCode: 'ZM-43-Chiku', qty: 1 }] }),
+  'ZM-49-Pyazi ×1, ZM-43-Chiku ×1');
 
 // ════ 7d. A GUESS is not an answer ════
 // The tracking number on a real Myntra label is barcode artwork, not text.

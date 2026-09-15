@@ -478,9 +478,10 @@
 
       <div class="p-6 space-y-4">
         <p class="text-slate-500 text-xs">
-          Drop a label here, or in the <strong class="text-slate-400">Purchase</strong> tab — either way you get the same review.
-          The tracking ID is read from the printed number, and from the <strong class="text-slate-400">barcode</strong> when the
-          text does not carry it. Anything the label did not print is flagged so you can type it in — nothing is guessed.
+          <strong class="text-slate-400">A report only.</strong> Drop a label here to record who received what. This tab is not linked to
+          Purchase or to Returns &amp; RTO — nothing you record here changes stock.
+          Combo parcels list <strong class="text-slate-400">every product</strong>. The tracking ID is read from the
+          <strong class="text-slate-400">barcode</strong>; anything the label did not print is flagged so you can type it in.
         </p>
 
         <!-- Label upload -->
@@ -1011,10 +1012,9 @@ const state = {
   onReturnsChange: () => renderKpis(),
   onCartChange:    () => renderKpis(),
   onFulfilmentDone: () => renderKpis(),
-  onOrdersChange:   () => renderKpis(),
-  // The fulfilment panel reads a label once; dispatch tracking uses the
-  // same parse rather than making the user upload it twice.
-  onLabelParsed:    (result, fileName) => ordersTab?.ingestLabel(result, fileName)
+  // Orders & Fake Returns is a standalone REPORT. It is not fed by Purchase
+  // and it writes nothing into Returns & RTO; this only updates its tab count.
+  onOrdersChange:   () => renderKpis()
 };
 
 let pricingTab = null, purchaseTab = null, returnsTab = null, fulfilPanel = null, ordersTab = null;

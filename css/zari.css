@@ -894,14 +894,14 @@ td.text-right, th.text-right { font-variant-numeric: tabular-nums; }
   background: rgba(255,255,255,0.05); color: var(--silk-4);
   border: 1px solid var(--ink-line-soft);
 }
-.ord-src-bar { background: rgba(217,164,65,0.13); color: var(--foil-button); border-color: rgba(217,164,65,0.32); }
+.ord-src-bar { background: rgba(217,164,65,0.13); color: var(--zari); border-color: rgba(217,164,65,0.32); }
 .ord-src-man { background: rgba(61,190,139,0.12); color: #7FD9B4; border-color: rgba(61,190,139,0.28); }
 
 /* Already in the register */
 .ord-dupe {
   display: inline-block; font-size: 10.5px; white-space: nowrap;
   padding: 2px 7px; border-radius: 999px;
-  background: rgba(217,164,65,0.11); color: var(--foil-button);
+  background: rgba(217,164,65,0.11); color: var(--zari);
   border: 1px solid rgba(217,164,65,0.28);
 }
 /* A parcel that already came back. This one cannot be overwritten. */
@@ -951,3 +951,44 @@ td.text-right, th.text-right { font-variant-numeric: tabular-nums; }
   border: 1px solid var(--ink-line-soft);
 }
 .light-mode .ord-why code { background: rgba(0,0,0,0.04); color: #3A352C; }
+
+/* ── Products in a parcel ───────────────────────────────────────
+   A combo label carries several products; every one is listed, each
+   with its own colour chip and piece count. */
+.ord-products { display: flex; flex-direction: column; gap: 3px; }
+.ord-product  { display: flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 12.5px; }
+.ord-pcs {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  color: var(--zari); font-variant-numeric: tabular-nums;
+}
+.ord-combo {
+  display: inline-block; align-self: flex-start; margin-bottom: 2px;
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 1px 6px; border-radius: 4px;
+  background: rgba(217,164,65,0.12); color: var(--zari);
+  border: 1px solid rgba(217,164,65,0.30);
+}
+
+/* The editable version, in the review */
+.ord-prod-editor { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
+.ord-prod-line   { display: flex; align-items: center; gap: 4px; }
+.ord-times       { color: var(--silk-4); font-size: 11px; }
+.ord-prod-btn {
+  width: 20px; height: 20px; border-radius: 5px; line-height: 1;
+  color: var(--silk-4); background: transparent; border: 1px solid transparent;
+  cursor: pointer; font-size: 14px;
+}
+.ord-prod-btn:hover { color: var(--bad); border-color: rgba(229,86,91,0.35); background: rgba(229,86,91,0.08); }
+.ord-prod-add {
+  font-size: 10.5px; font-family: var(--font-mono); color: var(--silk-3);
+  background: transparent; border: 1px dashed var(--ink-line-soft);
+  padding: 1px 8px; border-radius: 5px; cursor: pointer;
+}
+.ord-prod-add:hover { color: var(--zari); border-color: rgba(217,164,65,0.45); }
+.ord-prod-btn:focus-visible, .ord-prod-add:focus-visible { outline: 2px solid var(--zari); outline-offset: 1px; }
+/* A code the mapping does not know is kept, but visibly unknown */
+.ord-cell-unmapped { border-color: rgba(224,164,43,0.45); border-style: dashed; }
+
+.light-mode .ord-pcs      { color: #8A5E12; }
+.light-mode .ord-combo    { background: rgba(160,110,20,0.10); color: #7A5410; }
+.light-mode .ord-prod-add { color: #6E6553; border-color: rgba(0,0,0,0.15); }
