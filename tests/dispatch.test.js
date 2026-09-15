@@ -5,7 +5,7 @@ import { extractDispatchFields, parseLabelPdf } from './myntra-labels.js';
 import {
   offenderKey, dispatchFromPageRecord, dispatchesFromLabel, mergeByForwardId,
   applyReturn, offenderSummary, findByForwardId,
-  classifyAgainstSaved, rekeyDispatch, dispatchWritePayload, normForwardId, repeatedIds
+  classifyAgainstSaved, rekeyDispatch, dispatchWritePayload, normForwardId, repeatedIds, dispatchDateError
 } from './myntra-dispatch.js';
 import { generateInventoryUpdate } from './myntra.js';
 import { availableReturnStock } from './myntra-returns.js';
@@ -251,6 +251,27 @@ eq('no repeats, nothing reported', repeatedIds([{ forwardId: 'A1' }, { forwardId
 eq('THE RULE: a repeated ID is caught', repeatedIds([{ forwardId: 'A1' }, { forwardId: 'B2' }, { forwardId: 'a1' }]), ['A1']);
 eq('spacing does not hide a repeat', repeatedIds([{ forwardId: 'MY EC1' }, { forwardId: 'myec1' }]), ['MYEC1']);
 eq('rows with no ID are not a clash', repeatedIds([{ forwardId: '' }, { forwardId: '' }]), []);
+
+// ════ DISPATCH DATE — picked before a label PDF is read ════
+// The date is stamped on every order in the file, so a bad one mis-dates a
+// whole day at once.
+const T = '2026-09-15';
+eq('a real past date is fine', dispatchDateError('2026-09-10', T), '');
+eq('today is fine', dispatchDateError(T, T), '');
+eq('THE RULE: nothing picked is refused', dispatchDateError('', T), 'Pick the dispatch date first');
+eq('THE RULE: the future is refused', dispatchDateError('2026-09-16', T), 'The dispatch date cannot be in the future');
+eq('February 30th is not a date', dispatchDateError('2026-02-30', T), 'That is not a real date');
+eq('month 13 is not a date', dispatchDateError('2026-13-01', T), 'That is not a real date');
+eq('29 Feb in a leap year is', dispatchDateError('2024-02-29', T), '');
+eq('29 Feb in a common year is not', dispatchDateError('2025-02-29', T), 'That is not a real date');
+eq('dd/mm/yyyy is not what the picker gives', dispatchDateError('10/09/2026', T), 'That is not a valid date');
+eq('whitespace alone is nothing picked', dispatchDateError('   ', T), 'Pick the dispatch date first');
+eq('the year boundary compares correctly', dispatchDateError('2025-12-31', '2026-01-01'), '');
+
+// Every order read from the file carries the chosen date
+const dated = dispatchesFromLabel([{ page: 1, forwardId: 'MYEC1' }, { page: 2, forwardId: 'MYEC2' }],
+  { sourceFile: 'day.pdf', dispatchDate: '2026-09-10' });
+eq('every order in the file gets the picked date', dated.map(d => d.dispatchDate), ['2026-09-10', '2026-09-10']);
 
 // ════ 8. The write payload — what actually reaches Firestore ════
 const fresh = { forwardId: 'SF9', status: 'shipped', return: null, qty: 2, _keep: true, _dupe: 'new' };

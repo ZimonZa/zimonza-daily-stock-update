@@ -132,7 +132,14 @@ Sixth tab on the Myntra page. Every label that ships becomes a **dispatch**, key
 
 Because Purchase no longer shares its parse, it also no longer decodes barcodes: it needs SKUs and piece counts only, and the tracking ID on a Myntra label is barcode artwork, so leaving that on would rasterise every page for a value it never used.
 
-**Getting labels in.** Drop `label.pdf` on this tab.
+**Getting labels in — date first, then the PDF.**
+
+1. **Pick the dispatch date.** It starts on today and cannot go past today. Every order in the PDF you drop is recorded as dispatched on this date, so it is chosen *before* the file, not guessed from the day you happen to upload.
+2. **Drop that day's label PDF.**
+
+Until the date is valid the drop zone is locked — greyed, the file picker disabled — and a PDF dropped on it anyway is refused unread with a message saying to pick the date first. A date must be a real calendar date (30 February is not) and not in the future. The picker never remembers yesterday's choice: a date carried over from an earlier session would silently mis-date a whole day's orders.
+
+The review header names the day it is recording. Change the date while the review is open and the rows move with it — except any row whose date you already set by hand, which keeps its own. **Add Order** starts on the same picked day and follows the same rule.
 
 **Combo parcels.** One label page is one parcel, and a parcel can carry several products — Myntra prints one line per piece:
 

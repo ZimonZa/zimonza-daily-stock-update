@@ -20,6 +20,7 @@ function mkEl(id) {
     },
     addEventListener(t, fn) { (listeners[t] = listeners[t] || []).push(fn); },
     removeEventListener() {}, appendChild() {}, remove() {}, click() {}, focus() {},
+    _attrs: {}, setAttribute(k, v) { this._attrs[k] = String(v); }, getAttribute(k) { return this._attrs[k] ?? null; },
     // Stand-ins the module can find, so DOM writes back into the table are
     // observable instead of silently landing on null.
     _found: new Map(),
@@ -85,7 +86,8 @@ const state = {
     toggleSort(v, k) { v.sortKey === k ? v.sortDir *= -1 : (v.sortKey = k, v.sortDir = 1); },
     applySort(rows) { return rows; },
     thSort: (v, k, l) => `<th data-sort="${k}">${l}</th>`,
-    bindDrop() {},
+    // Keep the real drop handler so a test can drop a file on it
+    bindDrop(zone, input, handler) { state.__drop = handler; },
     resetDrop() {}
   },
   refreshReturns: async () => {},
@@ -375,6 +377,78 @@ chk('THE RULE: two rows with one tracking ID are refused, nothing saved',
   writes.dispatches.length === 0 && writes.added.length === 0, JSON.stringify(writes.dispatches.map(d => d.forwardId)));
 chk('and the user is told which ID clashes',
   (notify._sink || []).some(m => /MYEC5000000001/.test(m) && /more than one row/.test(m)), JSON.stringify(notify._sink));
+
+// ── DISPATCH DATE: pick the day FIRST, then drop that day's PDF ──
+const { today } = await import('./utils.js');
+const picker = el('ord-dispatch-date');
+const dropFile = (name) => state.__drop({ name, arrayBuffer: async () => new ArrayBuffer(8) });
+const pickDate = (v) => { picker.value = v; picker.fire('change', {}); };
+
+chk('the picker starts on today', picker.value === today(), picker.value);
+chk('and cannot go past today', picker.max === today(), picker.max);
+chk('with today the drop is open', !el('ord-drop').classList.contains('ord-drop-locked') && el('ord-file').disabled === false);
+
+// A future date locks the drop, and a file dropped anyway is refused unread
+pickDate('2999-01-01');
+chk('THE RULE: a future date locks the drop', el('ord-drop').classList.contains('ord-drop-locked'));
+chk('the file input is disabled too, so a click cannot open it', el('ord-file').disabled === true);
+chk('and says why', /future/.test(el('ord-dispatch-date-note').textContent), el('ord-dispatch-date-note').textContent);
+chk('the locked zone is marked for assistive tech', el('ord-drop').getAttribute('aria-disabled') === 'true');
+
+const rowsBefore = JSON.stringify(tab.getPendingRows());
+notify._clear?.();
+globalThis.__PDF_PAGES = [["Buyer's Name And Address", 'Asha Devi', '12 MG Road 400053', 'If undelivered', 'ZM-11-Purple -'].join(String.fromCharCode(10))];
+await dropFile('day.pdf');
+chk('THE RULE: a PDF dropped on a bad date is not read at all', JSON.stringify(tab.getPendingRows()) === rowsBefore);
+chk('and the user is told to pick the date first', (notify._sink || []).some(m => /future/.test(m) && /drop the label PDF/.test(m)),
+  JSON.stringify(notify._sink));
+
+pickDate('');
+chk('no date at all also locks it', el('ord-drop').classList.contains('ord-drop-locked'));
+
+// A real past day: the drop opens and every order is dated to it
+pickDate('2026-09-10');
+chk('a valid date unlocks the drop', !el('ord-drop').classList.contains('ord-drop-locked'));
+chk('and the step says which day', /10\/09\/2026/.test(el('ord-drop-for').textContent), el('ord-drop-for').textContent);
+
+globalThis.__PDF_PAGES = [
+  ["Buyer's Name And Address", 'Asha Devi', '12 MG Road 400053', 'If undelivered', 'ZM-11-Purple -'].join(String.fromCharCode(10)),
+  ["Buyer's Name And Address", 'Ravi Kumar', '8 Park Street 700016', 'If undelivered', 'ZM-11-Purple -'].join(String.fromCharCode(10))
+];
+await dropFile('orders-10-sep.pdf');
+delete globalThis.__PDF_PAGES;
+const dayRows = tab.getPendingRows();
+chk('the dropped PDF opens the review', dayRows.length === 2, String(dayRows.length));
+chk('THE RULE: every order in it carries the picked date',
+  dayRows.every(r => r.dispatchDate === '2026-09-10'), JSON.stringify(dayRows.map(r => r.dispatchDate)));
+chk('the review header names the day', /dispatched 10\/09\/2026/.test(el('ord-confirm-note').textContent),
+  el('ord-confirm-note').textContent);
+
+// One row's date changed on purpose, then the picker moves: the rest follow, that one does not
+el('ord-confirm-table').fire('input', {
+  target: { closest: sel => sel === 'input[data-ord-edit]' ? { dataset: { ordEdit: 'date', ordI: '1' }, value: '2026-09-09' } : null }
+});
+pickDate('2026-09-11');
+const moved = tab.getPendingRows();
+chk('changing the date moves the rows still on the old day', moved[0].dispatchDate === '2026-09-11', moved[0].dispatchDate);
+chk('THE RULE: but a date set on one row by hand is left alone', moved[1].dispatchDate === '2026-09-09', moved[1].dispatchDate);
+
+// Saved with the dates as shown
+writes.dispatches.length = 0; writes.added.length = 0;
+await el('ord-confirm-save')._listeners.click[0]();
+const savedDates = [...writes.dispatches, ...writes.added].map(d => d.dispatchDate).sort();
+chk('what is saved carries those dates', JSON.stringify(savedDates) === JSON.stringify(['2026-09-09', '2026-09-11']),
+  JSON.stringify(savedDates));
+
+// Manual Add Order obeys the same rule
+el('ord-add-btn')._listeners.click[0]();
+chk('Add Order starts on the picked day', el('ord-add-date').value === '2026-09-11', el('ord-add-date').value);
+el('ord-add-forward').value = 'MYEC7000000001';
+el('ord-add-date').value = '2999-01-01';
+writes.added.length = 0; notify._clear?.();
+await el('ord-add-save')._listeners.click[0]();
+chk('THE RULE: Add Order refuses a future date too', writes.added.length === 0, JSON.stringify(writes.added));
+pickDate(today());
 
 console.log(fails ? `\n${fails} FAILURE(S)` : '\nOrders UI test clean.');
 process.exit(fails ? 1 : 0);

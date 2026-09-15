@@ -484,7 +484,27 @@
           <strong class="text-slate-400">barcode</strong>; anything the label did not print is flagged so you can type it in.
         </p>
 
-        <!-- Label upload -->
+        <!-- Step 1: the day these orders went out — chosen BEFORE the PDF -->
+        <div class="ord-step">
+          <span class="ord-step-num">1</span>
+          <div class="flex-1 min-w-0">
+            <label for="ord-dispatch-date" class="text-slate-200 text-sm font-semibold">Dispatch date</label>
+            <p class="text-slate-500 text-xs">Pick the day first — every order in the PDF you drop is recorded as dispatched on this date.</p>
+          </div>
+          <div class="flex flex-col items-end gap-1">
+            <input type="date" id="ord-dispatch-date" class="zm-input w-44" required>
+            <p id="ord-dispatch-date-note" class="text-xs text-right" aria-live="polite"></p>
+          </div>
+        </div>
+
+        <!-- Step 2: that day's label PDF -->
+        <div class="ord-step ord-step-drop">
+          <span class="ord-step-num">2</span>
+          <div class="flex-1 min-w-0">
+            <p class="text-slate-200 text-sm font-semibold">Drop that day's label PDF</p>
+            <p id="ord-drop-for" class="text-slate-500 text-xs"></p>
+          </div>
+        </div>
         <div id="ord-drop" class="drop-zone p-5 text-center cursor-pointer"
           onclick="document.getElementById('ord-file').click()"></div>
         <input type="file" id="ord-file" accept=".pdf" class="hidden">

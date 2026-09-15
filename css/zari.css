@@ -992,3 +992,35 @@ td.text-right, th.text-right { font-variant-numeric: tabular-nums; }
 .light-mode .ord-pcs      { color: #8A5E12; }
 .light-mode .ord-combo    { background: rgba(160,110,20,0.10); color: #7A5410; }
 .light-mode .ord-prod-add { color: #6E6553; border-color: rgba(0,0,0,0.15); }
+
+/* ── Orders upload: date first, then the PDF ────────────────────
+   The date is stamped on every order in the file, so it is a numbered
+   step of its own rather than a field tucked beside the drop zone. */
+.ord-step {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 12px; border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.02); border: 1px solid var(--ink-line-soft);
+}
+.ord-step-drop { background: transparent; border-color: transparent; padding-bottom: 0; }
+.ord-step-num {
+  flex: none; width: 24px; height: 24px; border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 700;
+  color: #1a1206; background: var(--foil-button);
+}
+.ord-date-ok  { color: #7FD9B4; }
+.ord-date-bad { color: #F0999C; font-weight: 600; }
+
+/* No valid date, no drop: visibly locked.*/
+/* NOT pointer-events:none. A file dropped on an element that ignores pointer
+   events falls through to the page, the browser's default takes over, and it
+   OPENS THE PDF IN THE TAB — navigating away from the app. The zone keeps
+   catching the drop so the handler can refuse it with a message instead. */
+.ord-drop-locked {
+  opacity: 0.45; cursor: not-allowed;
+  border-style: dashed; filter: grayscale(0.6);
+}
+
+.light-mode .ord-step     { background: rgba(0,0,0,0.02); border-color: rgba(0,0,0,0.08); }
+.light-mode .ord-date-ok  { color: #14634A; }
+.light-mode .ord-date-bad { color: #9B2226; }

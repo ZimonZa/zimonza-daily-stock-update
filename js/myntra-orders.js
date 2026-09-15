@@ -7,7 +7,8 @@
 import { RETURN_TYPES, RETURN_TYPE_LABELS, DISPATCH_STATUS } from './constants.js';
 import {
   dispatchesFromLabel, mergeByForwardId, applyReturn, offenderSummary, offenderKey,
-  classifyAgainstSaved, rekeyDispatch, productsOf, productsLabel, repeatedIds
+  classifyAgainstSaved, rekeyDispatch, productsOf, productsLabel, repeatedIds,
+  dispatchDateError
 } from './myntra-dispatch.js';
 import { parseLabelPdf } from './myntra-labels.js';
 import {
@@ -66,10 +67,20 @@ export function initOrdersTab(state) {
   });
 
   // ── Label intake ───────────────────────────────────────────
+  // Step 1 is the dispatch date. It is picked BEFORE the PDF and stamped on
+  // every order in it, so the drop stays locked until the date is valid.
+  // It starts on today, and never remembers yesterday's pick: a date carried
+  // over from an earlier session would silently mis-date a whole day's orders.
+  const dateInput = el('ord-dispatch-date');
+  dateInput.value = today();
+  dateInput.max = today();
+  dateInput.addEventListener('input', syncDispatchDate);
+  dateInput.addEventListener('change', syncDispatchDate);
+
   // Same dropzone helpers the Purchase and Returns uploads use, so
   // drag-over and click-to-browse behave identically everywhere.
   state.helpers.bindDrop(el('ord-drop'), el('ord-file'), onLabelFile);
-  state.helpers.resetDrop(el('ord-drop'), 'Myntra label.pdf — one page per parcel');
+  syncDispatchDate();
 
   el('ord-confirm-save').addEventListener('click', commitLabel);
   el('ord-confirm-cancel').addEventListener('click', () => {
@@ -119,14 +130,72 @@ export function initOrdersTab(state) {
     return dispatches;
   }
 
+  /** The dispatch date as picked, or '' when it is not a usable one. */
+  function pickedDate() {
+    const v = el('ord-dispatch-date').value;
+    return dispatchDateError(v, today()) ? '' : v;
+  }
+
+  // A function DECLARATION, not a const arrow: syncDispatchDate() runs during
+  // init, above this line, and a const would still be in its temporal dead
+  // zone — a ReferenceError that takes the whole Orders tab down on load.
+  function dropHint() {
+    const d = pickedDate();
+    return d ? `Orders for ${formatDateDisplay(d)} · one page per parcel` : 'Pick the dispatch date above first';
+  }
+
+  /**
+   * Keep the page in step with the chosen date: the message under the picker,
+   * the lock on the drop, and any review already open.
+   */
+  function syncDispatchDate() {
+    const value = el('ord-dispatch-date').value;
+    const error = dispatchDateError(value, today());
+    const note = el('ord-dispatch-date-note');
+    note.textContent = error || `Recording orders for ${formatDateDisplay(value)}`;
+    note.className = `text-xs text-right ${error ? 'ord-date-bad' : 'ord-date-ok'}`;
+
+    // No valid date, no drop. The file input is disabled too, so a click on
+    // the zone cannot open the picker and read a PDF against a bad date.
+    el('ord-drop').classList.toggle('ord-drop-locked', !!error);
+    el('ord-drop').setAttribute('aria-disabled', error ? 'true' : 'false');
+    el('ord-file').disabled = !!error;
+    el('ord-drop-for').textContent = error
+      ? 'Locked until a dispatch date is picked.'
+      : `Every order in it will be dated ${formatDateDisplay(value)}.`;
+    state.helpers.resetDrop(el('ord-drop'), dropHint());
+
+    // A review already open follows the new date — but only the rows still on
+    // the date the file was read with. A date typed into one row on purpose
+    // is that row's own and is left alone.
+    if (!error && pending && pending.dispatchDate !== value) {
+      const was = pending.dispatchDate;
+      for (const row of pending.rows) {
+        if (row.dispatchDate === was) row.dispatchDate = value;
+      }
+      pending.dispatchDate = value;
+      renderConfirm();
+    }
+  }
+
   /**
    * Read a label dropped on this tab — the ONLY way labels reach it.
    * Orders is a standalone report: the Purchase tab no longer feeds it.
    */
   async function onLabelFile(file) {
     const drop = el('ord-drop');
-    const hint = 'Myntra label.pdf — one page per parcel';
-    drop.innerHTML = `<p class="text-slate-300 text-sm font-medium">Reading ${esc(file.name)}…</p>
+    // Step 1 before step 2. A drop can still arrive on a locked zone (a drag
+    // does not care about the disabled input), so the date is checked here too.
+    const dateError = dispatchDateError(el('ord-dispatch-date').value, today());
+    if (dateError) {
+      notify.error(`${dateError} — then drop the label PDF for that day.`);
+      el('ord-dispatch-date').focus?.();
+      state.helpers.resetDrop(drop, dropHint());
+      return;
+    }
+    const dispatchDate = el('ord-dispatch-date').value;
+    const hint = dropHint();
+    drop.innerHTML = `<p class="text-slate-300 text-sm font-medium">Reading ${esc(file.name)} for ${esc(formatDateDisplay(dispatchDate))}…</p>
       <p id="ord-drop-progress" class="text-slate-500 text-xs mt-1">page 1</p>`;
     try {
       const force = !!el('ord-force-barcode')?.checked;
@@ -149,7 +218,7 @@ export function initOrdersTab(state) {
       }
 
       reportBarcodes(result, anyId);
-      ingestLabel(result, file.name);
+      ingestLabel(result, file.name, dispatchDate);
       state.helpers.resetDrop(drop, hint);
     } catch (err) {
       notify.error('Could not read the label PDF: ' + err.message);
@@ -192,13 +261,14 @@ export function initOrdersTab(state) {
    * it in a warning loses the parcel, which is worse than showing a row with
    * one blank field.
    */
-  function ingestLabel(result, fileName) {
-    const records = dispatchesFromLabel(result.pageRecords || [], { sourceFile: fileName });
+  function ingestLabel(result, fileName, dispatchDate = pickedDate() || today()) {
+    // Every order in this file carries the date chosen in step 1
+    const records = dispatchesFromLabel(result.pageRecords || [], { sourceFile: fileName, dispatchDate });
     if (!records.length) { notify.warning('Nothing readable on any page of that PDF'); return; }
 
     const { merged, withoutTrackingId } = mergeByForwardId(records);
     const rows = classifyAgainstSaved([...merged, ...withoutTrackingId], dispatches);
-    pending = { fileName, rows };
+    pending = { fileName, rows, dispatchDate };
     renderConfirm();
   }
 
@@ -248,7 +318,8 @@ export function initOrdersTab(state) {
     for (const id of ['ord-add-forward', 'ord-add-order', 'ord-add-customer', 'ord-add-address']) el(id).value = '';
     el('ord-add-sku').value = '';
     el('ord-add-qty').value = 1;
-    el('ord-add-date').value = today();
+    el('ord-add-date').value = pickedDate() || today();
+    el('ord-add-date').max = today();
     el('ord-sku-list').innerHTML = state.mappings
       .map(m => `<option value="${esc(m.sellerSkuCode)}"></option>`).join('');
     el('ord-add-modal').classList.remove('hidden');
@@ -258,6 +329,9 @@ export function initOrdersTab(state) {
     const forwardId = el('ord-add-forward').value.trim();
     const sku = el('ord-add-sku').value.trim();
     if (!forwardId) { notify.warning('The forward tracking ID is how a return finds this order'); return; }
+    // Same rule as a label upload: a real date, not in the future
+    const addDateError = dispatchDateError(el('ord-add-date').value, today());
+    if (addDateError) { notify.warning(addDateError); return; }
 
     const known = state.mappings.find(m => String(m.sellerSkuCode).toLowerCase() === sku.toLowerCase());
     const customerName = el('ord-add-customer').value.trim();
@@ -284,7 +358,7 @@ export function initOrdersTab(state) {
           qty: Math.max(1, Math.floor(Number(el('ord-add-qty').value) || 1)),
           mapped: !!known
         }] : [],
-        dispatchDate: el('ord-add-date').value || today(),
+        dispatchDate: el('ord-add-date').value,
         sourceFile: 'manual',
         status: DISPATCH_STATUS.SHIPPED,
         return: null,
@@ -629,6 +703,7 @@ export function initOrdersTab(state) {
     const dupes = p.rows.filter(r => r._dupe === 'exists').length;
     el('ord-confirm-note').textContent =
       `${p.rows.length} parcel(s) from ${p.fileName}` +
+      (p.dispatchDate ? ` · dispatched ${formatDateDisplay(p.dispatchDate)}` : '') +
       (noId ? ` · ${noId} with no tracking ID` : '') +
       (dupes ? ` · ${dupes} already saved` : '') +
       (locked ? ` · ${locked} locked (already returned)` : '') +
@@ -841,6 +916,7 @@ export function initOrdersTab(state) {
     const locked = p.rows.filter(r => r._dupe === 'locked').length;
     el('ord-confirm-note').textContent =
       `${p.rows.length} parcel(s) from ${p.fileName}` +
+      (p.dispatchDate ? ` · dispatched ${formatDateDisplay(p.dispatchDate)}` : '') +
       (noId ? ` · ${noId} with no tracking ID` : '') +
       (dupes ? ` · ${dupes} already saved` : '') +
       (locked ? ` · ${locked} locked (already returned)` : '') +

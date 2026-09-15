@@ -286,6 +286,33 @@ export function offenderSummary(dispatches, { flagAbove = 0.4, minOrders = 3 } =
   return { rows, totals };
 }
 
+/**
+ * Is this a date an order can have been dispatched on?
+ *
+ * The date is chosen BEFORE a label PDF is read and stamped on every order in
+ * it, so a wrong one mislabels a whole day at once. It must be a real calendar
+ * date (2026-02-30 is not), in YYYY-MM-DD as a date input gives it, and not in
+ * the future — a parcel cannot have shipped tomorrow.
+ *
+ * @param {string} value     YYYY-MM-DD
+ * @param {string} todayIso  YYYY-MM-DD, passed in so the rule is testable
+ * @returns {string} an error message, or '' when the date is fine
+ */
+export function dispatchDateError(value, todayIso) {
+  const s = String(value ?? '').trim();
+  if (!s) return 'Pick the dispatch date first';
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return 'That is not a valid date';
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  // Round-trip through a real calendar, so 2026-02-30 and 2026-13-01 fail
+  const probe = new Date(Date.UTC(y, mo - 1, d));
+  if (probe.getUTCFullYear() !== y || probe.getUTCMonth() !== mo - 1 || probe.getUTCDate() !== d) {
+    return 'That is not a real date';
+  }
+  if (todayIso && s > todayIso) return 'The dispatch date cannot be in the future';
+  return '';
+}
+
 /** One spelling for a tracking ID, so two ways of writing it compare equal. */
 export const normForwardId = (id) =>
   String(id ?? '').trim().toUpperCase().replace(/\s+/g, '');
