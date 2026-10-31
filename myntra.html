@@ -136,7 +136,7 @@
         </div>
         <div class="flex-1 min-w-0">
           <h3 class="text-white font-semibold text-sm">Myntra Mapping</h3>
-          <p class="text-slate-400 text-xs">SellerSkuCode · colour · live status · price — upload pricing to fill the price columns</p>
+          <p class="text-slate-400 text-xs">SellerSkuCode · Style ID · ZM code · colour · stock · price — upload pricing to fill the price columns</p>
         </div>
         <button id="map-export-csv" class="btn-secondary text-xs py-2 px-3">
           <i data-lucide="download" class="w-3.5 h-3.5 inline-block mr-1"></i> Export CSV
@@ -1289,10 +1289,10 @@ function renderMappings() {
         <th class="px-3 py-2.5 text-left"><input type="checkbox" id="map-select-all" ${allShownSelected ? 'checked' : ''} class="accent-emerald-500" title="Select all filtered"></th>
         ${thSort(mapView,'active','Live')}
         ${thSort(mapView,'sellerSkuCode','SellerSkuCode')}
+        ${thSort(mapView,'styleId','Style ID')}
         ${thSort(mapView,'zmCode','ZM Code')}
         ${thSort(mapView,'colourName','Colour')}
         ${thSort(mapView,'kuntalCode','Item No.')}
-        ${thSort(mapView,'productName','Product')}
         ${thSort(mapView,'qty',"Today's Stock")}
         ${thSort(mapView,'kuntalSellingPrice','Kuntal Selling Price', true)}
         ${thSort(mapView,'myntraMrp','Myntra MRP', true)}
@@ -1308,10 +1308,10 @@ function renderMappings() {
             </label>
           </td>
           <td class="px-4 py-2.5 text-slate-200 font-medium whitespace-nowrap">${esc(r.sellerSkuCode)}</td>
+          <td class="px-4 py-2.5 text-slate-400 whitespace-nowrap">${esc(r.styleId) || '—'}</td>
           <td class="px-4 py-2.5 text-slate-400 whitespace-nowrap">${esc(r.zmCode)}</td>
           <td class="px-4 py-2.5">${swatchChip(r.colourName)}</td>
           <td class="px-4 py-2.5 text-slate-400">${esc(r.kuntalCode) || '—'}</td>
-          <td class="px-4 py-2.5 text-slate-400 max-w-[200px] truncate">${esc(r.productName) || '—'}</td>
           <td class="px-4 py-2.5">${stockChip(r)}</td>
           <td class="px-4 py-2.5 text-right ${r.kuntalSellingPrice === null ? 'text-slate-600' : 'text-emerald-300 font-semibold'}">${money(r.kuntalSellingPrice)}</td>
           <td class="px-4 py-2.5 text-right text-slate-300">${money(r.myntraMrp)}</td>
