@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs';
 import {
   extractPin, orderPin, lookupPin, validatePinOverride, filterOrders, summarise,
-  riskyAreas, productByState, weeklyTrend, ZONES, zoneOf, orderMapSheets
+  riskyAreas, productByState, weeklyTrend, ZONES, zoneOf, orderMapSheets, stateShade
 } from './order-geo.js';
 import { pricingIndex } from './myntra-pricing.js';
 
@@ -74,7 +74,7 @@ const orders = [
   mk('c1', { destPin: '229001', payment: '' }),
   mk('d1', { pinOverride: '201301', customer: { name: '', address: 'no pin in this one' } }),
   mk('m1', { customer: { name: '', address: 'Andheri Mumbai 400053' }, ...back('rto') }),
-  mk('m2', { customer: { name: '', address: 'Andheri Mumbai 400053' } }),
+  mk('m2', { customer: { name: '', address: 'Andheri Mumbai 400053' }, paymentGuessed: true }),
   mk('m3', { customer: { name: '', address: 'Andheri Mumbai 400053' } }),
   mk('m4', { customer: { name: '', address: 'Andheri Mumbai 400053' }, dispatchDate: '2026-10-25' }),
   mk('m5', { customer: { name: '', address: 'Andheri Mumbai 400053' }, dispatchDate: '2026-10-26' }),
@@ -127,7 +127,9 @@ eq('Kanpur estimated value at Myntra ISP', s.byCity.find(g => g.label === 'Kanpu
 eq('unpriced product lines are counted', s.unpricedProducts, 1);
 eq('PIN groups are labelled by area', s.byPin.find(g => g.key === '400053').label, 'Andheri');
 eq('groups are sorted by orders', s.byCity[0].label, 'Mumbai');
-eq('payment overall', s.payment, { cod: 2, prepaid: 14, unrecorded: 2, codAmount: 5846 });
+eq('payment overall: a guessed prepaid is counted apart from a reading', s.payment,
+  { cod: 2, prepaid: 14, prepaidGuessed: 1, unrecorded: 2, codAmount: 5846 });
+eq('guessed prepaid per city', s.byCity.find(g => g.label === 'Mumbai').prepaidGuessed, 1);
 eq('payment per state', [patna.cod, patna.prepaid, patna.codAmount, patna.unrecordedPayment], [1, 2, 5846, 0]);
 eq('unknown: why each one has no place', s.unknown.map(u => [u.id, u.reason]),
   [['u1', 'no PIN'], ['u2', 'PIN not in directory']]);
@@ -173,7 +175,18 @@ eq('seven sheets, in order', sheets.map(x => x.name),
 const named = sheets.filter(x => JSON.stringify(x.aoa).includes('Secret Person') || JSON.stringify(x.aoa).includes('Akanksha')).map(x => x.name);
 eq('THE RULE: customer names appear only where they are needed to fix a row', named, ['Unknown Location']);
 eq('States sheet header', sheets[0].aoa[0],
-  ['State', 'Zone', 'Orders', 'Pieces', 'Returned', 'RTO', 'Customer Return', 'Fake', 'Return %', 'COD', 'Prepaid', 'COD Amount', 'Est. Value (ISP)']);
+  ['State', 'Zone', 'Orders', 'Pieces', 'Returned', 'RTO', 'Customer Return', 'Fake', 'Return %', 'COD', 'Prepaid', 'Prepaid (guessed)', 'COD Amount', 'Est. Value (ISP)']);
+
+// ════ 9. Map shading never rates a state on one or two parcels ════
+eq('Return % on 1 order: no shade', stateShade({ orders: 1, pieces: 1, returnRate: 1, fake: 0 }, 'returnRate'), null);
+eq('Return % on 2 orders: no shade', stateShade({ orders: 2, pieces: 2, returnRate: 0.5, fake: 0 }, 'returnRate'), null);
+eq('Return % on 3 orders: shaded, as a whole percent', stateShade({ orders: 3, pieces: 3, returnRate: 2 / 3, fake: 0 }, 'returnRate'), 67);
+eq('volume metrics have no floor', [stateShade({ orders: 1, pieces: 2 }, 'orders'), stateShade({ orders: 1, pieces: 2 }, 'pieces')], [1, 2]);
+eq('fake returns are a count, not a rate', stateShade({ orders: 1, fake: 1 }, 'fake'), 1);
+
+// ════ 10. A product with no SellerSkuCode never breaks the table ════
+const noSku = productByState([{ d: {}, loc: { state: 'Bihar' }, products: [{ sellerSkuCode: '', zmCode: '', qty: 1 }], pieces: 1 }]);
+eq('a product with no code is grouped, not undefined', noSku.rows[0].key, '(no SKU)');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

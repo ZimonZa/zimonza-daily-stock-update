@@ -11,7 +11,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import {
-  filterOrders, summarise, productByState, weeklyTrend, validatePinOverride, orderMapSheets
+  filterOrders, summarise, productByState, weeklyTrend, validatePinOverride, orderMapSheets, stateShade
 } from './order-geo.js';
 import { pricingIndex } from './myntra-pricing.js';
 import { updateDispatch } from './firestore-service.js';
@@ -69,10 +69,10 @@ function loadScript(src) {
 const GOLD = ['#2A2216', '#5E4820', '#9C7630', '#D9A441', '#F3D98B'];
 const RED = ['#2A1618', '#5E2226', '#9C3A3F', '#E5565B', '#F4A3A6'];
 const METRICS = {
-  orders: { label: 'Orders', value: g => g.orders, ramp: GOLD, fmt: v => num(v) },
-  pieces: { label: 'Pieces', value: g => g.pieces, ramp: GOLD, fmt: v => num(v) },
-  returnRate: { label: 'Return %', value: g => Math.round(g.returnRate * 100), ramp: RED, fmt: v => `${v}%` },
-  fake: { label: 'Fake returns', value: g => g.fake, ramp: RED, fmt: v => num(v) }
+  orders: { label: 'Orders', ramp: GOLD, fmt: v => num(v) },
+  pieces: { label: 'Pieces', ramp: GOLD, fmt: v => num(v) },
+  returnRate: { label: 'Return %', ramp: RED, fmt: v => `${v}%` },
+  fake: { label: 'Fake returns', ramp: RED, fmt: v => num(v) }
 };
 
 export function initOrderMapTab(state, { ordersTab }) {
@@ -216,8 +216,12 @@ export function initOrderMapTab(state, { ordersTab }) {
     const m = METRICS[view.metric];
     el('om-metric').querySelectorAll?.('[data-om-metric]').forEach(b =>
       b.classList.toggle('is-on', b.dataset.omMetric === view.metric));
-    const data = india.byState.map(g => ({ name: g.label, value: m.value(g), g }));
-    const max = Math.max(1, ...data.map(d => d.value));
+    // A rate on fewer than 3 orders is left unshaded (value '-' is ECharts' "no data")
+    const data = india.byState.map(g => {
+      const v = stateShade(g, view.metric);
+      return { name: g.label, value: v === null ? '-' : v, g, tooFew: v === null };
+    });
+    const max = Math.max(1, ...data.map(d => (typeof d.value === 'number' ? d.value : 0)));
     const cities = s.byCity.filter(c => c.lat !== null && c.lng !== null).slice(0, 25);
     const maxCity = Math.max(1, ...cities.map(c => c.orders));
 
@@ -243,9 +247,11 @@ export function initOrderMapTab(state, { ordersTab }) {
           }
           const g = p.data?.g;
           if (!g) return `<b>${esc(p.name)}</b><br>No orders`;
+          const few = p.data.tooFew ? '<br><i>Too few orders to rate returns (needs 3)</i>' : '';
           return `<b>${esc(g.label)}</b> · ${esc(g.zone || '')}<br>${num(g.orders)} order(s) · ${num(g.pieces)} pcs<br>` +
             `Returns ${pct(g.returnRate)} (RTO ${g.rto} · customer ${g.customerReturn} · fake ${g.fake})<br>` +
-            `COD ${g.cod} · prepaid ${g.prepaid}${g.codAmount ? ` · ${rupees(g.codAmount)} to collect` : ''}`;
+            `COD ${g.cod} · prepaid ${g.prepaid}${g.prepaidGuessed ? ` (${g.prepaidGuessed} guessed)` : ''}` +
+            `${g.codAmount ? ` · ${rupees(g.codAmount)} to collect` : ''}${few}`;
         }
       },
       visualMap: {
@@ -254,7 +260,7 @@ export function initOrderMapTab(state, { ordersTab }) {
         textStyle: { color: '#8A8477', fontSize: 11 }, inRange: { color: m.ramp }
       },
       geo: {
-        map: 'india', roam: true, scaleLimit: { min: 1, max: 8 }, aspectScale: 0.92, layoutCenter: ['50%', '50%'], layoutSize: '100%',
+        map: 'india', roam: false, aspectScale: 0.92, layoutCenter: ['50%', '50%'], layoutSize: '100%',
         selectedMode: false,
         itemStyle: { areaColor: '#16161E', borderColor: 'rgba(237,231,218,0.22)', borderWidth: 0.6 },
         emphasis: { label: { show: false }, itemStyle: { areaColor: '#F3D98B' } },
@@ -315,7 +321,7 @@ export function initOrderMapTab(state, { ordersTab }) {
     const rows = pbs.rows.slice(0, 40);
     el('om-pbs').innerHTML = table(
       th(view.pbsBy === 'zm' ? 'ZM code' : 'SellerSkuCode') + pbs.columns.map(c => th(esc(c), true)).join('') + th('Total', true),
-      rows.map(r => '<tr>' + td(`${view.pbsBy === 'sku' ? swatchDot(r.key.split('-').slice(2).join('-')) : ''} ${esc(r.key)}`, 'whitespace-nowrap text-slate-200') +
+      rows.map(r => '<tr>' + td(`${view.pbsBy === 'sku' ? swatchDot(String(r.key ?? '').split('-').slice(2).join('-')) : ''} ${esc(r.key)}`, 'whitespace-nowrap text-slate-200') +
         r.cells.map(v => `<td class="px-3 py-2 text-right zm-num om-heat" ${heat(v)}>${v || '<span class="text-slate-700">·</span>'}</td>`).join('') +
         n(num(r.total), 'text-slate-200 font-semibold') + '</tr>'),
       'No products in this range.') +
@@ -372,7 +378,9 @@ export function initOrderMapTab(state, { ordersTab }) {
     const p = s.payment;
     const known = p.cod + p.prepaid;
     el('om-payment-note').textContent =
-      `COD ${p.cod} · Prepaid ${p.prepaid}` + (known ? ` · COD share ${pct(p.cod / known)}` : '') +
+      `COD ${p.cod} · Prepaid ${p.prepaid}` +
+      (p.prepaidGuessed ? ` (${p.prepaidGuessed} guessed — the label printed neither COD nor PREPAID)` : '') +
+      (known ? ` · COD share ${pct(p.cod / known)}` : '') +
       (p.codAmount ? ` · ${rupees(p.codAmount)} to collect` : '') +
       (p.unrecorded ? ` · ${p.unrecorded} order(s) before payment was recorded` : '');
     el('om-payment').innerHTML = table(
@@ -380,7 +388,8 @@ export function initOrderMapTab(state, { ordersTab }) {
       th('COD amount', true) + th('Return', true),
       s.byState.map(g => {
         const k = g.cod + g.prepaid;
-        return '<tr>' + td(esc(g.label), 'text-slate-200') + n(g.cod, 'text-amber-200') + n(g.prepaid) +
+        const prepaid = g.prepaidGuessed ? `${g.prepaid} <span class="text-slate-600" title="${g.prepaidGuessed} guessed">(${g.prepaidGuessed}?)</span>` : g.prepaid;
+        return '<tr>' + td(esc(g.label), 'text-slate-200') + n(g.cod, 'text-amber-200') + n(prepaid) +
           n(g.unrecordedPayment, 'text-slate-600') + n(k ? pct(g.cod / k) : '—') + n(g.codAmount ? rupees(g.codAmount) : '—') +
           rateCell(g) + '</tr>';
       }),

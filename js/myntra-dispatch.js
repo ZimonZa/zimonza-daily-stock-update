@@ -160,7 +160,9 @@ export function mergeByForwardId(dispatches) {
     if (d.page) existing.pages.push(d.page);
     // Only one page carries the header. A value already read is kept.
     if (!existing.destPin && d.destPin) existing.destPin = d.destPin;
-    if (!existing.payment && d.payment) {
+    // A printed payment also replaces a guessed one, whichever page came first.
+    const upgrade = existing.paymentGuessed && d.payment && d.paymentGuessed !== true;
+    if ((!existing.payment && d.payment) || upgrade) {
       existing.payment = d.payment;
       existing.codAmount = d.codAmount ?? null;
       existing.paymentGuessed = d.paymentGuessed === true;
@@ -426,7 +428,8 @@ export function dispatchWritePayload(record) {
 
 /**
  * What re-dropping an old label may add to a saved order: the destination
- * PIN and the payment, and only where the saved record has none.
+ * PIN and the payment, and only where the saved record has none — or, for
+ * the payment, where the saved one was only a guess and the label prints it.
  *
  * Nothing else is ever in the patch — not status, not the return, not the
  * customer — so it is safe on a parcel that has already come back, whose
@@ -438,7 +441,8 @@ export function backfillPatch(saved, parsed) {
   if (!saved || !parsed) return null;
   const patch = {};
   if (!saved.destPin && parsed.destPin) patch.destPin = parsed.destPin;
-  if (!saved.payment && parsed.payment) {
+  const replacesGuess = saved.paymentGuessed === true && parsed.payment && parsed.paymentGuessed !== true;
+  if ((!saved.payment && parsed.payment) || replacesGuess) {
     patch.payment = parsed.payment;
     patch.codAmount = Number.isFinite(parsed.codAmount) ? parsed.codAmount : null;
     patch.paymentGuessed = parsed.paymentGuessed === true;

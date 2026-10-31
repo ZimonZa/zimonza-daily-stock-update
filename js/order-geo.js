@@ -98,7 +98,7 @@ export function filterOrders(dispatches, { from = '', to = '', zm = '', colour =
 const blankGroup = (key, label, extra = {}) => ({
   key, label, ...extra,
   orders: 0, pieces: 0, returned: 0, rto: 0, customerReturn: 0, fake: 0, returnRate: 0,
-  estValue: 0, cod: 0, prepaid: 0, codAmount: 0, unrecordedPayment: 0
+  estValue: 0, cod: 0, prepaid: 0, prepaidGuessed: 0, codAmount: 0, unrecordedPayment: 0
 });
 
 function addTo(g, o, value) {
@@ -116,7 +116,11 @@ function addTo(g, o, value) {
   if (d.payment === 'cod') {
     g.cod++;
     if (Number.isFinite(d.codAmount)) g.codAmount += d.codAmount;
-  } else if (d.payment === 'prepaid') g.prepaid++;
+  } else if (d.payment === 'prepaid') {
+    g.prepaid++;
+    // The label printed neither word: kept apart so a guess never reads as fact
+    if (d.paymentGuessed === true) g.prepaidGuessed++;
+  }
   else g.unrecordedPayment++;
 }
 
@@ -175,7 +179,8 @@ export function summarise(filtered, priceIdx) {
     byState: states, byCity: cities, byPin: finish(byPin), zones: finish(zones),
     risky: { cities: riskyAreas(cities), pins: riskyAreas(finish(byPin)) },
     unknown,
-    payment: { cod: all.cod, prepaid: all.prepaid, unrecorded: all.unrecordedPayment, codAmount: all.codAmount },
+    payment: { cod: all.cod, prepaid: all.prepaid, prepaidGuessed: all.prepaidGuessed,
+      unrecorded: all.unrecordedPayment, codAmount: all.codAmount },
     unpricedProducts
   };
 }
@@ -207,7 +212,7 @@ export function productByState(filtered, { by = 'sku', topStates = 8 } = {}) {
   for (const o of located) {
     const col = top.includes(o.loc.state) ? top.indexOf(o.loc.state) : top.length;
     for (const p of o.products.length ? o.products : productsOf(o.d)) {
-      const key = by === 'zm' ? normZmCode(p.zmCode) || p.sellerSkuCode : p.sellerSkuCode;
+      const key = (by === 'zm' ? normZmCode(p.zmCode) || p.sellerSkuCode : p.sellerSkuCode) || '(no SKU)';
       if (!rows.has(key)) rows.set(key, { key, total: 0, cells: columns.map(() => 0) });
       const r = rows.get(key);
       const q = Number(p.qty) || 0;
@@ -265,6 +270,20 @@ export const ZONES = {
 const ZONE_OF = new Map(Object.entries(ZONES).flatMap(([z, states]) => states.map(s => [s, z])));
 export const zoneOf = (state) => ZONE_OF.get(state) || 'Other';
 
+/**
+ * What a state is shaded by on the map. A return RATE needs at least
+ * `minOrders` orders behind it — one parcel back must not paint a whole
+ * state red — so below that it is null (drawn as "too few orders").
+ */
+export function stateShade(g, metric, { minOrders = 3 } = {}) {
+  switch (metric) {
+    case 'pieces': return Number(g?.pieces) || 0;
+    case 'fake': return Number(g?.fake) || 0;
+    case 'returnRate': return (Number(g?.orders) || 0) >= minOrders ? Math.round((Number(g.returnRate) || 0) * 100) : null;
+    default: return Number(g?.orders) || 0;
+  }
+}
+
 const pct = r => Math.round((Number(r) || 0) * 1000) / 10;
 
 /**
@@ -272,9 +291,10 @@ const pct = r => Math.round((Number(r) || 0) * 1000) / 10;
  * Unknown Location, where they are needed to find and fix the order.
  */
 export function orderMapSheets(summary, pbs) {
-  const groupCols = ['Orders', 'Pieces', 'Returned', 'RTO', 'Customer Return', 'Fake', 'Return %', 'COD', 'Prepaid', 'COD Amount', 'Est. Value (ISP)'];
+  const groupCols = ['Orders', 'Pieces', 'Returned', 'RTO', 'Customer Return', 'Fake', 'Return %', 'COD', 'Prepaid',
+    'Prepaid (guessed)', 'COD Amount', 'Est. Value (ISP)'];
   const groupVals = g => [g.orders, g.pieces, g.returned, g.rto, g.customerReturn, g.fake, pct(g.returnRate),
-    g.cod, g.prepaid, g.codAmount, g.estValue];
+    g.cod, g.prepaid, g.prepaidGuessed, g.codAmount, g.estValue];
   const risky = [...(summary.risky?.pins || []).map(g => ['PIN', g.key, g.label, g.district, g.state, ...groupVals(g)]),
     ...(summary.risky?.cities || []).map(g => ['City', '', '', g.label, g.state, ...groupVals(g)])];
   return [

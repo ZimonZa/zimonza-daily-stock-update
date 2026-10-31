@@ -241,6 +241,11 @@ function readHeader(rows, anchor) {
     }
   });
 
+  // A page with no header at all — a continuation page — says nothing about
+  // payment. Calling it "prepaid" would let a guess hide the real reading.
+  if (!destPin && !codPrinted && !prepaidPrinted && codAmount === null) {
+    return { destPin: '', payment: '', codAmount: null, paymentGuessed: false };
+  }
   const isCod = codPrinted || (codAmount !== null && codAmount > 0);
   return {
     destPin,

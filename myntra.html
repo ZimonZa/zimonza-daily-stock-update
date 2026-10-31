@@ -607,7 +607,7 @@
                 </div>
               </div>
               <div id="om-map" class="om-map"></div>
-              <p class="om-note">Click a state to narrow everything below to it. Dots are the 25 busiest cities. Scroll or pinch to zoom.</p>
+              <p class="om-note">Click a state to narrow everything below to it. Dots are the 25 busiest cities. Return % shades only states with 3 or more orders.</p>
             </div>
             <div class="space-y-5 min-w-0">
               <div class="om-panel"><p class="om-panel-title">Top states</p><div id="om-top-states" class="overflow-auto"></div></div>
@@ -1151,19 +1151,25 @@ const state = {
   skuStatus: {},           // sellerSkuCode → { active }
   purchaseSettings: {},
   helpers: { toggleSort, applySort, thSort, bindDrop, resetDrop },
-  onPricingChange: () => { renderMappings(); purchaseTab?.render(); renderKpis(); orderMap?.render(); },
+  onPricingChange: () => { renderMappings(); purchaseTab?.render(); renderKpis(); renderOrderMapSafely(); },
   onBillsChange:   () => renderKpis(),
   onReturnsChange: () => renderKpis(),
   onCartChange:    () => renderKpis(),
   onFulfilmentDone: () => renderKpis(),
   // Orders & Fake Returns is a standalone REPORT. It is not fed by Purchase
   // and it writes nothing into Returns & RTO; this only updates its tab count.
-  onOrdersChange:   () => { renderKpis(); orderMap?.render(); },
+  onOrdersChange:   () => { renderKpis(); renderOrderMapSafely(); },
   // The Order Map's "Open in Orders" switches tabs through this
   setTab: (name) => setTab(name)
 };
 
 let pricingTab = null, purchaseTab = null, returnsTab = null, fulfilPanel = null, ordersTab = null, orderMap = null;
+
+/** The map is a report: if drawing it ever throws, the save that triggered it still stands. */
+function renderOrderMapSafely() {
+  try { orderMap?.render(); }
+  catch (err) { console.error('Order Map could not redraw', err); }
+}
 
 // ── Active / deactive helpers ─────────────────────────────────
 const isActive = sku => state.skuStatus[sku]?.active !== false;

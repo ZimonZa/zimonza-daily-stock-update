@@ -494,5 +494,22 @@ delete globalThis.__PDF_PAGES;
 const kw = extractDispatchFields('AWB: SF1234567890123 Ship To: Ravi Kumar Delhi 110085');
 eq('keyword reader: blank PIN and payment', [kw.destPin, kw.payment, kw.codAmount, kw.paymentGuessed], ['', '', null, false]);
 
+// ════ 10. A page with no header is not a "prepaid" reading ════
+// Review finding: a continuation page read as prepaid-guessed, and merged
+// FIRST it hid the printed COD for good — backfill could not repair it.
+const continuation = fieldsOf(['ZM-43-Rani -', 'H', 'Buyer Declaration', 'Purchase made'].join(NL));
+eq('a page with no header band reads no payment and no PIN',
+  [continuation.payment, continuation.paymentGuessed, continuation.codAmount, continuation.destPin], ['', false, null, '']);
+const skusOf = [{ sellerSkuCode: 'ZM-43-Rani', zmCode: 'ZM-43', colourName: 'Rani', count: 1 }];
+const headPage = dispatchFromPageRecord({ ...cod, page: 1, forwardId: 'MYEC1118733669', skus: skusOf });
+const contPage = dispatchFromPageRecord({ ...continuation, page: 2, forwardId: 'MYEC1118733669', skus: skusOf });
+const contFirst = mergeByForwardId([contPage, headPage]).merged[0];
+eq('THE RULE: a continuation page merged first never hides the printed COD',
+  [contFirst.payment, contFirst.codAmount, contFirst.paymentGuessed, contFirst.destPin], ['cod', 5846, false, '801105']);
+const comboGuessPage = dispatchFromPageRecord({ ...comboFields, page: 1, forwardId: 'MYEC1118733669', skus: skusOf });
+const guessFirst = mergeByForwardId([comboGuessPage, { ...headPage, page: 2 }]).merged[0];
+eq('a printed payment replaces a guessed one in the merge',
+  [guessFirst.payment, guessFirst.codAmount, guessFirst.paymentGuessed], ['cod', 5846, false]);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

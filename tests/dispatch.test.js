@@ -377,7 +377,16 @@ eq('THE RULE: a PIN already saved is never overwritten',
   backfillPatch({ destPin: '801105', payment: '' }, { ...labelRead, destPin: '208017' }),
   { payment: 'cod', codAmount: 5846, paymentGuessed: false });
 eq('nothing missing → nothing to write',
-  backfillPatch({ destPin: '801105', payment: 'prepaid', codAmount: null, paymentGuessed: true }, labelRead), null);
+  backfillPatch({ destPin: '801105', payment: 'prepaid', codAmount: null, paymentGuessed: false }, labelRead), null);
+eq('a printed payment replaces a saved GUESS — a guess is not a reading',
+  backfillPatch({ destPin: '229001', payment: 'prepaid', codAmount: null, paymentGuessed: true }, labelRead),
+  { payment: 'cod', codAmount: 5846, paymentGuessed: false });
+eq('a guess never replaces a guess',
+  backfillPatch({ destPin: '229001', payment: 'prepaid', codAmount: null, paymentGuessed: true },
+    { destPin: '229001', payment: 'prepaid', codAmount: null, paymentGuessed: true }), null);
+eq('a guess never replaces a printed payment',
+  backfillPatch({ destPin: '229001', payment: 'cod', codAmount: 100, paymentGuessed: false },
+    { destPin: '229001', payment: 'prepaid', codAmount: null, paymentGuessed: true }), null);
 eq('nothing read from the label → nothing to write',
   backfillPatch({ destPin: '', payment: '' }, { destPin: '', payment: '', codAmount: null, paymentGuessed: false }), null);
 eq('no saved record → nothing to write', backfillPatch(null, labelRead), null);
