@@ -25,6 +25,13 @@ const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').re
 const pct = r => `${Math.round((Number(r) || 0) * 100)}%`;
 const num = n => formatINR(Number(n) || 0, 0);
 const rupees = n => `₹${num(n)}`;
+/** ₹12.2L / ₹1.4Cr — Indian short form for a tile; the full figure goes in its tooltip. */
+const rupeesShort = n => {
+  const v = Number(n) || 0;
+  if (v >= 1e7) return `₹${(v / 1e7).toFixed(v >= 1e8 ? 0 : 1)}Cr`;
+  if (v >= 1e5) return `₹${(v / 1e5).toFixed(v >= 1e6 ? 0 : 1)}L`;
+  return rupees(v);
+};
 
 /**
  * Fetch the PIN directory and the state outline.
@@ -199,8 +206,9 @@ export function initOrderMapTab(state, { ordersTab }) {
       tile('building-2', '#8B5CF6', k.cities, 'Cities') +
       tile('undo-2', '#F59E0B', pct(k.returnRate), 'Returned') +
       tile('alert-triangle', '#EF4444', k.fake, 'Fake') +
-      tile('indian-rupee', '#EC4899', rupees(k.estValue), 'Est. value (ISP)',
-        s.unpricedProducts ? `${s.unpricedProducts} product line(s) have no Myntra ISP and are not counted` : '');
+      tile('indian-rupee', '#EC4899', rupeesShort(k.estValue), 'Value',
+        `${rupees(k.estValue)} at Myntra ISP` +
+        (s.unpricedProducts ? ` — ${s.unpricedProducts} product line(s) have no ISP and are not counted` : ''));
   }
 
   // ── The map ──

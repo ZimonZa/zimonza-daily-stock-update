@@ -18,7 +18,7 @@
 </head>
 <body class="bg-slate-950 min-h-screen">
 <div id="page-content" class="ml-64 pt-16 transition-all duration-300">
- <div class="p-7 space-y-5 animate-fade-in">
+ <div class="p-7 space-y-5 animate-fade-in zm-myntra">
 
   <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
     <div>
@@ -193,7 +193,7 @@
         </div>
 
         <div id="map-table" class="max-h-[65vh] overflow-auto">
-          <p class="text-slate-500 text-sm text-center py-6">No Myntra mappings yet — upload the mapping file above.</p>
+          <div class="zm-skel-rows" aria-busy="true" aria-label="Loading"><span></span><span></span><span></span><span></span></div>
         </div>
       </div>
     </div>
@@ -240,7 +240,7 @@
         </div>
 
         <div id="price-table" class="max-h-[65vh] overflow-auto">
-          <p class="text-slate-500 text-sm text-center py-6">No pricing loaded yet — upload <strong class="text-slate-400">Myntra Pricing.xlsx</strong> above.</p>
+          <div class="zm-skel-rows" aria-busy="true" aria-label="Loading"><span></span><span></span><span></span><span></span></div>
         </div>
       </div>
     </div>
@@ -548,7 +548,7 @@
         </div>
 
         <div id="ord-table" class="max-h-[60vh] overflow-auto">
-          <p class="text-slate-500 text-sm text-center py-6">Nothing tracked yet — drop a label in the Purchase tab, or add an order by hand.</p>
+          <div class="zm-skel-rows" aria-busy="true" aria-label="Loading"><span></span><span></span><span></span><span></span></div>
         </div>
       </div>
     </div>
@@ -781,7 +781,7 @@
         </div>
 
         <div id="ret-table" class="max-h-[60vh] overflow-auto">
-          <p class="text-slate-500 text-sm text-center py-6">Nothing recorded yet — upload the Myntra returns report or add a row by hand.</p>
+          <div class="zm-skel-rows" aria-busy="true" aria-label="Loading"><span></span><span></span><span></span><span></span></div>
         </div>
       </div>
     </div>
@@ -1181,11 +1181,33 @@ function setTab(name) {
     el(`tabbtn-${t}`).classList.toggle('is-active', t === name);
   }
   sessionStorage.setItem('zm_myntra_tab', name);
+  revealTab(name);
+  syncTabFade();
   // The map loads its library and data on first open only
   if (name === 'ordermap') orderMap?.onShow();
   if (location.hash.slice(1) !== name) history.replaceState(null, '', `#${name}`);
 }
 for (const t of TABS) el(`tabbtn-${t}`).addEventListener('click', () => setTab(t));
+
+/** Scroll only the tab bar — scrollIntoView would move the whole page too. */
+function revealTab(name) {
+  const bar = document.querySelector('.zm-tabbar');
+  const btn = el(`tabbtn-${name}`);
+  if (!bar || !btn?.getBoundingClientRect) return;
+  const b = btn.getBoundingClientRect(), r = bar.getBoundingClientRect();
+  if (b.left < r.left) bar.scrollLeft -= (r.left - b.left) + 24;
+  else if (b.right > r.right) bar.scrollLeft += (b.right - r.right) + 24;
+}
+
+/** Fade whichever edge of the tab bar has more tabs hidden past it. */
+function syncTabFade() {
+  const bar = document.querySelector('.zm-tabbar');
+  if (!bar) return;
+  bar.classList.toggle('fade-left', bar.scrollLeft > 4);
+  bar.classList.toggle('fade-right', bar.scrollLeft + bar.clientWidth < bar.scrollWidth - 4);
+}
+document.querySelector('.zm-tabbar')?.addEventListener('scroll', syncTabFade, { passive: true });
+window.addEventListener('resize', syncTabFade);
 
 const initialTab = TABS.includes(location.hash.slice(1))
   ? location.hash.slice(1)
@@ -1278,6 +1300,9 @@ async function load() {
   } catch (e) {
     console.error(e);
     notify.error('Failed to load Myntra data.');
+    document.querySelectorAll('.zm-skel-rows').forEach(sk => {
+      sk.outerHTML = '<p class="text-slate-500 text-sm text-center py-6">Could not load — check the connection and refresh the page.</p>';
+    });
   }
 }
 

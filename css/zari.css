@@ -1116,3 +1116,55 @@ td.text-right, th.text-right { font-variant-numeric: tabular-nums; }
 .light-mode .om-seg { background: rgba(0,0,0,0.04); }
 .light-mode .om-seg button.is-on { color: #1A1408; }
 @media (max-width: 640px) { #om-kpis .kpi-tile:last-child { grid-column: 1 / -1; } }
+
+/* ═════════ Myntra page polish (scoped to .zm-myntra) ═════════ */
+
+/* Card headers: actions drop under the title on narrow screens instead of
+   crushing it to one word per line */
+.zm-myntra .glass-card > div.border-b:first-child { flex-wrap: wrap; row-gap: 10px; }
+.zm-myntra .glass-card > div.border-b:first-child > .flex-1.min-w-0 { flex: 1 1 220px; }
+
+/* Seven tabs: tighter, and a fade on whichever edge has more past it */
+.zm-myntra .zm-tab { padding: 10px 13px; }
+.zm-myntra .zm-tabbar.fade-right { -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent); mask-image: linear-gradient(90deg, #000 88%, transparent); }
+.zm-myntra .zm-tabbar.fade-left { -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%); mask-image: linear-gradient(90deg, transparent, #000 12%); }
+.zm-myntra .zm-tabbar.fade-left.fade-right {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+}
+
+/* Tables: headers and status chips stay on one line; figures line up */
+.zm-myntra th { white-space: nowrap; }
+.zm-myntra td [class^="level-"], .zm-myntra td [class*=" level-"] { white-space: nowrap; display: inline-block; }
+.zm-myntra td.text-right:not(:has(button, input, select)) {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums;
+}
+
+/* Empty states: a quiet framed panel with an icon, not a stray line of text */
+.zm-myntra p.text-center.py-6, .zm-myntra p.text-center.py-8 {
+  border: 1px dashed var(--ink-line); border-radius: 14px;
+  padding: 26px 16px 22px; margin: 4px 0; background: rgba(217,164,65,0.02); line-height: 1.5;
+}
+.zm-myntra p.text-center.py-6::before, .zm-myntra p.text-center.py-8::before {
+  content: ''; display: block; width: 26px; height: 26px; margin: 0 auto 10px; opacity: 0.55;
+  background: no-repeat center / contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23D9A441' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='22 12 16 12 14 15 10 15 8 12 2 12'/%3E%3Cpath d='M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z'/%3E%3C/svg%3E");
+}
+
+/* Loading: skeleton rows until Firestore answers, never a false "nothing yet" */
+.zm-skel-rows { display: grid; gap: 10px; padding: 6px 0; }
+.zm-skel-rows span {
+  display: block; height: 38px; border-radius: 10px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.03), rgba(217,164,65,0.08), rgba(255,255,255,0.03));
+  background-size: 200% 100%; animation: om-shimmer 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) { .zm-skel-rows span { animation: none; } }
+
+/* Phones: KPI labels wrap rather than trail off */
+@media (max-width: 640px) {
+  .zm-myntra .kpi-tile-label.truncate { white-space: normal; overflow: visible; text-overflow: clip; }
+  .zm-myntra .glass-card > div.border-b:first-child { padding-left: 16px; padding-right: 16px; }
+  .zm-myntra .glass-card > .p-6 { padding: 16px; }
+}
+/* The Orders steps: the date picker drops under the text on phones */
+.zm-myntra .ord-step { flex-wrap: wrap; }
+.zm-myntra .ord-step > .flex-1.min-w-0 { flex: 1 1 200px; }
