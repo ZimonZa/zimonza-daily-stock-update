@@ -70,7 +70,7 @@ Visit `http://localhost:8080`
 ├── zm-panel.html           ← ZM product code & upload status manager
 ├── pdf-to-excel.html       ← PDF → Excel converter + PDF sorter/merger
 ├── myntra.html             ← Myntra hub: inventory update, mapping, pricing,
-│                             purchase billing, returns & RTO
+│                             purchase billing, returns & RTO, orders, order map
 ├── new-arrivals.html       ← Newly detected SKUs
 ├── sold-items.html         ← Stock decreases with color breakdown
 ├── restocked.html          ← Stock increases panel
@@ -106,6 +106,8 @@ Visit `http://localhost:8080`
 │   ├── label-barcode.js    ← Barcode fallback when the text has no ID
 │   ├── myntra-label-layout.js ← Reads a Myntra label by position, not keywords
 │   ├── myntra-orders.js    ← Orders & fake returns tab
+│   ├── order-geo.js        ← Order Map maths: PIN → place, states, cities, risk
+│   ├── myntra-ordermap.js  ← Order Map tab (ECharts, loaded on first open)
 │   ├── skip-manager.js     ← Skip list management
 │   ├── history-manager.js  ← Calendar & history logic
 │   ├── report-generator.js ← PDF/Excel/CSV export
@@ -116,6 +118,10 @@ Visit `http://localhost:8080`
 │   ├── utils.js            ← Date, color parsing, formatters
 │   └── constants.js        ← App-wide constants & column maps
 │
+├── assets/geo/
+│   ├── pincodes.json       ← India Post PIN directory, compacted (19,300 PINs)
+│   └── india-states.json   ← State outline, India's official boundary
+├── scripts/build-geo.mjs   ← Rebuilds both geo files from their sources
 ├── tests/                  ← node tests/run.mjs
 ├── firestore.rules         ← Firestore security rules
 ├── firebase.json           ← Firebase Hosting config
@@ -188,6 +194,10 @@ On a real Myntra label the text never carries the tracking number — it is barc
 
 Tracking ID, order ID, customer name and address are each read independently, and **anything the label did not print is flagged rather than invented** — an empty buyer block yields two flagged blanks, never a guess.
 
+**Destination PIN and payment.** The bracketed routing code at the top of every Myntra label — `(801105)-(1509)` — is the buyer's PIN. On a combo label it is often the only PIN printed anywhere, so it is kept as `destPin`. The header also says whether the parcel is COD; the amount to collect is kept as `codAmount`. No prepaid label has been seen yet, so the rule is a stated best guess: `COD` printed, or an amount to collect, means COD; anything else is prepaid, and `paymentGuessed` marks it whenever neither word was printed. The orders table shows a chip — `COD ₹5,846`, `Prepaid`, or `Prepaid?` for a guess.
+
+**Re-dropping an old label fills in what is missing — and nothing else.** Orders saved before these fields existed have no `destPin` or payment. Drop their label PDF again: every saved order that matches (including a returned, locked one) gets exactly `destPin`, `payment`, `codAmount` and `paymentGuessed` — only where it has none. Status, the return, the customer, products and dates are never part of that write, so a fake-return record stays exactly as it was. The review marks those rows *fills PIN / payment*, and Save reads *Fill in N order(s)* when that is all there is to do.
+
 **The review is editable.** Every cell is a live input — tracking ID, order ID, SellerSkuCode, quantity, customer, address, dispatch date. Fix whatever the label got wrong, then save. Two things follow your edits automatically:
 
 - **Correcting a name or address re-groups the record.** The repeat-returner key is name → address → order ID; typing a name into a row that only had an address moves it into the name group, so the analytics never count stale evidence.
@@ -216,6 +226,39 @@ An update writes the details only: `status` and `return` are stripped from the p
 The modal states which of these will happen before you save.
 
 **Repeat returners.** Grouped by the best key the label gave — customer name where printed, otherwise delivery address, otherwise order ID — and every row shows **which key it matched on**, so a count built on a masked address never reads as a confirmed person. A single fake return flags a customer on its own; a high return rate needs at least three orders behind it to mean anything.
+
+---
+
+## 🗺️ Order Map
+
+Seventh tab on the Myntra page. It reads the orders already recorded in **Orders & Fake Returns** — nothing new to upload — and shows where they go, what sells where, and where parcels come back from. It writes nothing except a PIN typed by hand, and never touches stock.
+
+**Which PIN an order belongs to** — the first that exists, and every PIN row says which:
+
+| Source | Where it comes from |
+|---|---|
+| `typed` | typed by hand on the Unknown list (stored as `pinOverride`) |
+| `label` | the label's routing code (`destPin`) |
+| `address` | the last 6-digit PIN in the delivery address, never from the seller's return-to block |
+
+The PIN is looked up in India Post's directory, shipped with the app as `assets/geo/pincodes.json`. "City" is India Post's **district** name — Noida shows as *Gautam Buddha Nagar*, Gurgaon as *Gurugram* — with the area name beside it.
+
+**What it shows**, all following the date range (7 / 30 / 90 days, all, or custom), ZM code and colour filters:
+
+- **India by state**, shaded by Orders, Pieces, Return % or Fake returns. Hover for the numbers; **click a state** and everything below narrows to it. Dots are the 25 busiest cities.
+- **Top states, cities and PINs.**
+- **Which products go where** — pieces per SKU (or ZM code) across the busiest states, for stock planning.
+- **Risky areas** — a PIN or city is flagged only with **3 or more orders** and a return rate of 40%+ or any fake return; one bad parcel never flags a town.
+- **Orders per week** for the top five states, **zones** (the Government's six Zonal Councils), and **COD vs Prepaid** by state, with how many orders predate payment being recorded.
+- **Value** at Myntra ISP from the Pricing tab, shown in lakh/crore short form with the full figure on hover; product lines with no ISP are left out and counted.
+- **Unknown location** — orders with no usable PIN. Type a PIN (it must exist in the directory) and the order moves onto the map; × removes a typed PIN. Or re-drop the label in Orders to fill it in.
+- **Export Excel** — States, Cities, PINs, Product x State, Risky Areas, Zones, Unknown Location. Customer names appear only on Unknown Location, where they are needed to fix a row.
+
+An unfulfillable order never shipped, so it is never counted. A bounded date range leaves out orders with no dispatch date; *All time* keeps them.
+
+ECharts and both data files load the first time the tab is opened, so no other tab pays for them. If either fails, the tab says which file and why; the other tabs carry on.
+
+**Data and licences.** PIN data: India Post *All India Pincode Directory* via data.gov.in (GODL-India). State boundaries: DataMeet India community, `States/Admin2` (CC BY 4.0), which follows India's official boundary — all of Jammu & Kashmir, and Ladakh including Gilgit-Baltistan and Aksai Chin. Rebuild both with `node scripts/build-geo.mjs <pincode.csv> <states.geojson>`; it fails, naming the culprit, if any state name does not match between the two.
 
 ---
 
@@ -297,16 +340,17 @@ Anything the signals cannot place lands in **Unsorted** — never silently dropp
 
 ## 🛍️ Myntra Hub
 
-One page (`myntra.html`), six sections:
+One page (`myntra.html`), seven sections:
 
 | Tab | What it does |
 |-----|--------------|
 | **Inventory Update** | Generates the `sellerSkuCode,quantity` file Myntra consumes. Takes a configurable % of each colour's stock above the gap threshold, and optionally adds usable Returns & RTO stock on top. Deactivated SKUs are excluded from the download. |
-| **Mapping** | Every SellerSkuCode with its colour, today's stock, live status toggle, and price columns. Bulk activate / deactivate. |
+| **Mapping** | SellerSkuCode, Style ID, ZM code, colour, Item No., today's stock, Kuntal Selling Price, Myntra MRP and ISP, with the live status toggle. Bulk activate / deactivate. |
 | **Pricing** | Upload `Myntra Pricing.xlsx`. Flags mapped styles that have no price (those cannot be billed). |
 | **Purchase** | Cart → GST bill → PDF. Saved, auto-numbered, re-downloadable. Also GR credit notes, short-receive, and the per-bill note. |
 | **Returns & RTO** | Register of goods coming back, with a stock summary. A label can be filled from it, and the inventory update can declare it. |
 | **Orders** | A standalone report, not linked to Purchase or Returns & RTO. Drop a label here; every parcel is tracked to its customer by forward tracking ID, with every product in a combo parcel listed. Return recording, fake returns, repeat-returner analytics. |
+| **Order Map** | Where orders go: India by state, top cities and PINs, products by state, risky areas, weekly trend, zones, COD vs prepaid. Reads the Orders tab; see **Order Map** above. |
 
 ### Including returns in the inventory update
 
@@ -339,6 +383,8 @@ Rows can be **selected in bulk and deleted**, or **edited** individually through
 ### Stock in Returns & RTO
 
 Above the rows table, a summary of what the register is actually holding — SKUs, colours, ZM codes, total pieces, and **usable** pieces (what a label can pull, so Damaged and Missing excluded) — with a breakdown by ZM code listing each colour and its pieces. It follows the filters above it, and exports to CSV or Excel.
+
+**Excel + Kuntal Price** exports the same breakdown priced for Kuntal: one row per ZM code — ZM Code, Kuntal Code, Colours, Total Pcs, Kuntal Price, Value (pcs × price) — and a **GRAND TOTAL** row of pieces and value. The file is `RTO_Stock_Kuntal_Price_DD-MM-YYYY.xlsx`, dated on the local calendar. A ZM code with no Kuntal price gets a blank price and value, never 0, and a note under the total says how many were left out of the value.
 
 ```
  SKUs 24   Colours 31   ZM Codes 18   Total 46   Usable 41   Held Back 5
@@ -442,7 +488,8 @@ purchase_bills/{id}     ← { docType, number, date, lines[], totals, note, rece
 settings/purchase_counters ← reserved transactionally, per doc type and financial year
 stock_pick_slips/{id}   ← { number, date, lines[], source }
 dispatches/{id}         ← { forwardId, orderId, customer:{ name, address, key, keyType },
-                            sellerSkuCode, zmCode, colourName, qty, dispatchDate,
+                            products[], sellerSkuCode, zmCode, colourName, qty, dispatchDate,
+                            destPin, payment, codAmount, paymentGuessed, pinOverride,
                             status, return:{ returnId, type, foundInside, date } | null }
 ```
 
@@ -482,7 +529,7 @@ The runner copies `js/` into a sandbox, rewrites the CDN imports to generated st
 
 The parse check uses `vm.SourceTextModule`, not `node --check` — under Node 26 `node --check` exits 0 on files it cannot parse, which had already let a real unbalanced paren through. The runner re-execs itself with `--experimental-vm-modules` so no flag is needed at the call site.
 
-Suites cover ZM-code normalisation, GST maths, day-first and Excel-serial dates, swatch luminance, PDF sorter ordering and conflict confidence, label field extraction, the barcode fallback, offender keys and re-keying, duplicate classification, the write payload that protects a recorded return, return intake, the inventory return boost, and the Orders tab driven end to end through a fake DOM.
+Suites cover the Order Map maths (PIN precedence, the seller's PIN never taken, unfulfillable orders left out, combo parcels under a product filter, risky thresholds, Monday weeks, zones, the Excel sheets), the geo data itself (every state name matches between the PIN directory and the outline; known PINs resolve), destination PIN and payment read from real labels, the re-drop fill-in that never touches a returned parcel, the RTO Kuntal-price export, local file dates, ZM-code normalisation, GST maths, day-first and Excel-serial dates, swatch luminance, PDF sorter ordering and conflict confidence, label field extraction, the barcode fallback, offender keys and re-keying, duplicate classification, the write payload that protects a recorded return, return intake, the inventory return boost, and the Orders tab driven end to end through a fake DOM.
 
 ---
 
@@ -511,6 +558,7 @@ See **Midnight Zari** above for the live tokens. Dates are `dd/mm/yyyy` througho
 | Lucide Icons | Icon set |
 | Flatpickr | Date picker |
 | jsPDF | PDF export |
+| ECharts 5.5 | Order Map: India map and weekly trend (loaded on first open of that tab) |
 
 ---
 
