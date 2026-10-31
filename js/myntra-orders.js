@@ -20,7 +20,7 @@ import { debounce, toCSV, downloadFile, formatDateDisplay, today } from './utils
 import notify from './notifications.js';
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const stamp = () => new Date().toISOString().slice(0, 10);
+const stamp = () => today();   // local date — toISOString() is UTC
 
 const EXPORT_COLUMNS = [
   { key: 'forwardId',     label: 'Forward Tracking ID' },

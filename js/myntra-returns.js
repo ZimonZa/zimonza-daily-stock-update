@@ -23,12 +23,13 @@ import { swatchChip } from './swatches.js';
 import {
   normZmCode, normItemNo, normColorKey, debounce, toCSV, downloadFile,
   formatDate, formatDateDisplay, today, titleCase,
-  getEffectiveColours, findColourSuggestion
+  getEffectiveColours, findColourSuggestion, exportDateStamp
 } from './utils.js';
 import notify from './notifications.js';
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const stamp = () => new Date().toISOString().slice(0, 10);
+// Local date — toISOString() is UTC, which in India is yesterday until 05:30
+const stamp = () => today();
 
 const SKU_HEADER_RE = /seller\s*sku|sku\s*code|vendor\s*sku|^sku$/i;
 
@@ -388,6 +389,48 @@ export function summariseReturnStock(returns) {
   };
 }
 
+/**
+ * The "Excel + Kuntal Price" rows: one per ZM code, priced from the pricing
+ * sheet. A code with no Kuntal price gets a blank price and value — never 0,
+ * which would read as "free" — and is counted so the total can say so.
+ *
+ * @param {Array} codes     summariseReturnStock(...).codes
+ * @param {Map}   priceIdx  pricingIndex(state.pricing)
+ */
+export function rtoPriceExportRows(codes, priceIdx) {
+  let totalPcs = 0, totalValue = 0, unpriced = 0;
+  const rows = (codes || []).map(c => {
+    const p = priceIdx?.get(normZmCode(c.zmCode));
+    const raw = p?.kuntalSellingPrice;
+    const price = (raw === null || raw === undefined || raw === '' || !isFinite(Number(raw))) ? null : Number(raw);
+    const pcs = Number(c.pcs) || 0;
+    const value = price === null ? null : pcs * price;
+    totalPcs += pcs;
+    if (value === null) unpriced++; else totalValue += value;
+    return {
+      zmCode: c.zmCode,
+      kuntalCode: c.kuntalCode || p?.kuntalCode || '',
+      colourList: (c.colours || []).map(x => `${x.name} ${x.pcs}`).join(' · '),
+      pcs,
+      price,
+      value
+    };
+  });
+  return { rows, totalPcs, totalValue, unpriced };
+}
+
+/** The sheet itself: header, one row per code, GRAND TOTAL, and a note if any code is unpriced. */
+export function rtoPriceSheetAoa({ rows, totalPcs, totalValue, unpriced }) {
+  const blank = v => (v === null || v === undefined) ? '' : v;
+  const aoa = [
+    ['ZM Code', 'Kuntal Code', 'Colours', 'Total Pcs', 'Kuntal Price', 'Value'],
+    ...rows.map(r => [r.zmCode, r.kuntalCode, r.colourList, r.pcs, blank(r.price), blank(r.value)]),
+    ['GRAND TOTAL', '', '', totalPcs, '', totalValue]
+  ];
+  if (unpriced) aoa.push(['', '', `${unpriced} ZM code(s) have no Kuntal price — not in the total value`]);
+  return aoa;
+}
+
 // ═══════════════════ Returns tab UI ═══════════════════
 
 const RETURN_EXPORT_COLUMNS = [
@@ -455,6 +498,28 @@ export function initReturnsTab(state) {
     XLSX.utils.book_append_sheet(wb, ws, 'RTO Stock');
     XLSX.writeFile(wb, `myntra_rto_stock_${stamp()}.xlsx`);
     notify.success(`Exported ${rows.length} ZM code(s)`);
+  });
+  el('ret-stock-xlsx-price').addEventListener('click', () => {
+    const codes = summariseReturnStock(returns.filter(matchesFilters)).codes;
+    if (!codes.length) { notify.warning('Nothing to export'); return; }
+    if (!window.XLSX) { notify.error('Excel library not loaded'); return; }
+    const result = rtoPriceExportRows(codes, pricingIndex(state.pricing));
+    const aoa = rtoPriceSheetAoa(result);
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    // Pieces, price and value as real numbers with thousands separators, so
+    // the file adds up in Excel rather than holding text that looks like money.
+    for (let r = 1; r <= result.rows.length + 1; r++) {
+      for (const c of [3, 4, 5]) {
+        const cell = ws[XLSX.utils.encode_cell({ r, c })];
+        if (cell && typeof cell.v === 'number') cell.z = '#,##0';
+      }
+    }
+    ws['!cols'] = [12, 14, 46, 11, 14, 14].map(w => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'RTO Stock (Kuntal Price)');
+    XLSX.writeFile(wb, `RTO_Stock_Kuntal_Price_${exportDateStamp()}.xlsx`);
+    notify.success(`Exported ${result.rows.length} ZM code(s)` +
+      (result.unpriced ? ` · ${result.unpriced} without a Kuntal price` : ''));
   });
 
   // Bulk selection

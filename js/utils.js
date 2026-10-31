@@ -37,6 +37,16 @@ export function today() {
 }
 
 /**
+ * A file-name date, "DD-MM-YYYY", on the LOCAL calendar.
+ * Never toISOString(): that is UTC, which in India is yesterday until 05:30.
+ */
+export function exportDateStamp(d = new Date()) {
+  const day = String(d.getDate()).padStart(2, '0');
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  return `${day}-${m}-${d.getFullYear()}`;
+}
+
+/**
  * Parse color string "(Red * 1 )( Blue * 2 )( Morpichh * 5 )"
  * Returns array of { name, qty }
  */

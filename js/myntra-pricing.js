@@ -8,7 +8,7 @@
 import { findHeaderCell, isBlankRow } from './myntra.js';
 import { readExcelFile } from './excel-parser.js';
 import { saveMyntraPricing, getAllMyntraPricing } from './firestore-service.js';
-import { normZmCode, toNum, formatINR, debounce, toCSV, downloadFile } from './utils.js';
+import { normZmCode, toNum, formatINR, debounce, toCSV, downloadFile, today } from './utils.js';
 import notify from './notifications.js';
 
 const ZM_HEADER_RE = /zm\s*code/i;
@@ -92,7 +92,7 @@ export function pricingIndex(pricingRows) {
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const money = v => (v === null || v === undefined || v === '') ? '—' : formatINR(v, 0);
-const stamp = () => new Date().toISOString().slice(0, 10);
+const stamp = () => today();   // local date — toISOString() is UTC
 
 const PRICE_EXPORT_COLUMNS = [
   { key: 'zmCode',             label: 'ZM Code' },

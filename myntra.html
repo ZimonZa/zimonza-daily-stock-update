@@ -643,6 +643,9 @@
             <button id="ret-stock-xlsx" class="btn-secondary text-xs py-1.5 px-2.5">
               <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 inline-block mr-1"></i> Excel
             </button>
+            <button id="ret-stock-xlsx-price" class="btn-primary text-xs py-1.5 px-2.5" title="One row per ZM code with Kuntal Selling Price, value and a grand total">
+              <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 inline-block mr-1"></i> Excel + Kuntal Price
+            </button>
           </div>
           <div id="ret-stock-tiles" class="grid grid-cols-3 sm:grid-cols-6 gap-3"></div>
           <div id="ret-stock-table" class="max-h-[40vh] overflow-auto"></div>
@@ -949,7 +952,7 @@ import {
 } from './js/firestore-service.js';
 import {
   debounce, toCSV, downloadFile, formatDateDisplay, formatINR,
-  getMyntraGapThreshold, getMyntraTakePercent, normColorKey, normZmCode
+  getMyntraGapThreshold, getMyntraTakePercent, normColorKey, normZmCode, today
 } from './js/utils.js';
 import {
   validateMyntraMappingFile, parseMyntraMappingFile, parseInventoryFile,
@@ -970,7 +973,7 @@ if (window.lucide) lucide.createIcons();
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const el = id => document.getElementById(id);
-const stamp = () => new Date().toISOString().slice(0,10);
+const stamp = () => today();   // local date — toISOString() is UTC
 const money = v => (v === null || v === undefined || v === '') ? '—' : formatINR(v, 0);
 
 let genResult = null;    // { rows, summary } from last generation
