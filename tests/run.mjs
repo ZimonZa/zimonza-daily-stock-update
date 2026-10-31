@@ -11,7 +11,7 @@
 // the real file, byte for byte.
 // ═══════════════════════════════════════════════════════════════
 
-import { readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync, cpSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync, cpSync, existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -123,6 +123,13 @@ function build() {
     const html = readFileSync(join(repo, page), 'utf8');
     const body = html.split('<script type="module">')[1]?.split('</script>')[0] ?? '';
     writeFileSync(join(sandbox, `_page-${page.replace('.html', '')}.txt`), body);
+  }
+
+  // The map data, so suites can check it against the code that reads it
+  mkdirSync(join(sandbox, 'geo'), { recursive: true });
+  const geoDir = join(repo, 'assets', 'geo');
+  for (const f of (existsSync(geoDir) ? readdirSync(geoDir) : []).filter(f => f.endsWith('.json'))) {
+    cpSync(join(geoDir, f), join(sandbox, 'geo', f));
   }
 
   // The suites
