@@ -40,6 +40,7 @@
     <button id="tabbtn-purchase"  class="zm-tab"><i data-lucide="shopping-cart" class="w-4 h-4"></i> Purchase <span id="tabcount-purchase" class="zm-tab-count"></span></button>
     <button id="tabbtn-returns"   class="zm-tab"><i data-lucide="undo-2" class="w-4 h-4"></i> Returns &amp; RTO <span id="tabcount-returns" class="zm-tab-count"></span></button>
     <button id="tabbtn-orders"    class="zm-tab"><i data-lucide="radar" class="w-4 h-4"></i> Orders &amp; Fake Returns <span id="tabcount-orders" class="zm-tab-count"></span></button>
+    <button id="tabbtn-ordermap"  class="zm-tab"><i data-lucide="map" class="w-4 h-4"></i> Order Map</button>
   </div>
 
   <!-- ════════ TAB: Inventory Update ════════ -->
@@ -553,6 +554,125 @@
     </div>
   </div>
 
+  <!-- ════════ TAB: Order Map ════════ -->
+  <div id="tab-ordermap" class="hidden space-y-5">
+    <div class="glass-card overflow-hidden">
+      <div class="flex flex-wrap items-center gap-3 px-6 py-4 border-b border-white/5">
+        <div class="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center flex-shrink-0">
+          <i data-lucide="map" class="w-5 h-5 text-amber-400"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <h3 class="text-white font-semibold text-sm">Order Map</h3>
+          <p class="text-slate-400 text-xs">Where your Myntra orders go, what sells where, and where parcels come back from — from the orders in Orders &amp; Fake Returns</p>
+        </div>
+        <button id="om-export" class="btn-primary text-xs py-2 px-3">
+          <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 inline-block mr-1"></i> Export Excel
+        </button>
+      </div>
+
+      <div class="p-6 space-y-5">
+        <div class="flex flex-wrap gap-3 items-center">
+          <select id="om-range" class="zm-input w-40" aria-label="Date range">
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="all">All time</option>
+            <option value="custom">Custom range…</option>
+          </select>
+          <span id="om-custom" class="hidden flex items-center gap-2">
+            <input id="om-from" type="date" class="zm-input w-40" aria-label="From">
+            <span class="text-slate-600 text-xs">to</span>
+            <input id="om-to" type="date" class="zm-input w-40" aria-label="To">
+          </span>
+          <select id="om-zm" class="zm-input w-40" aria-label="ZM code"><option value="">All ZM codes</option></select>
+          <select id="om-colour" class="zm-input w-40" aria-label="Colour"><option value="">All colours</option></select>
+          <button id="om-state-chip" class="om-state-chip hidden" title="Show all of India again"></button>
+          <span id="om-count" class="text-slate-500 text-xs ml-auto"></span>
+        </div>
+
+        <div id="om-status"></div>
+
+        <div id="om-body" class="hidden space-y-5">
+          <div id="om-kpis" class="kpi-strip"></div>
+
+          <div class="om-grid">
+            <div class="om-panel">
+              <div class="om-panel-head">
+                <p class="om-panel-title">India by state</p>
+                <div id="om-metric" class="om-seg" role="group" aria-label="Shade the map by">
+                  <button data-om-metric="orders">Orders</button>
+                  <button data-om-metric="pieces">Pieces</button>
+                  <button data-om-metric="returnRate">Return %</button>
+                  <button data-om-metric="fake">Fake</button>
+                </div>
+              </div>
+              <div id="om-map" class="om-map"></div>
+              <p class="om-note">Click a state to narrow everything below to it. Dots are the 25 busiest cities. Scroll or pinch to zoom.</p>
+            </div>
+            <div class="space-y-5 min-w-0">
+              <div class="om-panel"><p class="om-panel-title">Top states</p><div id="om-top-states" class="overflow-auto"></div></div>
+              <div class="om-panel"><p class="om-panel-title">Top cities</p><div id="om-top-cities" class="overflow-auto"></div></div>
+            </div>
+          </div>
+
+          <div class="om-panel">
+            <p class="om-panel-title">Top PINs</p>
+            <div id="om-top-pins" class="overflow-auto"></div>
+          </div>
+
+          <div class="om-panel">
+            <div class="om-panel-head">
+              <div>
+                <p class="om-panel-title">Which products go where</p>
+                <p class="om-note mt-0">Pieces, by the busiest states — plan stock by region</p>
+              </div>
+              <div id="om-pbs-by" class="om-seg" role="group" aria-label="Group products by">
+                <button data-om-pbs="sku">SKU</button>
+                <button data-om-pbs="zm">ZM code</button>
+              </div>
+            </div>
+            <div id="om-pbs" class="overflow-auto max-h-[60vh]"></div>
+          </div>
+
+          <div class="om-panel om-panel-risk">
+            <p class="om-panel-title">Risky areas</p>
+            <p class="om-note mt-0">PINs and cities with 3 or more orders and a return rate of 40%+, or any fake return</p>
+            <div id="om-risky" class="overflow-auto"></div>
+          </div>
+
+          <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+            <div class="om-panel min-w-0">
+              <p class="om-panel-title">Orders per week — top 5 states</p>
+              <div id="om-trend" class="om-trend"></div>
+            </div>
+            <div class="om-panel min-w-0">
+              <p class="om-panel-title">Zones</p>
+              <div id="om-zones" class="overflow-auto"></div>
+            </div>
+          </div>
+
+          <div class="om-panel">
+            <p class="om-panel-title">COD vs Prepaid by state</p>
+            <p id="om-payment-note" class="om-note mt-0"></p>
+            <div id="om-payment" class="overflow-auto max-h-[50vh]"></div>
+          </div>
+
+          <div class="om-panel">
+            <div class="om-panel-head">
+              <p class="om-panel-title">Unknown location</p>
+              <span id="om-unknown-count" class="text-slate-500 text-xs"></span>
+            </div>
+            <p class="om-note mt-0">No PIN could be read for these. Type one here, or re-drop the order's label PDF in Orders &amp; Fake Returns to fill it in.</p>
+            <div id="om-unknown" class="overflow-auto max-h-[50vh]"></div>
+            <div id="om-typed"></div>
+          </div>
+
+          <p class="om-attrib">PIN data: India Post via data.gov.in (GODL-India) · State boundaries: DataMeet India community (CC BY 4.0), India's official boundary</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ════════ TAB: Returns & RTO ════════ -->
   <div id="tab-returns" class="hidden">
     <div class="glass-card overflow-hidden">
@@ -965,6 +1085,7 @@ import { initPurchaseTab } from './js/myntra-purchase.js';
 import { initReturnsTab } from './js/myntra-returns.js';
 import { initFulfilmentPanel } from './js/myntra-fulfilment.js';
 import { initOrdersTab } from './js/myntra-orders.js';
+import { initOrderMapTab } from './js/myntra-ordermap.js';
 import { swatchChip, swatchDot } from './js/swatches.js';
 
 await requireAuth();
@@ -1030,17 +1151,19 @@ const state = {
   skuStatus: {},           // sellerSkuCode → { active }
   purchaseSettings: {},
   helpers: { toggleSort, applySort, thSort, bindDrop, resetDrop },
-  onPricingChange: () => { renderMappings(); purchaseTab?.render(); renderKpis(); },
+  onPricingChange: () => { renderMappings(); purchaseTab?.render(); renderKpis(); orderMap?.render(); },
   onBillsChange:   () => renderKpis(),
   onReturnsChange: () => renderKpis(),
   onCartChange:    () => renderKpis(),
   onFulfilmentDone: () => renderKpis(),
   // Orders & Fake Returns is a standalone REPORT. It is not fed by Purchase
   // and it writes nothing into Returns & RTO; this only updates its tab count.
-  onOrdersChange:   () => renderKpis()
+  onOrdersChange:   () => { renderKpis(); orderMap?.render(); },
+  // The Order Map's "Open in Orders" switches tabs through this
+  setTab: (name) => setTab(name)
 };
 
-let pricingTab = null, purchaseTab = null, returnsTab = null, fulfilPanel = null, ordersTab = null;
+let pricingTab = null, purchaseTab = null, returnsTab = null, fulfilPanel = null, ordersTab = null, orderMap = null;
 
 // ── Active / deactive helpers ─────────────────────────────────
 const isActive = sku => state.skuStatus[sku]?.active !== false;
@@ -1051,13 +1174,15 @@ const inactiveSkuSet = () => new Set(
 );
 
 // ── Tabs ──────────────────────────────────────────────────────
-const TABS = ['generator', 'mapping', 'pricing', 'purchase', 'returns', 'orders'];
+const TABS = ['generator', 'mapping', 'pricing', 'purchase', 'returns', 'orders', 'ordermap'];
 function setTab(name) {
   for (const t of TABS) {
     el(`tab-${t}`).classList.toggle('hidden', t !== name);
     el(`tabbtn-${t}`).classList.toggle('is-active', t === name);
   }
   sessionStorage.setItem('zm_myntra_tab', name);
+  // The map loads its library and data on first open only
+  if (name === 'ordermap') orderMap?.onShow();
   if (location.hash.slice(1) !== name) history.replaceState(null, '', `#${name}`);
 }
 for (const t of TABS) el(`tabbtn-${t}`).addEventListener('click', () => setTab(t));
@@ -1137,6 +1262,7 @@ async function load() {
     returnsTab = initReturnsTab(state);
     fulfilPanel = initFulfilmentPanel(state, { returnsTab, purchaseTab });
     ordersTab = initOrdersTab(state);
+    orderMap = initOrderMapTab(state, { ordersTab });
 
     // Goods Return draws its lines from the register, and reduces it on save
     state.getReturns = () => returnsTab.getReturns();
@@ -1148,6 +1274,7 @@ async function load() {
     fulfilPanel.render();
     await Promise.all([purchaseTab.refreshBills(), returnsTab.refresh(), fulfilPanel.refreshSlips(), ordersTab.refresh()]);
     renderKpis();
+    if (!el('tab-ordermap').classList.contains('hidden')) orderMap.onShow();
   } catch (e) {
     console.error(e);
     notify.error('Failed to load Myntra data.');
