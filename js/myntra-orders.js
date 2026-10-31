@@ -8,7 +8,7 @@ import { RETURN_TYPES, RETURN_TYPE_LABELS, DISPATCH_STATUS } from './constants.j
 import {
   dispatchesFromLabel, mergeByForwardId, applyReturn, offenderSummary, offenderKey,
   classifyAgainstSaved, rekeyDispatch, productsOf, productsLabel, repeatedIds,
-  dispatchDateError
+  dispatchDateError, backfillPatch
 } from './myntra-dispatch.js';
 import { parseLabelPdf } from './myntra-labels.js';
 import {
@@ -16,7 +16,7 @@ import {
   markDispatchUnfulfillable
 } from './firestore-service.js';
 import { swatchDot } from './swatches.js';
-import { debounce, toCSV, downloadFile, formatDateDisplay, today } from './utils.js';
+import { debounce, toCSV, downloadFile, formatDateDisplay, formatINR, today } from './utils.js';
 import notify from './notifications.js';
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -272,10 +272,25 @@ export function initOrdersTab(state) {
     renderConfirm();
   }
 
+  /**
+   * What re-dropping this row would fill in on its saved order: the PIN and
+   * payment only. A ticked "already saved" row is a full update instead, and
+   * a new row has no saved order to fill.
+   */
+  function fillFor(r) {
+    const eligible = r._dupe === 'locked' || (r._dupe === 'exists' && !r._keep);
+    if (!eligible || !r._existingId) return null;
+    return backfillPatch(dispatches.find(d => d.id === r._existingId), r);
+  }
+  const pendingFills = () => (pending?.rows || [])
+    .map(r => ({ id: r._existingId, patch: fillFor(r) }))
+    .filter(f => f.patch);
+
   async function commitLabel() {
     if (!pending) return;
     const keep = pending.rows.filter(r => r._keep && r._dupe !== 'locked');
-    if (!keep.length) { notify.warning('Nothing ticked to save'); return; }
+    const fills = pendingFills();
+    if (!keep.length && !fills.length) { notify.warning('Nothing ticked to save'); return; }
 
     // Two ticked rows with one tracking ID would be written to the same
     // document, and the second would silently replace the first. Refuse, and
@@ -297,8 +312,11 @@ export function initOrdersTab(state) {
       // No tracking ID means no parcel to match a return against later, so
       // these are saved under a generated id and called out as incomplete.
       for (const row of withoutId) { await store.addDispatch(row); saved++; }
+      // Old orders: the PIN and payment only, never anything else on them
+      for (const f of fills) await store.updateDispatch(f.id, f.patch);
 
-      notify.success(`${saved} order(s) saved from ${pending.fileName}`);
+      if (saved) notify.success(`${saved} order(s) saved from ${pending.fileName}`);
+      if (fills.length) notify.success(`${fills.length} order(s) filled in (PIN / payment) from ${pending.fileName}`);
       if (withoutId.length) {
         notify.warning(`${withoutId.length} saved with no tracking ID — a return cannot find them until you add one.`);
       }
@@ -587,7 +605,7 @@ export function initOrdersTab(state) {
               ${d.customer?.keyType && d.customer.keyType !== 'name' ? `<span class="ord-keytype">${esc(d.customer.keyType)}</span>` : ''}
             </td>
             <td class="px-4 py-2 text-slate-500 whitespace-nowrap">${esc(formatDateDisplay(d.dispatchDate) || d.dispatchDate) || '—'}</td>
-            <td class="px-4 py-2">${statusChip(d)}</td>
+            <td class="px-4 py-2 whitespace-nowrap">${statusChip(d)} ${paymentChip(d)}</td>
             <td class="px-4 py-2 whitespace-nowrap zm-mono text-slate-300">${
               d.return?.returnId ? esc(d.return.returnId)
                 : d.return?.type ? '<span class="ord-flag">no return ID</span>'
@@ -682,15 +700,29 @@ export function initOrdersTab(state) {
     return '';
   }
 
+  /** COD / Prepaid as read from the label. "?" when neither word was printed. */
+  function paymentChip(d) {
+    if (d.payment === 'cod') {
+      return `<span class="ord-pay ord-pay-cod" title="cash on delivery">COD${Number.isFinite(d.codAmount) ? ` ₹${esc(formatINR(d.codAmount, 0))}` : ''}</span>`;
+    }
+    if (d.payment === 'prepaid') {
+      return d.paymentGuessed
+        ? '<span class="ord-pay ord-pay-guess" title="the label printed neither COD nor PREPAID — taken as prepaid">Prepaid?</span>'
+        : '<span class="ord-pay" title="prepaid">Prepaid</span>';
+    }
+    return '';
+  }
+
   function noteCell(r) {
-    const dupe = dupeFlag(r);
+    const fill = fillFor(r) ? '<span class="ord-fill" title="this saved order gets its PIN / payment from this label — nothing else on it changes">fills PIN / payment</span>' : '';
+    const dupe = (dupeFlag(r) + ' ' + fill).trim();
     const missing = r.missing?.length ? `<span class="ord-flag">${esc(r.missing.join(', '))}</span>` : '';
     // No tracking ID means the page did not print one where we looked. Show
     // what it DID say, so the reason is visible rather than left to guesswork.
     const why = (!r.forwardId && r.pageTextSample)
       ? `<details class="ord-why"><summary>what the page said</summary><code>${esc(r.pageTextSample)}</code></details>`
       : '';
-    return ((dupe + ' ' + missing).trim() || '<span class="zm-muted">—</span>') + why;
+    return ((paymentChip(r) + ' ' + dupe + ' ' + missing).trim() || '<span class="zm-muted">—</span>') + why;
   }
 
   function renderConfirm() {
@@ -707,6 +739,7 @@ export function initOrdersTab(state) {
       (noId ? ` · ${noId} with no tracking ID` : '') +
       (dupes ? ` · ${dupes} already saved` : '') +
       (locked ? ` · ${locked} locked (already returned)` : '') +
+      (pendingFills().length ? ` · ${pendingFills().length} will fill in PIN / payment` : '') +
       ' · edit anything below before saving';
 
     el('ord-sku-list').innerHTML = state.mappings
@@ -749,7 +782,16 @@ export function initOrdersTab(state) {
           </tr>`).join('')}
         </tbody>
       </table>`;
+    syncSaveLabel();
+  }
 
+  /** "Save ticked", or "Fill in N order(s)" when only old orders get their PIN / payment. */
+  function syncSaveLabel() {
+    const ticked = (pending?.rows || []).filter(r => r._keep && r._dupe !== 'locked').length;
+    const fills = pendingFills().length;
+    el('ord-confirm-save').textContent = ticked
+      ? (fills ? `Save ticked + fill in ${fills}` : 'Save ticked')
+      : (fills ? `Fill in ${fills} order(s)` : 'Save ticked');
   }
 
   /**
@@ -817,7 +859,15 @@ export function initOrdersTab(state) {
   /** Every edit lands on the pending row and nowhere else until Save. */
   function onReviewEdit(e) {
     const cb = e.target.closest('input[data-ord-keep]');
-    if (cb) { pending.rows[+cb.dataset.ordKeep]._keep = cb.checked; return; }
+    if (cb) {
+      const i = +cb.dataset.ordKeep;
+      pending.rows[i]._keep = cb.checked;
+      // Ticking an "already saved" row turns its fill-in into a full update
+      const note = el('ord-confirm-table').querySelector?.(`[data-ord-note="${i}"]`);
+      if (note) note.innerHTML = noteCell(pending.rows[i]);
+      renderConfirmMeta();
+      return;
+    }
 
     const prodInput = e.target.closest('input[data-ord-prod]');
     if (prodInput) { onProductEdit(prodInput); return; }
@@ -920,11 +970,22 @@ export function initOrdersTab(state) {
       (noId ? ` · ${noId} with no tracking ID` : '') +
       (dupes ? ` · ${dupes} already saved` : '') +
       (locked ? ` · ${locked} locked (already returned)` : '') +
+      (pendingFills().length ? ` · ${pendingFills().length} will fill in PIN / payment` : '') +
       ` · ${p.rows.filter(r => r._keep && r._dupe !== 'locked').length} ticked to save`;
+    syncSaveLabel();
+  }
+
+  /** Show one parcel: the Order Map's "Open in Orders" lands here. */
+  function focusForwardId(id) {
+    view.q = String(id ?? '').trim();
+    view.status = 'all';
+    el('ord-search').value = view.q;
+    el('ord-status-filter').value = 'all';
+    render();
   }
 
   return {
-    render, refresh, ingestLabel, closeReturnModal,
+    render, refresh, ingestLabel, closeReturnModal, focusForwardId,
     getDispatches: () => dispatches,
     getPendingRows: () => pending?.rows || []
   };

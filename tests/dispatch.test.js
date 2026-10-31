@@ -5,7 +5,8 @@ import { extractDispatchFields, parseLabelPdf } from './myntra-labels.js';
 import {
   offenderKey, dispatchFromPageRecord, dispatchesFromLabel, mergeByForwardId,
   applyReturn, offenderSummary, findByForwardId,
-  classifyAgainstSaved, rekeyDispatch, dispatchWritePayload, normForwardId, repeatedIds, dispatchDateError
+  classifyAgainstSaved, rekeyDispatch, dispatchWritePayload, normForwardId, repeatedIds, dispatchDateError,
+  backfillPatch
 } from './myntra-dispatch.js';
 import { generateInventoryUpdate } from './myntra.js';
 import { availableReturnStock } from './myntra-returns.js';
@@ -365,6 +366,21 @@ const firstWins = mergeByForwardId([
   dispatchFromPageRecord({ page: 2, forwardId: 'MYX2', destPin: '999999', payment: 'prepaid', paymentGuessed: true })
 ]).merged[0];
 eq('a PIN already read is never replaced by a later page', [firstWins.destPin, firstWins.payment, firstWins.codAmount], ['208017', 'cod', 100]);
+
+// ════ Backfill: re-dropping an old label fills in only what is missing ════
+const labelRead = { destPin: '801105', payment: 'cod', codAmount: 5846, paymentGuessed: false };
+eq('an old record gets all four label fields',
+  backfillPatch({ destPin: '', payment: '' }, labelRead), labelRead);
+eq('a record saved before the fields existed gets them too',
+  backfillPatch({ status: 'returned' }, labelRead), labelRead);
+eq('THE RULE: a PIN already saved is never overwritten',
+  backfillPatch({ destPin: '801105', payment: '' }, { ...labelRead, destPin: '208017' }),
+  { payment: 'cod', codAmount: 5846, paymentGuessed: false });
+eq('nothing missing → nothing to write',
+  backfillPatch({ destPin: '801105', payment: 'prepaid', codAmount: null, paymentGuessed: true }, labelRead), null);
+eq('nothing read from the label → nothing to write',
+  backfillPatch({ destPin: '', payment: '' }, { destPin: '', payment: '', codAmount: null, paymentGuessed: false }), null);
+eq('no saved record → nothing to write', backfillPatch(null, labelRead), null);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

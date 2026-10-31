@@ -425,6 +425,28 @@ export function dispatchWritePayload(record) {
 }
 
 /**
+ * What re-dropping an old label may add to a saved order: the destination
+ * PIN and the payment, and only where the saved record has none.
+ *
+ * Nothing else is ever in the patch — not status, not the return, not the
+ * customer — so it is safe on a parcel that has already come back, whose
+ * fake-return record is evidence and must not move.
+ *
+ * @returns {object|null} the fields to write, or null when there is nothing to add
+ */
+export function backfillPatch(saved, parsed) {
+  if (!saved || !parsed) return null;
+  const patch = {};
+  if (!saved.destPin && parsed.destPin) patch.destPin = parsed.destPin;
+  if (!saved.payment && parsed.payment) {
+    patch.payment = parsed.payment;
+    patch.codAmount = Number.isFinite(parsed.codAmount) ? parsed.codAmount : null;
+    patch.paymentGuessed = parsed.paymentGuessed === true;
+  }
+  return Object.keys(patch).length ? patch : null;
+}
+
+/**
  * Recompute the offender key after someone edits the review.
  *
  * The key is derived from name → address → order ID at parse time. Typing a

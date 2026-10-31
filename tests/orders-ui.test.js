@@ -450,5 +450,77 @@ await el('ord-add-save')._listeners.click[0]();
 chk('THE RULE: Add Order refuses a future date too', writes.added.length === 0, JSON.stringify(writes.added));
 pickDate(today());
 
+// ── Re-dropping an OLD label fills in only the PIN and payment ──
+// The parcel came back as a fake return. That record is the evidence against
+// the customer, so filling in its PIN must not touch anything else on it.
+DISPATCHES = [{
+  id: 'd9', forwardId: 'MYEC1118733669', sellerSkuCode: 'ZM-43-Rani', zmCode: 'ZM-43', colourName: 'Rani', qty: 1,
+  dispatchDate: '2026-09-01', status: DISPATCH_STATUS.RETURNED,
+  return: { type: RETURN_TYPES.FAKE_RETURN, returnId: 'R9', foundInside: 'a stone', condition: '', date: '2026-09-10' },
+  customer: { name: 'Akanksha', address: 'Khagaul Patna 801105 India', key: 'name:akanksha', keyType: 'name', label: 'Akanksha' },
+  missing: []
+}];
+await tab.refresh();
+const evidence = () => JSON.stringify({ s: DISPATCHES[0].status, r: DISPATCHES[0].return, c: DISPATCHES[0].customer });
+const before = evidence();
+const oldLabel = { pages: 1, pageRecords: [{
+  page: 1, forwardId: 'MYEC1118733669', customerName: 'Akanksha', address: 'Khagaul Patna 801105 India', missing: [],
+  destPin: '801105', payment: 'cod', codAmount: 5846, paymentGuessed: false,
+  sku: { sellerSkuCode: 'ZM-43-Rani', zmCode: 'ZM-43', colourName: 'Rani' }
+}] };
+writes.dispatches.length = 0; writes.added.length = 0; writes.updates.length = 0; notify._clear?.();
+tab.ingestLabel(oldLabel, 'old-label.pdf', '2026-09-01');
+chk('the returned parcel is locked in the review', tab.getPendingRows()[0]?._dupe === 'locked');
+chk('the review says it will fill in PIN / payment', el('ord-confirm-table').innerHTML.includes('fills PIN / payment'));
+await el('ord-confirm-save')._listeners.click[0]();
+chk('exactly one narrow update, on that parcel',
+  writes.updates.length === 1 && writes.updates[0].id === 'd9', JSON.stringify(writes.updates));
+chk('the update holds only the four label fields',
+  JSON.stringify(Object.keys(writes.updates[0]?.patch || {}).sort()) === JSON.stringify(['codAmount', 'destPin', 'payment', 'paymentGuessed']),
+  JSON.stringify(writes.updates[0]?.patch));
+chk('no full record is written', writes.dispatches.length === 0 && writes.added.length === 0);
+chk('THE RULE: the fake return, status and customer are untouched', evidence() === before, evidence());
+chk('the toast counts the fill-in', notify._sink.some(m => m.includes('1 order(s) filled in')), JSON.stringify(notify._sink));
+
+// Dropped again: nothing is missing now, so nothing is written
+writes.updates.length = 0; notify._clear?.();
+tab.ingestLabel(oldLabel, 'old-label.pdf', '2026-09-01');
+await el('ord-confirm-save')._listeners.click[0]();
+chk('a parcel that already has them is not written again', writes.updates.length === 0, JSON.stringify(writes.updates));
+chk('and the save says there is nothing to do', notify._sink.some(m => m.includes('Nothing ticked to save')), JSON.stringify(notify._sink));
+el('ord-confirm-cancel')._listeners.click[0]();
+
+// An order still out (not returned) is "already saved": unticked, it is a
+// fill-in; ticked, it becomes a full update and the fill-in note goes away.
+DISPATCHES = [{
+  id: 'd10', forwardId: 'MYEC2000000001', sellerSkuCode: 'ZM-43-Rani', zmCode: 'ZM-43', colourName: 'Rani', qty: 1,
+  dispatchDate: '2026-09-01', status: DISPATCH_STATUS.SHIPPED, return: null,
+  customer: { name: 'Amna', address: '69 Kalyanpur Kanpur 208017 India', key: 'name:amna', keyType: 'name', label: 'Amna' },
+  missing: []
+}];
+await tab.refresh();
+tab.ingestLabel({ pages: 1, pageRecords: [{
+  page: 1, forwardId: 'MYEC2000000001', customerName: 'Amna', address: '69 Kalyanpur Kanpur 208017 India', missing: [],
+  destPin: '208017', payment: 'cod', codAmount: null, paymentGuessed: false,
+  sku: { sellerSkuCode: 'ZM-43-Rani', zmCode: 'ZM-43', colourName: 'Rani' }
+}] }, 'again.pdf', '2026-09-01');
+chk('unticked old order: Save offers to fill it in', el('ord-confirm-save').textContent === 'Fill in 1 order(s)', el('ord-confirm-save').textContent);
+const tick = { closest: sel => sel === 'input[data-ord-keep]' ? { dataset: { ordKeep: '0' }, checked: true } : null };
+el('ord-confirm-table').fire('change', { target: tick });
+chk('ticked: Save is a normal save again', el('ord-confirm-save').textContent === 'Save ticked', el('ord-confirm-save').textContent);
+const noteNow = el('ord-confirm-table').querySelector('[data-ord-note="0"]').innerHTML;
+chk('ticked: the row no longer says it will fill in',
+  noteNow.includes('already saved') && !noteNow.includes('fills PIN'),
+  el('ord-confirm-table').querySelector('[data-ord-note="0"]').innerHTML);
+writes.dispatches.length = 0; writes.updates.length = 0;
+await el('ord-confirm-save')._listeners.click[0]();
+chk('ticked: one full update, no separate fill-in', writes.dispatches.length === 1 && writes.updates.length === 0,
+  JSON.stringify({ d: writes.dispatches.length, u: writes.updates }));
+
+// Open in Orders: the Map tab can put a tracking ID in the search box
+tab.focusForwardId('MYEC2000000001');
+chk('focusForwardId fills the search box', el('ord-search').value === 'MYEC2000000001', el('ord-search').value);
+chk('and filters the table to that parcel', el('ord-table').innerHTML.includes('MYEC2000000001'), el('ord-table').innerHTML.slice(0, 200));
+
 console.log(fails ? `\n${fails} FAILURE(S)` : '\nOrders UI test clean.');
 process.exit(fails ? 1 : 0);
