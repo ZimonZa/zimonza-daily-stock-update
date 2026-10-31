@@ -208,6 +208,49 @@ function readBuyerBlock(lines, startIdx) {
 }
 
 /**
+ * The courier routing code, "(801105)-(1509)". Its first number is the
+ * BUYER's PIN — on a combo label it is the only PIN printed anywhere.
+ */
+const ROUTE_PIN = /\(\s*([1-9]\d{5})\s*\)\s*-\s*\(\s*\d{1,6}\s*\)/;
+const RS_FIGURE = /\brs\.?\s*([\d,]+(?:\.\d+)?)/i;
+
+/**
+ * Read the header band — everything above the buyer block — for the
+ * destination PIN and whether the parcel is COD.
+ *
+ * No prepaid label has been seen, so the rule is the owner's best guess:
+ * "COD" or an amount to collect means COD; anything else is prepaid, and
+ * `paymentGuessed` says so whenever neither word was actually printed.
+ */
+function readHeader(rows, anchor) {
+  const stop = anchor >= 0 ? anchor : rows.findIndex(l => BLOCK_END.test(l.text));
+  const head = rows.slice(0, stop >= 0 ? stop : rows.length).map(l => String(l.text).trim());
+
+  let destPin = '', codPrinted = false, prepaidPrinted = false, codAmount = null;
+  head.forEach((t, i) => {
+    const route = ROUTE_PIN.exec(t);
+    if (route && !destPin) destPin = route[1];
+    if (/\bCOD\b/.test(t)) codPrinted = true;
+    if (/\bprepaid\b/i.test(t)) prepaidPrinted = true;
+    if (codAmount === null && /amount\s*to\s*be\s*paid/i.test(t)) {
+      // The figure sits on the same line or a few lines below, after the hub code
+      for (let j = i; j < Math.min(head.length, i + 4); j++) {
+        const m = RS_FIGURE.exec(head[j]);
+        if (m) { codAmount = Math.round(Number(m[1].replace(/,/g, ''))); break; }
+      }
+    }
+  });
+
+  const isCod = codPrinted || (codAmount !== null && codAmount > 0);
+  return {
+    destPin,
+    payment: isCod ? 'cod' : 'prepaid',
+    codAmount: isCod ? codAmount : null,
+    paymentGuessed: !codPrinted && !prepaidPrinted
+  };
+}
+
+/**
  * Pull every field this app needs out of one laid-out label page.
  *
  * Returns the same shape the old text reader did, plus `layout: true`
@@ -251,6 +294,9 @@ export function extractMyntraFields(lines) {
     out.customerName = name;
     out.address = address;
   }
+
+  // ── Destination PIN and payment, from the header band ──
+  Object.assign(out, readHeader(rows, anchor));
 
   // Flag only what a Myntra label actually prints. It never carries an order
   // ID, so listing that as "missing" put EVERY order under Need Details and

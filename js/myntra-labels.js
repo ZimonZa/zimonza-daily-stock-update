@@ -392,7 +392,10 @@ function extractAddress(text) {
  */
 export function extractDispatchFields(pageText) {
   const text = String(pageText ?? '').replace(/\s+/g, ' ').trim();
-  const out = { forwardId: '', orderId: '', customerName: '', address: '', missing: [] };
+  // The keyword reader serves other couriers: it never reads a destination PIN
+  // or payment, and leaves them blank rather than guessing.
+  const out = { forwardId: '', orderId: '', customerName: '', address: '', missing: [],
+                destPin: '', payment: '', codAmount: null, paymentGuessed: false };
   if (!text) { out.missing = ['forwardId', 'orderId', 'customerName', 'address']; return out; }
 
   const labelled = TRACKING_LABELLED.exec(text);

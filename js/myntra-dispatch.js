@@ -111,6 +111,12 @@ export function dispatchFromPageRecord(rec, { sourceFile = '', dispatchDate = ''
       ? products.reduce((n, p) => n + p.qty, 0)
       : Math.max(1, Number(fields.pieces) || 1),
     dispatchDate: dispatchDate || today(),
+    // From the label header: the buyer's PIN (the routing code) and COD or
+    // not. Blank when the page printed neither — never invented here.
+    destPin: fields.destPin || '',
+    payment: fields.payment || '',
+    codAmount: Number.isFinite(fields.codAmount) ? fields.codAmount : null,
+    paymentGuessed: fields.paymentGuessed === true,
     sourceFile,
     page: fields.page ?? null,
     status: DISPATCH_STATUS.SHIPPED,
@@ -152,6 +158,13 @@ export function mergeByForwardId(dispatches) {
     existing.products = mergeProducts(existing.products, productsOf(d));
     existing.qty = existing.products.reduce((n, p) => n + p.qty, 0);
     if (d.page) existing.pages.push(d.page);
+    // Only one page carries the header. A value already read is kept.
+    if (!existing.destPin && d.destPin) existing.destPin = d.destPin;
+    if (!existing.payment && d.payment) {
+      existing.payment = d.payment;
+      existing.codAmount = d.codAmount ?? null;
+      existing.paymentGuessed = d.paymentGuessed === true;
+    }
   }
 
   return { merged: [...byId.values()], withoutTrackingId: noId };

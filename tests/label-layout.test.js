@@ -452,5 +452,47 @@ const courier = itemsToLines(place(['AWB: SF1234567890123', 'Ship To: Ravi Kumar
 ok('a label with no Myntra marks is not claimed by the layout reader',
   !looksLikeMyntraLabel(courier));
 
+// ════ 9. Destination PIN and payment, read from the label's header ════
+// The bracketed routing code "(801105)-(1509)" is the BUYER's PIN — on the
+// combo label it is the only PIN printed anywhere. And the header says COD
+// or not. Both were thrown away as furniture; the Order Map needs them.
+const fieldsOf = (text) => extractMyntraFields(itemsToLines(place(String(text).split(NL))));
+
+const cod = fieldsOf(LABEL);
+eq('LABEL: destination PIN from the routing code', cod.destPin, '801105');
+eq('LABEL: COD is printed', cod.payment, 'cod');
+eq('LABEL: the amount to collect', cod.codAmount, 5846);
+eq('LABEL: a reading, not a guess', cod.paymentGuessed, false);
+
+const kanpur = fieldsOf(head(['ZM-36-Rani -']));
+eq('Kanpur: destination PIN', kanpur.destPin, '208017');
+eq('Kanpur: COD with no amount line', [kanpur.payment, kanpur.codAmount, kanpur.paymentGuessed], ['cod', null, false]);
+
+const comboFields = fieldsOf(COMBO);
+eq('COMBO: the routing code is the only PIN on this label', comboFields.destPin, '229001');
+eq('COMBO: neither COD nor PREPAID printed → prepaid, marked as a guess',
+  [comboFields.payment, comboFields.codAmount, comboFields.paymentGuessed], ['prepaid', null, true]);
+
+const prepaid = fieldsOf(LABEL.replace('COD', 'PREPAID (No amount to be collected)')
+  .replace('AMOUNT TO BE PAID', 'NO AMOUNT').replace('Rs.5846.0', 'PAT/PNP'));
+eq('PREPAID printed → prepaid, a reading', [prepaid.payment, prepaid.paymentGuessed, prepaid.codAmount], ['prepaid', false, null]);
+
+const noRoute = fieldsOf(LABEL.replace('(801105)-(1509)', 'PAT/PNP'));
+eq('no routing code → no destination PIN; the seller 395010 is never taken', noRoute.destPin, '');
+ok('THE RULE: the routing code is still not part of the address', !/\(801105/.test(cod.address), cod.address);
+
+// …and it reaches the dispatch record through the real parse
+globalThis.__PDF_PAGES = [COMBO];
+const comboParse = await parseLabelPdf({ name: 'Combo_Label.PDF', arrayBuffer: async () => new ArrayBuffer(8) },
+  comboMaps, null, { decodeBarcode: async () => ({ value: 'MYEP1126210472', format: 'code_128' }) });
+const comboRec = dispatchFromPageRecord(comboParse.pageRecords[0], {});
+eq('COMBO record carries the destination PIN', comboRec.destPin, '229001');
+eq('COMBO record carries the payment guess', [comboRec.payment, comboRec.paymentGuessed], ['prepaid', true]);
+delete globalThis.__PDF_PAGES;
+
+// The keyword reader (other couriers) leaves all four blank, never guessed
+const kw = extractDispatchFields('AWB: SF1234567890123 Ship To: Ravi Kumar Delhi 110085');
+eq('keyword reader: blank PIN and payment', [kw.destPin, kw.payment, kw.codAmount, kw.paymentGuessed], ['', '', null, false]);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

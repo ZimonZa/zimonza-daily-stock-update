@@ -340,5 +340,31 @@ eq('the fulfilment aggregate is unchanged either way', noBarcode.items, withBarc
 eq('both pieces still counted', noBarcode.items[0].qty, 2);
 delete globalThis.__PDF_PAGES;
 
+// ════ Destination PIN and payment on the record ════
+const paid = dispatchFromPageRecord({
+  page: 1, forwardId: 'MYEC1118733669', customerName: 'Akanksha', address: 'Khagaul Patna 801105 India',
+  destPin: '801105', payment: 'cod', codAmount: 5846, paymentGuessed: false,
+  skus: [{ sellerSkuCode: 'ZM-43-Rani', zmCode: 'ZM-43', colourName: 'Rani', count: 1 }]
+});
+eq('record carries PIN and payment',
+  [paid.destPin, paid.payment, paid.codAmount, paid.paymentGuessed], ['801105', 'cod', 5846, false]);
+const blankRec = dispatchFromPageRecord({ page: 1, forwardId: 'SF9' });
+eq('a page that printed neither has blank fields, not a guess',
+  [blankRec.destPin, blankRec.payment, blankRec.codAmount, blankRec.paymentGuessed], ['', '', null, false]);
+
+// A parcel printed across two pages: the page that HAS the header wins
+const twoPage = mergeByForwardId([
+  { ...dispatchFromPageRecord({ page: 1, forwardId: 'MYX1', skus: [{ sellerSkuCode: 'ZM-1-Red', count: 1 }] }) },
+  { ...dispatchFromPageRecord({ page: 2, forwardId: 'MYX1', destPin: '801105', payment: 'cod', codAmount: 5846,
+      paymentGuessed: false, skus: [{ sellerSkuCode: 'ZM-1-Red', count: 1 }] }) }
+]).merged[0];
+eq('merged parcel takes the PIN from the page that printed it', twoPage.destPin, '801105');
+eq('and the payment with its amount', [twoPage.payment, twoPage.codAmount, twoPage.paymentGuessed], ['cod', 5846, false]);
+const firstWins = mergeByForwardId([
+  dispatchFromPageRecord({ page: 1, forwardId: 'MYX2', destPin: '208017', payment: 'cod', codAmount: 100 }),
+  dispatchFromPageRecord({ page: 2, forwardId: 'MYX2', destPin: '999999', payment: 'prepaid', paymentGuessed: true })
+]).merged[0];
+eq('a PIN already read is never replaced by a later page', [firstWins.destPin, firstWins.payment, firstWins.codAmount], ['208017', 'cod', 100]);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
