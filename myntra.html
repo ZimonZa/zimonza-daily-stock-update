@@ -239,8 +239,44 @@
           <span id="price-count" class="text-slate-500 text-xs ml-auto"></span>
         </div>
 
+        <!-- Hand editing: add a style, change many rows at once, then Save -->
+        <div class="flex flex-wrap gap-2 items-center">
+          <input id="price-add-zm" list="price-add-list" type="text" placeholder="ZM code, e.g. ZM-57" class="zm-input w-44" aria-label="New style ZM code">
+          <datalist id="price-add-list"></datalist>
+          <button id="price-add-btn" class="btn-secondary text-xs py-2 px-3">
+            <i data-lucide="plus" class="w-3.5 h-3.5 inline-block mr-1"></i> Add style
+          </button>
+          <span class="text-slate-600 text-xs">Click any cell to change it · tick rows to change many at once · nothing is saved until you press Save</span>
+        </div>
+
+        <div id="price-bulkbar" class="pr-bulkbar hidden">
+          <span id="price-sel-count" class="text-amber-200 text-sm font-semibold"></span>
+          <select id="price-bulk-col" class="zm-input w-48" aria-label="Column to change">
+            <option value="kuntalSellingPrice">Kuntal Selling Price</option>
+            <option value="myntraMrp">Myntra MRP</option>
+            <option value="myntraMuPrice">Myntra MU Price</option>
+            <option value="myntraIsp">Myntra ISP</option>
+            <option value="category">Category</option>
+            <option value="kuntalCode">Kuntal Code</option>
+          </select>
+          <select id="price-bulk-action" class="zm-input w-36" aria-label="Change"></select>
+          <input id="price-bulk-amount" type="text" class="zm-input w-32" placeholder="Amount" aria-label="Amount">
+          <button id="price-bulk-apply" class="btn-primary text-xs py-2 px-3">Apply</button>
+          <button id="price-bulk-clear" class="text-slate-400 hover:text-slate-200 text-xs ml-auto">Clear selection</button>
+        </div>
+
         <div id="price-table" class="max-h-[65vh] overflow-auto">
           <div class="zm-skel-rows" aria-busy="true" aria-label="Loading"><span></span><span></span><span></span><span></span></div>
+        </div>
+
+        <div id="price-pending" class="pr-pending hidden" role="status">
+          <i data-lucide="pencil" class="w-4 h-4 text-amber-300"></i>
+          <span id="price-pending-count" class="text-amber-100 text-sm font-semibold"></span>
+          <span class="text-slate-400 text-xs">not saved yet</span>
+          <button id="price-discard" class="btn-secondary text-xs py-2 px-3 ml-auto">Discard</button>
+          <button id="price-save" class="btn-primary text-xs py-2 px-4">
+            <i data-lucide="save" class="w-3.5 h-3.5 inline-block mr-1"></i> Save changes
+          </button>
         </div>
       </div>
     </div>
@@ -1164,6 +1200,11 @@ const state = {
 };
 
 let pricingTab = null, purchaseTab = null, returnsTab = null, fulfilPanel = null, ordersTab = null, orderMap = null;
+
+// Unsaved pricing edits are not lost to a stray tab close or reload
+window.addEventListener('beforeunload', e => {
+  if (pricingTab?.hasPendingChanges?.()) { e.preventDefault(); e.returnValue = ''; }
+});
 
 /** The map is a report: if drawing it ever throws, the save that triggered it still stands. */
 function renderOrderMapSafely() {

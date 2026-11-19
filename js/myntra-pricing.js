@@ -7,7 +7,7 @@
 
 import { findHeaderCell, isBlankRow } from './myntra.js';
 import { readExcelFile } from './excel-parser.js';
-import { saveMyntraPricing, getAllMyntraPricing } from './firestore-service.js';
+import { saveMyntraPricing, getAllMyntraPricing, deleteMyntraPricing } from './firestore-service.js';
 import { normZmCode, toNum, formatINR, debounce, toCSV, downloadFile, today } from './utils.js';
 import notify from './notifications.js';
 
@@ -200,6 +200,163 @@ export function initPricingTab(state) {
   const view = { q: '', category: 'all', sortKey: 'zmCode', sortDir: 1 };
 
   const el = id => document.getElementById(id);
+
+  // ── Hand editing ──
+  // `draft` is the working copy the grid edits; nothing reaches Firestore
+  // until Save. `deleted` rows stay visible (struck through) until then.
+  const clone = rows => (rows || []).map(r => ({ ...r }));
+  let draft = clone(state.pricing);
+  const deleted = new Set();          // normalised ZM codes marked for removal
+  const selected = new Set();         // normalised ZM codes ticked for bulk edit
+  const badCells = new Map();         // "ZM-43|myntraIsp" → message
+  const savedRow = zm => state.pricing.find(r => normZmCode(r.zmCode) === zm);
+  const keyOf = r => normZmCode(r.zmCode);
+
+  function changes() {
+    return pendingChanges(state.pricing, draft.filter(r => !deleted.has(keyOf(r))));
+  }
+  function changeCount() {
+    const c = changes();
+    return c.upserts.length + c.deletes.length;
+  }
+  const hasPendingChanges = () => changeCount() > 0;
+  function resetDraft() {
+    draft = clone(state.pricing);
+    deleted.clear(); selected.clear(); badCells.clear();
+  }
+
+  const isDirty = (zm, col) => {
+    const before = savedRow(zm);
+    const row = draft.find(r => keyOf(r) === zm);
+    if (!before) return true;
+    const a = before[col], b = row?.[col];
+    return PRICE_COLUMNS.includes(col) ? (a ?? null) !== (b ?? null) : String(a ?? '') !== String(b ?? '');
+  };
+
+  function renderPendingBar() {
+    const n = changeCount();
+    el('price-pending').classList.toggle('hidden', n === 0 && badCells.size === 0);
+    el('price-pending-count').textContent = `${n} change${n === 1 ? '' : 's'}` +
+      (badCells.size ? ` · ${badCells.size} cell${badCells.size === 1 ? '' : 's'} to fix` : '');
+  }
+
+  // One cell typed into: validate, keep it in the draft, mark it — without a
+  // re-render, so the cursor stays where the owner is typing.
+  el('price-table').addEventListener('input', e => {
+    const inp = e.target.closest('input[data-pr-col]');
+    if (!inp) return;
+    const zm = inp.dataset.prZm, col = inp.dataset.prCol;
+    const { value, error } = validatePriceCell(col, inp.value);
+    const key = `${zm}|${col}`;
+    if (error) {
+      badCells.set(key, error);
+      inp.classList.add('pr-bad');
+      inp.title = error;
+    } else {
+      badCells.delete(key);
+      inp.classList.remove('pr-bad');
+      inp.title = '';
+      const row = draft.find(r => keyOf(r) === zm);
+      if (row) row[col] = value;
+      inp.classList.toggle('pr-dirty', isDirty(zm, col));
+    }
+    renderPendingBar();
+  });
+
+  el('price-table').addEventListener('change', e => {
+    const box = e.target.closest('input[data-pr-sel]');
+    if (box) {
+      if (box.checked) selected.add(box.dataset.prSel); else selected.delete(box.dataset.prSel);
+      renderBulkBar();
+      return;
+    }
+    if (e.target.id === 'price-sel-all') {
+      for (const zm of visibleZm()) e.target.checked ? selected.add(zm) : selected.delete(zm);
+      render();
+    }
+  });
+
+  function renderBulkBar() {
+    el('price-bulkbar').classList.toggle('hidden', selected.size === 0);
+    el('price-sel-count').textContent = `${selected.size} style${selected.size === 1 ? '' : 's'} selected`;
+  }
+
+  const ACTIONS = {
+    price: [['set', 'Set to ₹'], ['pct_up', 'Increase by %'], ['pct_down', 'Decrease by %'], ['add', 'Add ₹'], ['sub', 'Subtract ₹']],
+    text: [['set', 'Set to']]
+  };
+  function fillBulkActions() {
+    const col = el('price-bulk-col').value;
+    const list = PRICE_COLUMNS.includes(col) ? ACTIONS.price : ACTIONS.text;
+    el('price-bulk-action').innerHTML = list.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+    el('price-bulk-amount').placeholder = PRICE_COLUMNS.includes(col) ? 'Amount' : (col === 'category' ? 'e.g. saree' : 'Kuntal code');
+  }
+  fillBulkActions();
+  el('price-bulk-col').addEventListener('change', fillBulkActions);
+
+  el('price-bulk-apply').addEventListener('click', () => {
+    if (!selected.size) return;
+    const col = el('price-bulk-col').value, action = el('price-bulk-action').value;
+    const amount = el('price-bulk-amount').value;
+    if (PRICE_COLUMNS.includes(col)) {
+      const { error } = validatePriceCell(col, amount);
+      if (error || String(amount).trim() === '') { notify.warning('Enter an amount of 0 or more'); return; }
+    }
+    // Only rows still on screen: a filter changed since ticking must not let
+    // a hidden row be changed by surprise
+    const visible = new Set(visibleZm());
+    const target = new Set([...selected].filter(zm => visible.has(zm) && !deleted.has(zm)));
+    draft = applyBulkEdit(draft, target, col, action, amount);
+    notify.info(`Changed ${target.size} style(s) — press Save changes to keep it`);
+    render();
+  });
+  el('price-bulk-clear').addEventListener('click', () => { selected.clear(); render(); });
+
+  el('price-add-btn').addEventListener('click', () => {
+    const raw = el('price-add-zm').value.trim();
+    const zm = normZmCode(raw);
+    if (!/^ZM-\d+$/.test(zm)) { notify.warning('Type a ZM code like ZM-57'); return; }
+    if (draft.some(r => keyOf(r) === zm)) {
+      if (deleted.has(zm)) { deleted.delete(zm); render(); notify.info(`${zm} kept`); return; }
+      notify.warning(`${zm} is already in the list`);
+      return;
+    }
+    draft.push({ zmCode: zm, rawZmCode: raw, kuntalCode: '', category: '',
+      kuntalSellingPrice: null, myntraMrp: null, myntraMuPrice: null, myntraIsp: null });
+    el('price-add-zm').value = '';
+    view.q = ''; el('price-search').value = '';
+    view.category = 'all'; el('price-category-filter').value = 'all';
+    render();
+    el('price-table').querySelector?.(`input[data-pr-zm="${CSS.escape(zm)}"][data-pr-col="kuntalSellingPrice"]`)?.focus();
+    notify.info(`${zm} added — fill in its prices, then Save changes`);
+  });
+
+  el('price-discard').addEventListener('click', () => {
+    if (!confirm(`Discard ${changeCount()} unsaved pricing change(s)?`)) return;
+    resetDraft();
+    render();
+  });
+
+  el('price-save').addEventListener('click', async () => {
+    if (badCells.size) { notify.error('Fix the cells outlined in red first'); return; }
+    const { upserts, deletes } = changes();
+    if (!upserts.length && !deletes.length) { notify.info('Nothing to save'); return; }
+    const btn = el('price-save');
+    btn.disabled = true;
+    try {
+      if (upserts.length) await saveMyntraPricing(upserts);
+      if (deletes.length) await deleteMyntraPricing(deletes);
+      state.pricing = await getAllMyntraPricing();
+      resetDraft();
+      state.onPricingChange();
+      render();
+      notify.success(`${upserts.length + deletes.length} pricing change(s) saved — prices updated everywhere`);
+    } catch (err) {
+      notify.error('Save failed: ' + err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
   const drop = el('price-drop');
   const fileInput = el('price-file');
 
@@ -208,6 +365,13 @@ export function initPricingTab(state) {
   el('price-search').addEventListener('input', debounce(e => { view.q = e.target.value.trim(); render(); }));
   el('price-category-filter').addEventListener('change', e => { view.category = e.target.value; render(); });
   el('price-table').addEventListener('click', e => {
+    const del = e.target.closest('button[data-pr-del]');
+    if (del) {
+      const zm = del.dataset.prDel;
+      if (deleted.has(zm)) deleted.delete(zm); else { deleted.add(zm); selected.delete(zm); }
+      render();
+      return;
+    }
     const th = e.target.closest('th[data-sort]');
     if (!th) return;
     state.helpers.toggleSort(view, th.dataset.sort);
@@ -240,6 +404,10 @@ export function initPricingTab(state) {
   });
 
   async function handleFile(file) {
+    if (hasPendingChanges() && !confirm(`Discard ${changeCount()} unsaved pricing change(s) and upload this file?`)) {
+      state.helpers.resetDrop(drop, 'Myntra Pricing .xlsx / .csv');
+      return;
+    }
     drop.innerHTML = `<div class="flex flex-col items-center gap-2 py-2"><div class="spinner"></div><p class="text-slate-400 text-xs">Parsing ${esc(file.name)}…</p></div>`;
     try {
       const rows = await readExcelFile(file);
@@ -257,6 +425,7 @@ export function initPricingTab(state) {
       }
       await saveMyntraPricing(parsed.rows);
       state.pricing = await getAllMyntraPricing();
+      resetDraft();
       state.onPricingChange();
 
       const extras = [
@@ -342,25 +511,21 @@ export function initPricingTab(state) {
       if (window.lucide) lucide.createIcons();
     }
 
-    // Filter + sort
-    let f = rows;
-    if (view.category !== 'all') f = f.filter(r => r.category === view.category);
-    const q = view.q.toLowerCase();
-    if (q) f = f.filter(r =>
-      String(r.zmCode).toLowerCase().includes(q) ||
-      String(r.kuntalCode).toLowerCase().includes(q) ||
-      String(r.category).toLowerCase().includes(q));
-    f = state.helpers.applySort(f, view, (r, k) => {
-      const v = r[k];
-      if (k === 'zmCode') return Number(String(v).replace(/\D/g, '')) || 0;
-      return typeof v === 'number' ? v : String(v ?? '');
-    });
+    // Add-style suggestions: mapped styles that have no pricing yet
+    el('price-add-list').innerHTML = unpriced.map(z => `<option value="${esc(z)}"></option>`).join('');
 
-    el('price-count').textContent = rows.length ? `${f.length} of ${rows.length} styles` : '';
+    const f = filteredDraft();
+    // A filter change drops ticks on rows no longer shown
+    const shown = new Set(f.map(keyOf));
+    for (const zm of [...selected]) if (!shown.has(zm)) selected.delete(zm);
+    renderBulkBar();
+    renderPendingBar();
+
+    el('price-count').textContent = draft.length ? `${f.length} of ${draft.length} styles` : '';
 
     const tableEl = el('price-table');
-    if (!rows.length) {
-      tableEl.innerHTML = `<p class="text-slate-500 text-sm text-center py-6">No pricing loaded yet — upload <strong class="text-slate-400">Myntra Pricing.xlsx</strong> above.</p>`;
+    if (!draft.length) {
+      tableEl.innerHTML = `<p class="text-slate-500 text-sm text-center py-6">No pricing loaded yet — upload <strong class="text-slate-400">Myntra Pricing.xlsx</strong> above, or add a style.</p>`;
       return;
     }
     if (!f.length) {
@@ -368,10 +533,24 @@ export function initPricingTab(state) {
       return;
     }
 
+    badCells.clear();   // every cell is redrawn from valid draft values
+    const cats = [...new Set(draft.map(r => r.category).filter(Boolean))].sort();
+    const shownVal = (col, v) => (v === null || v === undefined) ? '' : String(v);
+    const cell = (r, col, cls = '') => {
+      const zm = keyOf(r);
+      const price = PRICE_COLUMNS.includes(col);
+      return `<input class="pr-cell ${price ? 'pr-num' : ''} ${cls} ${isDirty(zm, col) ? 'pr-dirty' : ''}"
+        data-pr-zm="${esc(zm)}" data-pr-col="${col}" value="${esc(shownVal(col, r[col]))}"
+        ${price ? 'inputmode="decimal" placeholder="—"' : ''} ${col === 'category' ? 'list="price-cat-list"' : ''}
+        ${deleted.has(zm) ? 'disabled' : ''} aria-label="${esc(zm)} ${col}">`;
+    };
+    const allSelected = f.every(r => selected.has(keyOf(r)));
     const th = state.helpers.thSort;
     tableEl.innerHTML = `
-      <table class="w-full text-sm">
+      <datalist id="price-cat-list">${cats.map(c => `<option value="${esc(c)}"></option>`).join('')}</datalist>
+      <table class="w-full text-sm pr-grid">
         <thead class="sticky top-0 z-10 bg-slate-900"><tr class="text-slate-500 text-xs uppercase tracking-wide border-b border-white/5">
+          <th class="px-3 py-2.5 text-left"><input type="checkbox" id="price-sel-all" ${allSelected ? 'checked' : ''} class="accent-amber-500" title="Select all shown"></th>
           ${th(view, 'zmCode', 'ZM Code')}
           ${th(view, 'kuntalCode', 'Kuntal Code')}
           ${th(view, 'category', 'Category')}
@@ -379,20 +558,48 @@ export function initPricingTab(state) {
           ${th(view, 'myntraMrp', 'Myntra MRP', true)}
           ${th(view, 'myntraMuPrice', 'Myntra MU Price', true)}
           ${th(view, 'myntraIsp', 'Myntra ISP', true)}
+          <th class="px-2 py-2.5"></th>
         </tr></thead>
-        <tbody>${f.map(r => `
-          <tr class="border-b border-white/5 hover:bg-white/[0.02]">
-            <td class="px-4 py-2.5 text-slate-200 font-medium whitespace-nowrap">${esc(r.zmCode)}</td>
-            <td class="px-4 py-2.5 text-slate-400">${esc(r.kuntalCode) || '—'}</td>
-            <td class="px-4 py-2.5 text-slate-400 capitalize">${esc(r.category) || '—'}</td>
-            <td class="px-4 py-2.5 text-right ${r.kuntalSellingPrice === null ? 'text-red-400' : 'text-emerald-300 font-semibold'}">${money(r.kuntalSellingPrice)}</td>
-            <td class="px-4 py-2.5 text-right text-slate-300">${money(r.myntraMrp)}</td>
-            <td class="px-4 py-2.5 text-right text-slate-500">${r.myntraMuPrice === null ? '—' : formatINR(r.myntraMuPrice, 2)}</td>
-            <td class="px-4 py-2.5 text-right text-slate-300">${money(r.myntraIsp)}</td>
-          </tr>`).join('')}
+        <tbody>${f.map(r => {
+          const zm = keyOf(r);
+          const isNew = !savedRow(zm);
+          const gone = deleted.has(zm);
+          return `
+          <tr class="border-b border-white/5 ${gone ? 'pr-del' : ''}">
+            <td class="px-3 py-1.5"><input type="checkbox" data-pr-sel="${esc(zm)}" ${selected.has(zm) ? 'checked' : ''} ${gone ? 'disabled' : ''} class="accent-amber-500"></td>
+            <td class="px-3 py-1.5 text-slate-200 font-medium whitespace-nowrap">${esc(r.zmCode)}${isNew ? ' <span class="pr-new">new</span>' : ''}</td>
+            <td class="px-1 py-1.5">${cell(r, 'kuntalCode')}</td>
+            <td class="px-1 py-1.5">${cell(r, 'category', 'capitalize')}</td>
+            <td class="px-1 py-1.5">${cell(r, 'kuntalSellingPrice', r.kuntalSellingPrice === null ? 'pr-missing' : '')}</td>
+            <td class="px-1 py-1.5">${cell(r, 'myntraMrp')}</td>
+            <td class="px-1 py-1.5">${cell(r, 'myntraMuPrice')}</td>
+            <td class="px-1 py-1.5">${cell(r, 'myntraIsp')}</td>
+            <td class="px-2 py-1.5 text-right whitespace-nowrap">
+              <button data-pr-del="${esc(zm)}" class="pr-del-btn" title="${gone ? 'Keep this style' : 'Remove this style (on Save)'}">
+                <i data-lucide="${gone ? 'undo-2' : 'trash-2'}" class="w-3.5 h-3.5"></i></button>
+            </td>
+          </tr>`; }).join('')}
         </tbody>
       </table>`;
+    if (window.lucide) lucide.createIcons();
   }
 
-  return { render };
+  /** The draft rows the current search, category and sort show. */
+  function filteredDraft() {
+    let f = draft;
+    if (view.category !== 'all') f = f.filter(r => r.category === view.category);
+    const q = view.q.toLowerCase();
+    if (q) f = f.filter(r =>
+      String(r.zmCode).toLowerCase().includes(q) ||
+      String(r.kuntalCode).toLowerCase().includes(q) ||
+      String(r.category).toLowerCase().includes(q));
+    return state.helpers.applySort(f, view, (r, k) => {
+      const v = r[k];
+      if (k === 'zmCode') return Number(String(v).replace(/\D/g, '')) || 0;
+      return typeof v === 'number' ? v : String(v ?? '');
+    });
+  }
+  const visibleZm = () => filteredDraft().map(keyOf);
+
+  return { render, hasPendingChanges };
 }
