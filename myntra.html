@@ -92,7 +92,7 @@
             <button id="gen-from-mapping" class="btn-primary text-sm py-2.5 px-5">
               <i data-lucide="wand-2" class="w-4 h-4 inline-block mr-1"></i> Generate from Mapping
             </button>
-            <p class="text-slate-600 text-xs">Uses every SellerSkuCode saved in the Mapping tab. Deactivated SKUs are excluded from the download.</p>
+            <p class="text-slate-600 text-xs">Uses every SellerSkuCode saved in the Mapping tab. Deactivated SKUs are sent as 0.</p>
           </div>
         </div>
 
@@ -1463,7 +1463,7 @@ function renderMappings() {
         <tr class="border-b border-white/5 hover:bg-white/[0.02] ${r.active ? '' : 'opacity-60'}">
           <td class="px-3 py-2.5"><input type="checkbox" data-select="${esc(r.sellerSkuCode)}" ${mapSelection.has(r.sellerSkuCode) ? 'checked' : ''} class="accent-emerald-500"></td>
           <td class="px-4 py-2.5">
-            <label class="zm-toggle" title="${r.active ? 'Active on Myntra' : 'Deactivated — excluded from the inventory update'}">
+            <label class="zm-toggle" title="${r.active ? 'Active on Myntra' : 'Deactivated — sent to Myntra as 0'}">
               <input type="checkbox" data-active="${esc(r.sellerSkuCode)}" ${r.active ? 'checked' : ''}>
               <span class="zm-toggle-track"></span>
             </label>
@@ -1666,7 +1666,7 @@ const STATUS_CHIPS = {
   no_stock_item:    { cls: 'level-low',      label: 'No stock item' },
   colour_not_found: { cls: 'level-low',      label: 'Colour not found' },
   returns_only:     { cls: 'level-medium',   label: 'From Returns & RTO' },
-  inactive:         { cls: 'level-sold_out', label: 'Deactivated (excluded)' },
+  inactive:         { cls: 'level-sold_out', label: 'Deactivated → 0' },
   duplicate:        { cls: 'level-sold_out', label: 'Duplicate (skipped)' },
 };
 const MISSING_STATUSES = ['invalid_sku', 'no_zm_mapping', 'no_stock_item', 'colour_not_found'];
@@ -1702,7 +1702,7 @@ function runGeneration(skus, sourceLabel) {
   const zeroed = s.total - s.filled - s.duplicates - s.inactive - (s.returnsOnly || 0);
   notify.success(
     `${sourceLabel}: ${s.filled} SKUs filled, ${zeroed} set to 0` +
-    (s.inactive ? `, ${s.inactive} deactivated SKU(s) excluded` : '') +
+    (s.inactive ? `, ${s.inactive} deactivated SKU(s) sent as 0` : '') +
     (s.returnBoostPcs ? ` · ${s.returnBoostPcs} pc(s) added from Returns & RTO` : '')
   );
 }
@@ -1833,7 +1833,7 @@ function renderGenTable() {
       </tr></thead>
       <tbody>${f.map(r => {
         const chip = STATUS_CHIPS[r.status] || STATUS_CHIPS.invalid_sku;
-        const locked = !isExportable(r);
+        const locked = !isExportable(r) || r.status === 'inactive';
         return `<tr class="border-b border-white/5 hover:bg-white/[0.02] ${locked ? 'opacity-60' : ''}">
           <td class="px-4 py-2 text-slate-200 font-medium whitespace-nowrap">${esc(r.sellerSkuCode)}</td>
           <td class="px-4 py-2 text-slate-400">${esc(r.kuntalCode) || '—'}</td>
@@ -1874,7 +1874,7 @@ invTableEl.addEventListener('input', e => {
   const inp = e.target.closest('input[data-idx]');
   if (!inp || !genResult) return;
   const row = genResult.rows[+inp.dataset.idx];
-  if (!row || !isExportable(row)) return;
+  if (!row || !isExportable(row) || row.status === 'inactive') return;
   row.quantity = Math.max(0, Math.floor(Number(inp.value) || 0));
   if (!row.edited) {
     row.edited = true;

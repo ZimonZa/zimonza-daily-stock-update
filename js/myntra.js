@@ -25,7 +25,7 @@ export const isBlankRow = (row) => !row || row.every(c => c === null || String(c
  * Statuses that never reach the inventory file Myntra consumes.
  * Single source of truth — the page's downloads use this too.
  */
-export const NON_EXPORT_STATUSES = new Set(['duplicate', 'inactive']);
+export const NON_EXPORT_STATUSES = new Set(['duplicate']);
 export const isExportable = (row) => !NON_EXPORT_STATUSES.has(row.status);
 
 /**
@@ -227,7 +227,9 @@ export function generateInventoryUpdate(skus, ctx, gap, percent = 50, opts = {})
     if (inactiveSkus.has(sellerSkuCode.toLowerCase())) {
       const off = parseSellerSku(sellerSkuCode);
       if (off) { base.zmCode = off.zmCode; base.colourName = off.colourName; }
-      rows.push({ ...base, status: 'inactive' });
+      // Sent to Myntra as 0 so it shows out of stock there. Returned pieces
+      // never lift it: the owner switched it off.
+      rows.push({ ...base, quantity: 0, returnBoost: 0, status: 'inactive' });
       continue;
     }
 

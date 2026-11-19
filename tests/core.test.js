@@ -129,8 +129,17 @@ const gen = generateInventoryUpdate(['ZM-1-Morpichh', 'ZM-2-Rani', 'ZM-1-Morpich
   { inactiveSkus: new Set(['zm-2-rani']) });
 eq('statuses', gen.rows.map(r => r.status), ['ok', 'inactive', 'duplicate']);
 eq('half of 20', gen.rows[0].quantity, 10);
-eq('deactivated and duplicate never reach the file',
-  gen.rows.filter(isExportable).map(r => r.sellerSkuCode), ['ZM-1-Morpichh']);
+// THE RULE (owner, 2026-11-19): a deactivated SKU goes to Myntra as 0, so it
+// shows out of stock there — leaving it out of the file left it live.
+eq('a deactivated SKU reaches the file; a duplicate never does',
+  gen.rows.filter(isExportable).map(r => r.sellerSkuCode), ['ZM-1-Morpichh', 'ZM-2-Rani']);
+eq('and it goes out as 0', gen.rows[1].quantity, 0);
+const offWithReturns = generateInventoryUpdate(['ZM-2-Rani'], ctx, 8, 50, {
+  inactiveSkus: new Set(['zm-2-rani']),
+  returnStock: new Map([['ZM-2|rani', { total: 3 }]])
+});
+eq('returned pieces never lift a deactivated SKU off 0',
+  [offWithReturns.rows[0].quantity, offWithReturns.rows[0].returnBoost], [0, 0]);
 
 // ════ Document types ════
 eq('GR is flagged a return', isReturnDocType('goods_return'), true);
