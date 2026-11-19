@@ -16,7 +16,7 @@ import { swatchDot } from './swatches.js';
 import { exportBillPDF, exportPickSlipPDF, renderSlipPreviewHTML } from './invoice-pdf.js';
 import {
   savePickSlip, getAllPickSlips, deletePickSlip, nextSlipNumber,
-  applyReturnConsumption, savePurchaseBill, nextBillNumber
+  applyReturnConsumption, createPurchaseBill, reserveFreeBillNumber
 } from './firestore-service.js';
 import { normZmCode, normItemNo, formatINR, formatDateDisplay, today } from './utils.js';
 import notify from './notifications.js';
@@ -361,7 +361,7 @@ export function initFulfilmentPanel(state, tabs) {
 
       if (billLines.length) {
         const type = PURCHASE_DOC_TYPES.find(t => t.id === docTypeSel.value) || PURCHASE_DOC_TYPES[0];
-        const { billNo } = await nextBillNumber(type.id);
+        const billNo = await reserveFreeBillNumber(type.id);
         const rateTable = state.purchaseSettings.gstRates || {};
         const lines = billLines.map((r, i) => computeLine({
           sellerSkuCode: r.sellerSkuCode, zmCode: r.zmCode, kuntalCode: r.kuntalCode,
@@ -377,7 +377,7 @@ export function initFulfilmentPanel(state, tabs) {
           parties: { ...state.purchaseSettings },
           sourceFile
         };
-        await savePurchaseBill(bill);
+        await createPurchaseBill(bill);
         created.push(billNo);
       }
 

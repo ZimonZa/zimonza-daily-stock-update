@@ -249,6 +249,55 @@ export async function savePurchaseBill(bill) {
   return id;
 }
 
+/**
+ * Save a NEW bill. Refuses — never overwrites — when a bill with this number
+ * already exists, so no path (typed number, counter, label fulfilment, a
+ * second device) can silently replace a saved bill.
+ */
+export async function createPurchaseBill(bill) {
+  const id = billId(bill.billNo);
+  const ref = doc(db, COLLECTIONS.PURCHASE_BILLS, id);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (snap.exists()) {
+      throw new Error(`${bill.billNo} is already saved — type it in the Bill No. box to add to it`);
+    }
+    tx.set(ref, { ...bill, id, savedAt: serverTimestamp() });
+  });
+  return id;
+}
+
+/**
+ * Add to a saved bill: only the lines, totals, tax summary and note are
+ * written. Receipts, parties and the date are left exactly as stored.
+ */
+export async function appendToPurchaseBill(bill) {
+  const id = bill.id || billId(bill.billNo);
+  await updateDoc(doc(db, COLLECTIONS.PURCHASE_BILLS, id), {
+    lines: bill.lines, totals: bill.totals, rateSummary: bill.rateSummary,
+    note: bill.note ?? '', savedAt: serverTimestamp()
+  });
+  return id;
+}
+
+/** Is a bill with this number saved? */
+export async function purchaseBillExists(billNo) {
+  const snap = await getDoc(doc(db, COLLECTIONS.PURCHASE_BILLS, billId(billNo)));
+  return snap.exists();
+}
+
+/**
+ * The next number from the counter that no saved bill already has. A number
+ * typed by hand can sit ahead of the counter; it is skipped, never reused.
+ */
+export async function reserveFreeBillNumber(docTypeId, { next = nextBillNumber, exists = purchaseBillExists, maxTries = 50 } = {}) {
+  for (let i = 0; i < maxTries; i++) {
+    const { billNo } = await next(docTypeId);
+    if (!(await exists(billNo))) return billNo;
+  }
+  throw new Error('Could not find a free bill number — type one in the Bill No. box');
+}
+
 /** Get all purchase bills, newest bill date first */
 export async function getAllPurchaseBills() {
   const snap = await getDocs(collection(db, COLLECTIONS.PURCHASE_BILLS));

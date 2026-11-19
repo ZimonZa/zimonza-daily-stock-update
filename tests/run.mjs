@@ -53,8 +53,12 @@ function build() {
   }
   const special = {
     writeBatch: 'export const writeBatch = () => ({ set(){}, delete(){}, update(){}, commit: async()=>{} });',
-    runTransaction: 'export const runTransaction = async (db, fn) => fn({ get: async()=>({ exists:()=>false, data:()=>({}) }), set(){} });',
-    getDoc: 'export const getDoc = async () => ({ exists:()=>false, data:()=>({}) });',
+    // A suite may set globalThis.__fsExists(ref) to say which documents
+    // exist, and read globalThis.__fsSets / __fsUpdates to see what was written.
+    doc: 'export const doc = (db, col, id) => ({ col, id });',
+    runTransaction: 'export const runTransaction = async (db, fn) => fn({ get: async (ref) => ({ exists: () => !!(globalThis.__fsExists && globalThis.__fsExists(ref)), data: () => ({}) }), set: (ref, data) => { (globalThis.__fsSets ||= []).push({ ref, data }); } });',
+    getDoc: 'export const getDoc = async (ref) => ({ exists: () => !!(globalThis.__fsExists && globalThis.__fsExists(ref)), data: () => ({}) });',
+    updateDoc: 'export const updateDoc = async (ref, data) => { (globalThis.__fsUpdates ||= []).push({ ref, data }); };',
     getDocs: 'export const getDocs = async () => ({ docs: [] });',
     serverTimestamp: 'export const serverTimestamp = () => null;'
   };

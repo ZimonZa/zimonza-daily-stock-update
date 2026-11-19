@@ -7,7 +7,7 @@ globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} }
 globalThis.window = globalThis;
 
 import { buildPlan } from './myntra-fulfilment.js';
-import { shortfallOf, computeLine, computeTotals, refreshCartPrices, findSavedBill, mergeIntoBill } from './myntra-purchase.js';
+import { shortfallOf, computeLine, computeTotals, refreshCartPrices, findSavedBill, mergeIntoBill, receiveStart } from './myntra-purchase.js';
 import { pricingIndex } from './myntra-pricing.js';
 import { skuKey } from './myntra-labels.js';
 
@@ -173,6 +173,26 @@ ok('…saying what the saved bill is', wrongType.error.includes('Tax Invoice'), 
 eq('a typed number finds the saved bill despite case and spaces', findSavedBill([savedBill], ' inv/26-27/0042 '), savedBill);
 eq('another number finds nothing', findSavedBill([savedBill], 'INV/26-27/0043'), null);
 eq('a blank number finds nothing', findSavedBill([savedBill], '  '), null);
+
+// ════ Review fixes ════
+// The PDF's own file name, or any separator the storage id ignores, is the
+// same bill — "not found" here meant the saved bill was overwritten.
+eq('the PDF file name finds the bill', findSavedBill([savedBill], 'INV_26-27_0042'), savedBill);
+eq('# separators find the bill', findSavedBill([savedBill], 'INV#26-27#0042'), savedBill);
+eq('doubled slashes find the bill', findSavedBill([savedBill], 'INV//26-27/0042'), savedBill);
+
+// Receive starts from what is known: a line added after receiving is NOT
+// pre-filled as arrived (shortfallOf counts it as outstanding — so must this)
+const rs = receiveStart(m.bill);
+eq('a line received before starts at its receipt', rs.find(r => r.sellerSkuCode === 'ZM-43-Rani').received, 2);
+eq('THE RULE: a line added after receiving starts at 0', rs.find(r => r.sellerSkuCode === 'ZM-49-Pyazi').received, 0);
+eq('a bill never received starts full', receiveStart({ lines: [{ sellerSkuCode: 'A', qty: 3 }] })[0].received, 3);
+
+// A category change carries its HSN with it, unless an HSN was typed
+const hsn = { lehnga: '6204', saree: '5407' };
+const lineH = { sellerSkuCode: 'ZM-43-Rani', zmCode: 'ZM-43', rate: 8990, category: 'lehnga', hsn: '6204', rateFromPricing: true };
+eq('the default HSN follows the new category', refreshCartPrices([lineH], newPrices, hsn).cart[0].hsn, '5407');
+eq('a typed HSN is kept', refreshCartPrices([{ ...lineH, hsn: '9999' }], newPrices, hsn).cart[0].hsn, '9999');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

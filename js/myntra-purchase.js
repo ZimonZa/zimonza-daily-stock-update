@@ -7,8 +7,8 @@
 
 import { PURCHASE_DOC_TYPES, GST_RATE_FALLBACK, isReturnDocType } from './constants.js';
 import {
-  getPurchaseSettings, savePurchaseSettings, savePurchaseBill,
-  getAllPurchaseBills, deletePurchaseBill, nextBillNumber, financialYearLabel,
+  getPurchaseSettings, savePurchaseSettings, createPurchaseBill, appendToPurchaseBill, reserveFreeBillNumber,
+  getAllPurchaseBills, deletePurchaseBill, financialYearLabel,
   applyReturnConsumption, savePurchaseReceipts
 } from './firestore-service.js';
 import { pricingIndex } from './myntra-pricing.js';
@@ -116,9 +116,28 @@ export function shortfallOf(bill) {
   return { pcs, value: round2(value), lines };
 }
 
-/** The saved bill a typed number refers to, ignoring case and spaces. */
+/**
+ * Where the Receive panel starts for each line — by the SAME rule as
+ * shortfallOf: never received → all of it; receipts recorded but this line
+ * not among them (added later) → none of it yet.
+ * @returns {Array<{ sellerSkuCode, ordered, received }>}
+ */
+export function receiveStart(bill) {
+  const received = new Map((bill?.receipts || []).map(r => [r.sellerSkuCode, Number(r.received) || 0]));
+  return (bill?.lines || []).map(l => ({
+    sellerSkuCode: l.sellerSkuCode,
+    ordered: Number(l.qty) || 0,
+    received: received.has(l.sellerSkuCode) ? received.get(l.sellerSkuCode) : (bill.receipts ? 0 : (Number(l.qty) || 0))
+  }));
+}
+
+/**
+ * The saved bill a typed number refers to. Compared the way the storage id is
+ * made — any run of / \\ # ? or spaces is one separator — and ignoring case,
+ * so "INV_26-27_0042" (the PDF's own file name) is the same bill.
+ */
 export function findSavedBill(bills, typed) {
-  const norm = v => String(v ?? '').replace(/\s+/g, '').toUpperCase();
+  const norm = v => String(v ?? '').trim().replace(/[\/\\#?\s]+/g, '_').toUpperCase();
   const want = norm(typed);
   if (!want) return null;
   return (bills || []).find(b => norm(b.billNo) === want) || null;
@@ -182,7 +201,7 @@ export function mergeIntoBill(saved, newLines, rateTable, { docType, note = '' }
  * PURE. Saved bills are never touched by this; only the open cart.
  * @returns {{ cart: Array, changed: number }}
  */
-export function refreshCartPrices(cart, priceIdx) {
+export function refreshCartPrices(cart, priceIdx, hsnCodes = {}) {
   let changed = 0;
   const next = (cart || []).map(l => {
     if (l.rateFromPricing !== true) return l;
@@ -192,7 +211,10 @@ export function refreshCartPrices(cart, priceIdx) {
     const category = p.category || l.category;
     if (rate === l.rate && category === l.category) return l;
     changed++;
-    return { ...l, rate, category };
+    // The HSN that came with the old category goes with it; a typed one stays
+    const hsnWasDefault = !l.hsn || l.hsn === (hsnCodes[l.category] || '');
+    const hsn = category !== l.category && hsnWasDefault ? (hsnCodes[category] || '') : l.hsn;
+    return { ...l, rate, category, hsn };
   });
   return { cart: next, changed };
 }
@@ -289,7 +311,7 @@ export function initPurchaseTab(state) {
   el('pur-preview').addEventListener('click', () => {
     const bill = buildBill({ draft: true });
     if (!bill) return;
-    el('bill-preview-body').innerHTML = renderBillPreviewHTML(bill, state.purchaseSettings);
+    el('bill-preview-body').innerHTML = renderBillPreviewHTML(bill, bill.parties || state.purchaseSettings);
     el('bill-preview-modal').classList.remove('hidden');
   });
   el('bill-preview-close').addEventListener('click', () => el('bill-preview-modal').classList.add('hidden'));
@@ -561,7 +583,7 @@ export function initPurchaseTab(state) {
 
   function downloadPDF(bill) {
     try {
-      exportBillPDF(bill, state.purchaseSettings);
+      exportBillPDF(bill, bill.parties || state.purchaseSettings);
       notify.success(`${bill.docTypeLabel} exported — ₹${formatINR(bill.totals.grandRounded, 0)}`);
     } catch (err) {
       notify.error('PDF failed: ' + err.message);
@@ -618,7 +640,7 @@ export function initPurchaseTab(state) {
           if (isGR()) {
             merged.lines = merged.lines.map(l => l.condition ? l : { ...l, condition: conditionBySku.get(l.sellerSkuCode) || 'good' });
           }
-          await savePurchaseBill(merged);
+          await appendToPurchaseBill(merged);
           if (consumption.length) {
             try {
               await applyReturnConsumption(consumption);
@@ -643,15 +665,7 @@ export function initPurchaseTab(state) {
       if (!billNo) {
         // A number typed by hand earlier can sit ahead of the counter. Skip
         // any number already saved, or that bill would be silently replaced.
-        await refreshBills();
-        billNo = (await nextBillNumber(docTypeSel.value)).billNo;
-        for (let tries = 0; findSavedBill(bills, billNo) && tries < 50; tries++) {
-          billNo = (await nextBillNumber(docTypeSel.value)).billNo;
-        }
-        if (findSavedBill(bills, billNo)) {
-          notify.error(`Could not find a free ${billNo.split('/')[0]} number — type one in the Bill No. box`);
-          return;
-        }
+        billNo = await reserveFreeBillNumber(docTypeSel.value);
       }
       const bill = buildBill({ draft: false, billNo });
       if (!bill) return;
@@ -659,7 +673,8 @@ export function initPurchaseTab(state) {
         bill.lines = bill.lines.map(l => ({ ...l, condition: conditionBySku.get(l.sellerSkuCode) || 'good' }));
       }
 
-      await savePurchaseBill(bill);
+      // Refuses, rather than overwrite, if a bill with this number exists
+      await createPurchaseBill(bill);
 
       // Document exists — now the stock can go
       if (consumption.length) {
@@ -932,7 +947,7 @@ export function initPurchaseTab(state) {
 
   function openReceiveModal(bill) {
     receiveBill = bill;
-    const received = new Map((bill.receipts || []).map(r => [r.sellerSkuCode, Number(r.received) || 0]));
+    const start = new Map(receiveStart(bill).map(r => [r.sellerSkuCode, r.received]));
     el('receive-title').textContent = `Receive ${bill.billNo}`;
     el('receive-body').innerHTML = `
       <table class="w-full text-sm">
@@ -944,7 +959,7 @@ export function initPurchaseTab(state) {
           <th class="text-right px-3 py-2">Short</th>
         </tr></thead>
         <tbody>${(bill.lines || []).map(l => {
-          const got = received.has(l.sellerSkuCode) ? received.get(l.sellerSkuCode) : l.qty;
+          const got = start.get(l.sellerSkuCode) ?? l.qty;
           return `<tr class="border-b border-white/5">
             <td class="px-3 py-2 text-slate-200">${esc(l.kuntalCode) || '—'}</td>
             <td class="px-3 py-2 text-slate-300">${esc(l.colourName) || '—'}</td>
@@ -1162,7 +1177,7 @@ export function initPurchaseTab(state) {
     // An edited price reaches the open carts (both purchase and GR)
     const priceIdx = pricingIndex(state.pricing);
     for (const [key, get, set] of [[CART_KEY, () => cart, v => { cart = v; }], [GR_CART_KEY, () => grCart, v => { grCart = v; }]]) {
-      const { cart: next, changed } = refreshCartPrices(get(), priceIdx);
+      const { cart: next, changed } = refreshCartPrices(get(), priceIdx, state.purchaseSettings.hsnCodes || {});
       if (changed) {
         set(next);
         try { localStorage.setItem(key, JSON.stringify(next)); } catch {}
