@@ -88,6 +88,94 @@ export function pricingIndex(pricingRows) {
   return new Map((pricingRows || []).map(p => [normZmCode(p.zmCode), p]));
 }
 
+// ═══════════════════ Editing by hand ═══════════════════
+
+/** Every column the owner can type into. ZM Code is the key, so it is not one. */
+export const EDIT_COLUMNS = ['kuntalCode', 'category', 'kuntalSellingPrice', 'myntraMrp', 'myntraMuPrice', 'myntraIsp'];
+export const PRICE_COLUMNS = ['kuntalSellingPrice', 'myntraMrp', 'myntraMuPrice', 'myntraIsp'];
+const isPriceCol = (c) => PRICE_COLUMNS.includes(c);
+
+/**
+ * What a typed cell becomes. A blank price is null — never 0 — the same rule
+ * the file upload follows; category is stored lower-case like the upload.
+ * @returns {{ value: any, error: string }}
+ */
+export function validatePriceCell(column, raw) {
+  if (isPriceCol(column)) {
+    const text = String(raw ?? '').trim();
+    if (!text) return { value: null, error: '' };
+    const n = toNum(text);
+    if (n === null || n < 0) return { value: null, error: 'Enter a number 0 or more' };
+    return { value: n, error: '' };
+  }
+  if (column === 'category') return { value: String(raw ?? '').trim().toLowerCase(), error: '' };
+  return { value: String(raw ?? '').trim(), error: '' };
+}
+
+/** Whole rupees, except MU Price which keeps its paise. */
+const roundFor = (column, n) => column === 'myntraMuPrice'
+  ? Math.round(n * 100 + Number.EPSILON) / 100
+  : Math.round(n);
+
+/**
+ * One change applied to many rows at once. Only rows whose ZM code is in
+ * `zmSet` change; the input array and its rows are never modified.
+ *
+ * Price columns: 'set' | 'pct_up' | 'pct_down' | 'add' | 'sub'. A blank
+ * price stays blank under everything but 'set'; nothing goes below 0.
+ * Text columns (Kuntal Code, Category): 'set' only.
+ */
+export function applyBulkEdit(rows, zmSet, column, action, amount) {
+  const chosen = new Set([...(zmSet || [])].map(normZmCode));
+  const list = rows || [];
+  if (!EDIT_COLUMNS.includes(column)) return list.slice();
+
+  let change;
+  if (isPriceCol(column)) {
+    const n = toNum(amount);
+    if (n === null || n < 0) return list.slice();
+    change = (v) => {
+      if (action === 'set') return roundFor(column, n);
+      if (v === null || v === undefined) return v ?? null;
+      const next = action === 'pct_up' ? v * (1 + n / 100)
+        : action === 'pct_down' ? v * (1 - n / 100)
+        : action === 'add' ? v + n
+        : action === 'sub' ? v - n
+        : v;
+      return roundFor(column, Math.max(0, next));
+    };
+  } else {
+    if (action !== 'set') return list.slice();
+    const { value } = validatePriceCell(column, amount);
+    change = () => value;
+  }
+
+  return list.map(r => chosen.has(normZmCode(r.zmCode)) ? { ...r, [column]: change(r[column]) } : r);
+}
+
+const sameCell = (column, a, b) => isPriceCol(column)
+  ? (a ?? null) === (b ?? null)
+  : String(a ?? '') === String(b ?? '');
+
+/**
+ * What pressing Save has to write: rows that are new or differ in any edited
+ * column, and the ZM codes of rows that were removed.
+ * @returns {{ upserts: Array, deletes: string[] }}
+ */
+export function pendingChanges(saved, edited) {
+  const before = new Map((saved || []).map(r => [normZmCode(r.zmCode), r]));
+  const keep = new Set();
+  const upserts = [];
+  for (const r of edited || []) {
+    const zm = normZmCode(r.zmCode);
+    keep.add(zm);
+    const old = before.get(zm);
+    if (!old || EDIT_COLUMNS.some(c => !sameCell(c, old[c], r[c]))) upserts.push({ ...r, zmCode: zm });
+  }
+  const deletes = [...before.keys()].filter(zm => !keep.has(zm));
+  return { upserts, deletes };
+}
+
 // ═══════════════════ Pricing tab UI ═══════════════════
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

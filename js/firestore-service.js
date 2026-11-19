@@ -140,6 +140,14 @@ export async function getAllMyntraPricing() {
   return snap.docs.map(d => d.data());
 }
 
+/** Delete the pricing rows of these ZM codes (hand edits in the Pricing tab) */
+export async function deleteMyntraPricing(zmCodes) {
+  const ids = [...new Set((zmCodes || []).map(normZmCode).filter(Boolean))];
+  if (!ids.length) return 0;
+  await runChunkedBatch(ids.map(id => (batch) => batch.delete(doc(db, COLLECTIONS.MYNTRA_PRICING, id))));
+  return ids.length;
+}
+
 /** Delete every pricing row (used by "Replace all" on re-upload) */
 export async function clearMyntraPricing() {
   const snap = await getDocs(collection(db, COLLECTIONS.MYNTRA_PRICING));
