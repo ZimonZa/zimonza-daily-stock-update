@@ -7,7 +7,8 @@ globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} }
 globalThis.window = globalThis;
 
 import { buildPlan } from './myntra-fulfilment.js';
-import { shortfallOf, computeLine, computeTotals } from './myntra-purchase.js';
+import { shortfallOf, computeLine, computeTotals, refreshCartPrices } from './myntra-purchase.js';
+import { pricingIndex } from './myntra-pricing.js';
 import { skuKey } from './myntra-labels.js';
 
 let pass = 0, fail = 0;
@@ -117,6 +118,21 @@ eq('rounded to a whole rupee', totals.grandRounded, Math.round(totals.grand));
 ok('and the round-off closes it exactly',
   Math.abs(totals.grand + totals.roundOff - totals.grandRounded) < 0.005, JSON.stringify(totals));
 eq('one summary row per GST rate', rateSummary.map(r => r.gstRate), [5, 18]);
+
+// ════ The cart follows an edited price — unless the rate was typed ════
+const newPrices = pricingIndex([{ zmCode: 'ZM-43', kuntalSellingPrice: 9500, category: 'saree' }]);
+const fromPricing = { sellerSkuCode: 'ZM-43-Rani', zmCode: 'ZM-43', rate: 8990, category: 'lehnga', rateFromPricing: true };
+const followed = refreshCartPrices([fromPricing], newPrices);
+eq('a line taken from pricing picks up the new price and category',
+  [followed.cart[0].rate, followed.cart[0].category, followed.changed], [9500, 'saree', 1]);
+eq('THE RULE: a rate typed by hand is kept',
+  refreshCartPrices([{ ...fromPricing, rateFromPricing: false }], newPrices).cart[0].rate, 8990);
+eq('an old cart line with no flag is left alone',
+  refreshCartPrices([{ sellerSkuCode: 'ZM-43-Rani', zmCode: 'ZM-43', rate: 8990, category: 'lehnga' }], newPrices).cart[0].rate, 8990);
+eq('a style whose price was cleared keeps the rate it had',
+  refreshCartPrices([fromPricing], pricingIndex([{ zmCode: 'ZM-43', kuntalSellingPrice: null, category: '' }])).cart[0],
+  fromPricing);
+eq('nothing to change → changed 0', refreshCartPrices([{ ...fromPricing, rate: 9500, category: 'saree' }], newPrices).changed, 0);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

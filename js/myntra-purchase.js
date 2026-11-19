@@ -116,6 +116,28 @@ export function shortfallOf(bill) {
   return { pcs, value: round2(value), lines };
 }
 
+/**
+ * After the Pricing tab is edited: cart lines whose rate came from pricing
+ * take the new Kuntal Selling Price and category. A rate typed into the cart
+ * (rateFromPricing false) — or an older line with no flag — is left alone.
+ * PURE. Saved bills are never touched by this; only the open cart.
+ * @returns {{ cart: Array, changed: number }}
+ */
+export function refreshCartPrices(cart, priceIdx) {
+  let changed = 0;
+  const next = (cart || []).map(l => {
+    if (l.rateFromPricing !== true) return l;
+    const p = priceIdx?.get(normZmCode(l.zmCode || ''));
+    if (!p) return l;
+    const rate = (p.kuntalSellingPrice === null || p.kuntalSellingPrice === undefined) ? l.rate : p.kuntalSellingPrice;
+    const category = p.category || l.category;
+    if (rate === l.rate && category === l.category) return l;
+    changed++;
+    return { ...l, rate, category };
+  });
+  return { cart: next, changed };
+}
+
 export function initPurchaseTab(state) {
   const el = id => document.getElementById(id);
 
@@ -352,6 +374,8 @@ export function initPurchaseTab(state) {
       category: row.category,
       qty: Math.max(1, Math.min(qty, cap)),
       rate: row.rate ?? 0,
+      // Follows later edits in the Pricing tab until a rate is typed here
+      rateFromPricing: true,
       gstRateOverride: null,
       hsn: state.purchaseSettings.hsnCodes?.[row.category] || '',
       // Only meaningful on a Goods Return; filled at save time from the
@@ -402,7 +426,7 @@ export function initPurchaseTab(state) {
         line.qty = wanted;
       }
     }
-    else if (field === 'rate') line.rate = Math.max(0, Number(inp.value) || 0);
+    else if (field === 'rate') { line.rate = Math.max(0, Number(inp.value) || 0); line.rateFromPricing = false; }
     else if (field === 'gst') line.gstRateOverride = inp.value === '' ? null : Math.max(0, Number(inp.value) || 0);
     else if (field === 'hsn') line.hsn = inp.value.trim();
     persist();
@@ -965,6 +989,15 @@ export function initPurchaseTab(state) {
   }
 
   function render() {
+    // An edited price reaches the open carts (both purchase and GR)
+    const priceIdx = pricingIndex(state.pricing);
+    for (const [key, get, set] of [[CART_KEY, () => cart, v => { cart = v; }], [GR_CART_KEY, () => grCart, v => { grCart = v; }]]) {
+      const { cart: next, changed } = refreshCartPrices(get(), priceIdx);
+      if (changed) {
+        set(next);
+        try { localStorage.setItem(key, JSON.stringify(next)); } catch {}
+      }
+    }
     renderModeNotice();
     const saveLabel = el('pur-save');
     if (saveLabel) {
