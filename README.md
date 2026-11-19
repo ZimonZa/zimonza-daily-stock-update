@@ -344,9 +344,9 @@ One page (`myntra.html`), seven sections:
 
 | Tab | What it does |
 |-----|--------------|
-| **Inventory Update** | Generates the `sellerSkuCode,quantity` file Myntra consumes. Takes a configurable % of each colour's stock above the gap threshold, and optionally adds usable Returns & RTO stock on top. Deactivated SKUs are excluded from the download. |
+| **Inventory Update** | Generates the `sellerSkuCode,quantity` file Myntra consumes. Takes a configurable % of each colour's stock above the gap threshold, and optionally adds usable Returns & RTO stock on top. A SKU switched off in Mapping is sent as **0** (locked), so Myntra shows it out of stock. |
 | **Mapping** | SellerSkuCode, Style ID, ZM code, colour, Item No., today's stock, Kuntal Selling Price, Myntra MRP and ISP, with the live status toggle. Bulk activate / deactivate. |
-| **Pricing** | Upload `Myntra Pricing.xlsx`. Flags mapped styles that have no price (those cannot be billed). |
+| **Pricing** | Upload `Myntra Pricing.xlsx`, or edit it by hand — any cell, many rows at once, add or remove a style. Flags mapped styles that have no price (those cannot be billed). |
 | **Purchase** | Cart → GST bill → PDF. Saved, auto-numbered, re-downloadable. Also GR credit notes, short-receive, and the per-bill note. |
 | **Returns & RTO** | Register of goods coming back, with a stock summary. A label can be filled from it, and the inventory update can declare it. |
 | **Orders** | A standalone report, not linked to Purchase or Returns & RTO. Drop a label here; every parcel is tracked to its customer by forward tracking ID, with every product in a combo parcel listed. Return recording, fake returns, repeat-returner analytics. |
@@ -425,12 +425,23 @@ A scanned (image-only) label PDF has no text layer and is rejected with a messag
 Zero-padded codes (`ZM-01`) are normalised to match SellerSkuCodes (`ZM-1-Morpichh`) — on labels and return rows too.
 A blank Myntra MRP stays blank — it is never coerced to 0.
 
+### Editing pricing by hand
+
+Every cell but **ZM Code** is an input: Kuntal Code, Category, Kuntal Selling Price, Myntra MRP, MU Price, ISP. ZM Code is the key that Mapping, bills and returns join on, so to change one, remove the row and **Add style** again.
+
+- **Nothing is saved as you type.** Changed cells turn amber; a bar shows *N changes · Discard · Save changes*. A cell that is not a number of 0 or more is outlined red, and Save waits until it is fixed. A blank price stays blank.
+- **Many rows at once.** Tick rows (or *select all shown*), pick a column and a change — *Set to ₹*, *Increase / Decrease by %*, *Add / Subtract ₹* for prices (whole rupees; MU Price keeps paise; never below 0; a blank price stays blank), or *Set to* for Category and Kuntal Code. Apply only touches ticked rows still shown by the current filter, and it is still pending until Save.
+- **Add / remove.** *Add style* adds a blank row (the box suggests mapped styles that have no price yet); the bin marks a row for removal, undone by clicking again.
+- **On Save** all changes are written together, and the new figures show at once in Mapping, Purchase, the RTO Kuntal-price export and the Order Map. In an open Purchase cart, a line whose rate came from pricing takes the new price; a rate typed into the cart is kept. **Saved bills never change.**
+- Leaving the page, or uploading a pricing file, with unsaved edits asks first.
+
 ### Purchase billing
 
 - **From** Kuntal Antique ART → **Bill To** Kuntal Fashion Private Limited (brand: The Third Label). All names, GSTINs, addresses, bank details and terms are editable under **Parties & GST** and saved once.
 - Rate per line is the **Kuntal Selling Price**, treated as **GST-exclusive**: `Amount = qty × rate` is the taxable value, CGST and SGST are added on top.
 - GST rate comes from the line's category — lehnga 18% (9% + 9%), saree 5% (2.5% + 2.5%) by default. The rate table is editable, any line can be overridden, and lines whose category has no rate are flagged amber.
-- Document type is chosen per bill: Tax Invoice / Purchase Order / Proforma Invoice. Numbers are reserved transactionally per type and financial year (`INV/26-27/0042`).
+- Document type is chosen per bill: Tax Invoice / Purchase Order / Proforma Invoice. Numbers are reserved transactionally per type and financial year (`INV/26-27/0042`), and the counter **skips any number already saved** — a number once typed by hand can no longer be reached by the counter and overwritten.
+- **Adding to a saved bill.** Type a saved bill's number (case and spaces don't matter) and press Save: a dialog shows the saved bill, what is being added and the new total; nothing is written until you confirm. The same SKU at the same rate and GST % adds to its line; at a different rate or GST % it is refused, naming the SKU (receipts are tracked per SKU). The bill keeps its number, date, parties and receipts already recorded; its note is kept unless you type a new one. A PDF of the whole bill is downloaded. Preview and PDF with a saved number show the bill as saving would make it.
 - The PDF prints party blocks, an HSN line table, a rate-wise tax summary, round-off, grand total, amount in words, bank details, terms and a signature block. It uses `Rs.` rather than ₹ because jsPDF's built-in fonts have no rupee glyph.
 - **Note.** A free-text box prints under Terms on every document type. It pre-fills from a saved default in Parties & GST, can be overridden per bill, and is stored on the document — so a re-download reprints what was actually sent, not today's default. A blank note prints no empty heading.
 - **Short receive.** A saved bill opens a **Receive** panel: per line, how many actually arrived. Receipts are stored beside the bill and **never alter the original figures** — the bill still says what you ordered, and the outstanding pieces and value show separately. Over-receiving is refused. This is independent of marking a customer order unfulfillable in Orders, because the two causes are independent.
