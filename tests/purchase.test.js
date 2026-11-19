@@ -7,7 +7,7 @@ globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} }
 globalThis.window = globalThis;
 
 import { buildPlan } from './myntra-fulfilment.js';
-import { shortfallOf, computeLine, computeTotals, refreshCartPrices } from './myntra-purchase.js';
+import { shortfallOf, computeLine, computeTotals, refreshCartPrices, findSavedBill, mergeIntoBill } from './myntra-purchase.js';
 import { pricingIndex } from './myntra-pricing.js';
 import { skuKey } from './myntra-labels.js';
 
@@ -133,6 +133,46 @@ eq('a style whose price was cleared keeps the rate it had',
   refreshCartPrices([fromPricing], pricingIndex([{ zmCode: 'ZM-43', kuntalSellingPrice: null, category: '' }])).cart[0],
   fromPricing);
 eq('nothing to change → changed 0', refreshCartPrices([{ ...fromPricing, rate: 9500, category: 'saree' }], newPrices).changed, 0);
+
+// ════ Saving to a bill number that already exists ADDS to that bill ════
+// Owner, 2026-11-19: it used to overwrite the saved bill — its lines and its
+// receipts — without a word.
+const mergeRates = { lehnga: 18 };
+const savedBill = {
+  id: 'INV_26-27_0042', billNo: 'INV/26-27/0042', docType: 'tax_invoice', docTypeLabel: 'Tax Invoice',
+  billDate: '2026-11-10', note: 'old', placeOfSupply: '24 - Gujarat', parties: { x: 1 },
+  receipts: [{ sellerSkuCode: 'ZM-43-Rani', ordered: 2, received: 2 }],
+  lines: [computeLine({ sellerSkuCode: 'ZM-43-Rani', zmCode: 'ZM-43', category: 'lehnga', qty: 2, rate: 8990 }, mergeRates, 1)]
+};
+const adding = [
+  { sellerSkuCode: 'ZM-43-Rani', zmCode: 'ZM-43', category: 'lehnga', qty: 1, rate: 8990 },
+  { sellerSkuCode: 'ZM-49-Pyazi', zmCode: 'ZM-49', category: 'lehnga', qty: 1, rate: 6450 }
+];
+const m = mergeIntoBill(savedBill, adding, mergeRates, { docType: 'tax_invoice', note: '' });
+eq('no error', m.error, '');
+eq('same SKU adds to its line, a new SKU is appended and numbered',
+  m.bill.lines.map(l => [l.sellerSkuCode, l.qty, l.srNo]), [['ZM-43-Rani', 3, 1], ['ZM-49-Pyazi', 1, 2]]);
+eq('totals are worked out again from every line', m.bill.totals.subTotal, 33420);
+eq('the bill keeps its number, date, parties and place of supply',
+  [m.bill.billNo, m.bill.billDate, m.bill.parties, m.bill.placeOfSupply], ['INV/26-27/0042', '2026-11-10', { x: 1 }, '24 - Gujarat']);
+eq('THE RULE: receipts already recorded survive', m.bill.receipts, savedBill.receipts);
+eq('…so the added pieces show as still to arrive', shortfallOf(m.bill).pcs, 2);
+eq('a blank note keeps the saved note', m.bill.note, 'old');
+eq('a typed note replaces it', mergeIntoBill(savedBill, adding, mergeRates, { docType: 'tax_invoice', note: 'new' }).bill.note, 'new');
+eq('the saved bill object is not changed', savedBill.lines[0].qty, 2);
+
+const atNewRate = mergeIntoBill(savedBill, [{ ...adding[0], rate: 9000 }], mergeRates, { docType: 'tax_invoice', note: '' });
+eq('the same SKU at another rate is refused', atNewRate.bill, null);
+ok('…naming the SKU', atNewRate.error.includes('ZM-43-Rani'), atNewRate.error);
+const atNewGst = mergeIntoBill(savedBill, [{ ...adding[0], gstRateOverride: 5 }], mergeRates, { docType: 'tax_invoice', note: '' });
+eq('the same SKU at another GST % is refused', atNewGst.bill, null);
+const wrongType = mergeIntoBill(savedBill, adding, mergeRates, { docType: 'goods_return', note: '' });
+eq('another document type is refused', wrongType.bill, null);
+ok('…saying what the saved bill is', wrongType.error.includes('Tax Invoice'), wrongType.error);
+
+eq('a typed number finds the saved bill despite case and spaces', findSavedBill([savedBill], ' inv/26-27/0042 '), savedBill);
+eq('another number finds nothing', findSavedBill([savedBill], 'INV/26-27/0043'), null);
+eq('a blank number finds nothing', findSavedBill([savedBill], '  '), null);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

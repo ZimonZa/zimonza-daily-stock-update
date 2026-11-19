@@ -116,6 +116,65 @@ export function shortfallOf(bill) {
   return { pcs, value: round2(value), lines };
 }
 
+/** The saved bill a typed number refers to, ignoring case and spaces. */
+export function findSavedBill(bills, typed) {
+  const norm = v => String(v ?? '').replace(/\s+/g, '').toUpperCase();
+  const want = norm(typed);
+  if (!want) return null;
+  return (bills || []).find(b => norm(b.billNo) === want) || null;
+}
+
+/**
+ * Add cart lines to a bill that is already saved — the same number typed
+ * again. PURE: returns the merged bill, never touches `saved`.
+ *
+ * - The document type must match.
+ * - A SKU already on the bill gets the extra quantity, but only at the same
+ *   rate and GST %: receipts are recorded per SKU, so one SKU at two prices
+ *   would make "how many arrived" ambiguous.
+ * - The bill keeps its number, date, parties, place of supply and receipts;
+ *   lines already on it keep their GST % even if the rate table has changed.
+ *
+ * @returns {{ bill: object|null, error: string }}
+ */
+export function mergeIntoBill(saved, newLines, rateTable, { docType, note = '' } = {}) {
+  if (!saved) return { bill: null, error: 'No saved bill to add to' };
+  if (docType && saved.docType !== docType) {
+    return { bill: null, error: `${saved.billNo} is a ${saved.docTypeLabel || saved.docType} — switch the document type to add to it` };
+  }
+  const base = JSON.parse(JSON.stringify(saved));
+  // Existing lines keep the GST % they were billed at
+  const lines = (base.lines || []).map(l => ({ ...l, gstRateOverride: l.gstRate, _keepAuto: l.gstRateAuto }));
+  const same = (a, b) => String(a).toUpperCase() === String(b).toUpperCase();
+
+  for (const raw of newLines || []) {
+    const add = computeLine(raw, rateTable, 0);
+    const hit = lines.find(l => same(l.sellerSkuCode, add.sellerSkuCode));
+    if (hit) {
+      if (Number(hit.rate) !== add.rate || Number(hit.gstRate) !== add.gstRate) {
+        return {
+          bill: null,
+          error: `${add.sellerSkuCode} is already on ${saved.billNo} at ₹${formatINR(hit.rate, 0)} / ${hit.gstRate}% GST — set the same rate and GST to add to it`
+        };
+      }
+      hit.qty = (Number(hit.qty) || 0) + add.qty;
+    } else {
+      lines.push({ ...raw });
+    }
+  }
+
+  const computed = lines.map((l, i) => {
+    const { _keepAuto, ...line } = l;
+    const c = computeLine(line, rateTable, i + 1);
+    return _keepAuto === undefined ? c : { ...c, gstRateAuto: _keepAuto, gstRateOverride: _keepAuto ? null : c.gstRate };
+  });
+  const { totals, rateSummary } = computeTotals(computed);
+  return {
+    bill: { ...base, lines: computed, totals, rateSummary, note: String(note || '').trim() || base.note || '' },
+    error: ''
+  };
+}
+
 /**
  * After the Pricing tab is edited: cart lines whose rate came from pricing
  * take the new Kuntal Selling Price and category. A rate typed into the cart
@@ -527,6 +586,46 @@ export function initPurchaseTab(state) {
       }
 
       const typed = el('pur-billno').value.trim();
+
+      // The number typed is already saved: ADD to that bill, never overwrite
+      // it. Read the list fresh — another device may have saved it meanwhile.
+      if (typed) {
+        await refreshBills();
+        const existing = findSavedBill(bills, typed);
+        if (existing) {
+          const zero = activeCart().filter(l => !(Number(l.rate) > 0));
+          if (zero.length) {
+            notify.error(`${zero.length} line(s) have no rate — set a rate before billing (${zero.slice(0, 2).map(l => l.sellerSkuCode).join(', ')})`);
+            return;
+          }
+          const { bill: merged, error } = mergeIntoBill(existing, activeCart(),
+            state.purchaseSettings.gstRates || {}, { docType: docTypeSel.value, note: el('pur-note').value });
+          if (error) { notify.error(error); return; }
+          if (!(await confirmMerge(existing, merged))) return;
+          if (isGR()) {
+            merged.lines = merged.lines.map(l => l.condition ? l : { ...l, condition: conditionBySku.get(l.sellerSkuCode) || 'good' });
+          }
+          await savePurchaseBill(merged);
+          if (consumption.length) {
+            try {
+              await applyReturnConsumption(consumption);
+              await state.refreshReturns?.();
+            } catch (err) {
+              notify.error(`${merged.billNo} was saved, but the returns register was NOT reduced: ${err.message}. Adjust the rows by hand.`);
+            }
+          }
+          const added = activeCart().length;
+          notify.success(`${added} line(s) added to ${merged.billNo} — now ₹${formatINR(merged.totals.grandRounded, 0)}`);
+          downloadPDF(merged);
+          setActiveCart([]); persist();
+          el('pur-billno').value = '';
+          await refreshBills();
+          renderCart(); renderPicker();
+          state.onBillsChange?.(bills);
+          return;
+        }
+      }
+
       let billNo = typed;
       if (!billNo) {
         const reserved = await nextBillNumber(docTypeSel.value);
@@ -570,6 +669,55 @@ export function initPurchaseTab(state) {
       btn.innerHTML = original;
       if (window.lucide) lucide.createIcons();
     }
+  }
+
+  /**
+   * Show what adding to a saved bill will do. Resolves true on "Add to this
+   * bill", false on cancel / close. Nothing is written here.
+   */
+  function confirmMerge(saved, merged) {
+    const pcs = b => (b.lines || []).reduce((t, l) => t + (Number(l.qty) || 0), 0);
+    const picked = el('pur-billdate').value;
+    const dateNote = picked && picked !== saved.billDate
+      ? ` The date picked above (${esc(formatDateDisplay(picked))}) is not used.` : '';
+    el('pur-merge-title').textContent = `Add to ${saved.billNo}?`;
+    el('pur-merge-summary').innerHTML = `
+      <p class="text-slate-300"><strong class="text-white">${esc(saved.billNo)}</strong> is already saved — ${esc(saved.docTypeLabel || '')}
+        dated ${esc(formatDateDisplay(saved.billDate) || saved.billDate || '—')}, ${(saved.lines || []).length} line(s), ${pcs(saved)} pcs,
+        <span class="zm-num">₹${formatINR(saved.totals?.grandRounded ?? 0, 0)}</span>.</p>
+      <div class="rounded-xl border border-white/10 overflow-hidden">
+        <table class="w-full text-sm">
+          <thead><tr class="text-slate-500 text-xs uppercase tracking-wide border-b border-white/5">
+            <th class="px-3 py-2 text-left">Adding</th><th class="px-3 py-2 text-right">Qty</th><th class="px-3 py-2 text-right">Rate</th>
+          </tr></thead>
+          <tbody>${activeCart().map(l => `<tr class="border-b border-white/5">
+            <td class="px-3 py-2 text-slate-200">${esc(l.sellerSkuCode)}</td>
+            <td class="px-3 py-2 text-right zm-num">${Number(l.qty) || 0}</td>
+            <td class="px-3 py-2 text-right zm-num">₹${formatINR(Number(l.rate) || 0, 0)}</td></tr>`).join('')}</tbody>
+        </table>
+      </div>
+      <p class="text-slate-300">After adding: ${merged.lines.length} line(s), ${pcs(merged)} pcs,
+        <strong class="text-amber-200 zm-num">₹${formatINR(merged.totals.grandRounded, 0)}</strong>.
+        The bill keeps its date and any receipts already recorded; a new PDF of the whole bill is downloaded.${dateNote}</p>`;
+    const modal = el('pur-merge-modal');
+    modal.classList.remove('hidden');
+    return new Promise(resolve => {
+      const done = (answer) => {
+        modal.classList.add('hidden');
+        el('pur-merge-confirm').removeEventListener('click', yes);
+        el('pur-merge-cancel').removeEventListener('click', no);
+        el('pur-merge-cancel-x').removeEventListener('click', no);
+        modal.removeEventListener('click', outside);
+        resolve(answer);
+      };
+      const yes = () => done(true);
+      const no = () => done(false);
+      const outside = (e) => { if (e.target === modal) done(false); };
+      el('pur-merge-confirm').addEventListener('click', yes);
+      el('pur-merge-cancel').addEventListener('click', no);
+      el('pur-merge-cancel-x').addEventListener('click', no);
+      modal.addEventListener('click', outside);
+    });
   }
 
   // ═══════════ Parties / GST modal ═══════════
