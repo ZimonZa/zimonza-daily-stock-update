@@ -509,6 +509,9 @@ export function initPurchaseTab(state) {
 
   // ═══════════ Bill assembly ═══════════
 
+  /** The note box, unless it only shows the standing default note. */
+  const typedNote = () => (el('pur-note').dataset.fromDefault === '1' ? '' : el('pur-note').value.trim());
+
   function computedLines() {
     const rateTable = state.purchaseSettings.gstRates || {};
     return activeCart().map((l, i) => computeLine(l, rateTable, i + 1));
@@ -529,6 +532,16 @@ export function initPurchaseTab(state) {
     const { totals, rateSummary } = computeTotals(lines);
     const type = PURCHASE_DOC_TYPES.find(t => t.id === docTypeSel.value) || PURCHASE_DOC_TYPES[0];
     const typed = el('pur-billno').value.trim();
+
+    // A saved number typed in: preview what saving would make — the whole
+    // bill with these lines added — never just the new lines under its number
+    const existing = draft && typed ? findSavedBill(bills, typed) : null;
+    if (existing) {
+      const { bill, error } = mergeIntoBill(existing, activeCart(), state.purchaseSettings.gstRates || {},
+        { docType: docTypeSel.value, note: typedNote() });
+      if (error) { notify.error(error); return null; }
+      return bill;
+    }
 
     return {
       docType: docTypeSel.value,
@@ -599,7 +612,7 @@ export function initPurchaseTab(state) {
             return;
           }
           const { bill: merged, error } = mergeIntoBill(existing, activeCart(),
-            state.purchaseSettings.gstRates || {}, { docType: docTypeSel.value, note: el('pur-note').value });
+            state.purchaseSettings.gstRates || {}, { docType: docTypeSel.value, note: typedNote() });
           if (error) { notify.error(error); return; }
           if (!(await confirmMerge(existing, merged))) return;
           if (isGR()) {
@@ -628,8 +641,17 @@ export function initPurchaseTab(state) {
 
       let billNo = typed;
       if (!billNo) {
-        const reserved = await nextBillNumber(docTypeSel.value);
-        billNo = reserved.billNo;
+        // A number typed by hand earlier can sit ahead of the counter. Skip
+        // any number already saved, or that bill would be silently replaced.
+        await refreshBills();
+        billNo = (await nextBillNumber(docTypeSel.value)).billNo;
+        for (let tries = 0; findSavedBill(bills, billNo) && tries < 50; tries++) {
+          billNo = (await nextBillNumber(docTypeSel.value)).billNo;
+        }
+        if (findSavedBill(bills, billNo)) {
+          notify.error(`Could not find a free ${billNo.split('/')[0]} number — type one in the Bill No. box`);
+          return;
+        }
       }
       const bill = buildBill({ draft: false, billNo });
       if (!bill) return;
