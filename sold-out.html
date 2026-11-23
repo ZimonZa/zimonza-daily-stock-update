@@ -23,6 +23,7 @@
       <p class="zm-eyebrow mb-2">Nothing left</p>
       <h1 class="zm-page-title">Sold Out</h1>
       <p class="text-slate-400 text-sm mt-0.5">Products with zero remaining stock</p>
+      <p id="stock-dates" class="text-slate-500 text-xs mt-1"></p>
     </div>
     <div class="flex items-center gap-2">
       <select id="date-select" class="zm-input w-44">
@@ -72,6 +73,7 @@ async function load(date) {
   document.getElementById('table-container').innerHTML = '<div class="p-8 flex justify-center"><div class="spinner"></div></div>';
   try {
     const stock = await loadStockAsOf({ asOf: date });
+    document.getElementById('stock-dates').textContent = `Stock: ${stockDatesLabel(stock, formatDateDisplay)}`;
     items = allItemsOf(stock).filter(i => (i.totalQty||0) === 0);
     renderStats(items);
     renderTable(items);

@@ -22,6 +22,7 @@
       <p class="zm-eyebrow mb-2">One or two pieces left</p>
       <h1 class="zm-page-title">Low Stock</h1>
       <p class="text-slate-400 text-sm mt-0.5">Colours running low — each colour counted on its own stock</p>
+      <p id="stock-dates" class="text-slate-500 text-xs mt-1"></p>
     </div>
     <div class="flex items-center gap-2">
       <select id="date-select" class="zm-input w-44"></select>
@@ -77,6 +78,7 @@ async function load(date) {
   try {
     // Each category as of this date (from its own last upload on or before it)
     const stock = await loadStockAsOf({ asOf: date });
+    document.getElementById('stock-dates').textContent = `Stock: ${stockDatesLabel(stock, formatDateDisplay)}`;
     items = lowColorEntries(allItemsOf(stock));
     renderStats(items);
     renderCards(items);

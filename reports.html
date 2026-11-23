@@ -157,7 +157,7 @@ import { generateDailyReport, exportCSV, exportExcel, exportPDF } from './js/rep
 import { getStockData, getAllUploadDates } from './js/firestore-service.js';
 import { analyzeStockChanges, findFastMovers, getTopColors } from './js/stock-analyzer.js';
 import { CATEGORIES } from './js/constants.js';
-import { loadStockAsOf, loadDayChanges, allItemsOf, stockDatesLabel } from './js/stock-store.js';
+import { loadDayChanges, stockDatesLabel } from './js/stock-store.js';
 import { formatDateDisplay } from './js/utils.js';
 
 await requireAuth();
@@ -250,7 +250,10 @@ document.querySelectorAll('[data-report][data-format]').forEach(btn => {
 });
 
 function showPreview(report, title) {
-  document.getElementById('preview-title').textContent = title;
+  const sd = report.stockDates;
+  document.getElementById('preview-title').textContent = sd
+    ? `${title} · Stock: ${stockDatesLabel({ lehnga: { date: sd.lehnga }, saree: { date: sd.saree } }, formatDateDisplay)}`
+    : title;
   document.getElementById('report-preview').classList.remove('hidden');
   document.getElementById('preview-stats').innerHTML = [
     { label:'Total SKUs', value: report.totalSKUs },

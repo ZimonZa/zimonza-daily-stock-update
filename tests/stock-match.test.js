@@ -7,7 +7,7 @@ globalThis.window = globalThis;
 
 import { normItemNo } from './utils.js';
 import { parseStockFile } from './excel-parser.js';
-import { stockKey, mergeStockItems, indexStock, lookupKuntal, latestPerCategory, loadLatestStock, loadStockAsOf, loadDayChanges, changeSinceLast, clearStockCache } from './stock-store.js';
+import { stockKey, mergeStockItems, indexStock, lookupKuntal, latestPerCategory, loadLatestStock, loadStockAsOf, loadDayChanges, changeSinceLast, clearStockCache, dayChangesLabel } from './stock-store.js';
 import { parseZMFile } from './excel-parser.js';
 import { resolveStock } from './myntra.js';
 import { analyzeStockChanges, sumSummaries } from './stock-analyzer.js';
@@ -219,6 +219,14 @@ eq('chosen category is used', buildZMProduct({ zmCode: 'ZM-32', kuntalCode: '304
   eq('report says which upload each category is from', rep.stockDates, { lehnga: '2026-11-22', saree: '2026-11-21' });
   eq('totals follow', [rep.totalSKUs, rep.totalPcs], [2, 7]);
 }
+
+// ════ 15. Pages say which files a day's changes come from ════
+const fmtD = (d) => d.split('-').reverse().join('/');
+eq('both files that day', dayChangesLabel({ categories: ['lehnga', 'saree'] }, '2026-11-21', fmtD),
+  'Lehnga and saree uploaded on 21/11/2026 — each compared with its own previous upload');
+eq('one file that day', dayChangesLabel({ categories: ['lehnga'] }, '2026-11-22', fmtD),
+  'Only lehnga uploaded on 22/11/2026 — saree not compared');
+eq('nothing that day', dayChangesLabel({ categories: [] }, '2026-11-23', fmtD), 'Nothing uploaded on 23/11/2026');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

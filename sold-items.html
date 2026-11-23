@@ -23,6 +23,7 @@
       <p class="zm-eyebrow mb-2">Counts that went down</p>
       <h1 class="zm-page-title">Sold Items</h1>
       <p class="text-slate-400 text-sm mt-0.5">Stock decreases detected against previous upload</p>
+      <p id="stock-dates" class="text-slate-500 text-xs mt-1"></p>
     </div>
     <div class="flex items-center gap-2">
       <select id="date-select" class="zm-input w-44">
@@ -59,7 +60,7 @@ import { renderShell } from './js/ui-components.js';
 import notify from './js/notifications.js';
 import { getStockData, getAllUploadDates } from './js/firestore-service.js';
 import { analyzeStockChanges } from './js/stock-analyzer.js';
-import { loadStockAsOf, loadDayChanges, allItemsOf, stockDatesLabel } from './js/stock-store.js';
+import { loadDayChanges, dayChangesLabel } from './js/stock-store.js';
 import { CATEGORIES } from './js/constants.js';
 import { formatDateDisplay, formatNumber, debounce } from './js/utils.js';
 
@@ -74,6 +75,7 @@ async function load(date) {
   try {
     // Only what was uploaded that day, each category against its own last upload
     const day = await loadDayChanges(date);
+    document.getElementById('stock-dates').textContent = dayChangesLabel(day, date, formatDateDisplay);
     const analysis = analyzeStockChanges(day.current, day.previous, { categories: day.categories });
     items = analysis.soldItems;
     renderStats(items);

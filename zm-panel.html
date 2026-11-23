@@ -139,7 +139,8 @@
     <button id="zm-apply" class="btn-primary text-sm py-2 px-4">
       <i data-lucide="filter" class="w-4 h-4"></i> Filter
     </button>
-    <span id="zm-count" class="text-slate-500 text-xs ml-auto"></span>
+    <span id="zm-stock-dates" class="text-slate-500 text-xs ml-auto"></span>
+    <span id="zm-count" class="text-slate-500 text-xs"></span>
   </div>
 
   <!-- ZM Products Table -->
@@ -213,7 +214,8 @@ import { bindSampleLinks } from './js/sample-files.js';
 import notify from './js/notifications.js';
 import { loadZMPanelData, setUploadStatus } from './js/zm-mapper.js';
 import { skipProduct } from './js/skip-manager.js';
-import { debounce, toCSV, downloadFile, normColorKey, relativeTime, normItemNo } from './js/utils.js';
+import { debounce, toCSV, downloadFile, normColorKey, relativeTime, normItemNo, formatDateDisplay } from './js/utils.js';
+import { stockDatesLabel } from './js/stock-store.js';
 import { readExcelFile, parseZMFile, validateZMFile } from './js/excel-parser.js';
 import { saveZMMapping, getAllZMMappings, setZMCategory } from './js/firestore-service.js';
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -349,6 +351,7 @@ async function load() {
   try {
     const data = await loadZMPanelData();
     products = data.products;
+    document.getElementById('zm-stock-dates').textContent = `Stock: ${stockDatesLabel({ lehnga: { date: data.stockDates?.lehnga }, saree: { date: data.stockDates?.saree } }, formatDateDisplay)} ·`;
     renderSummary(data.summary);
     renderTable(products);
     const show = products.length > 0;

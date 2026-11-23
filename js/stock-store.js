@@ -169,6 +169,19 @@ export function changeSinceLast(currentItems, previousItems) {
   }));
 }
 
+/**
+ * What a day's change lists are based on, for the line under a page title:
+ * "Only lehnga uploaded on 22/11/2026 — saree not compared".
+ */
+export function dayChangesLabel(day, date, fmt = (d) => d) {
+  const cats = day?.categories || [];
+  const when = fmt(date);
+  if (!cats.length) return `Nothing uploaded on ${when}`;
+  if (cats.length === CATS.length) return `Lehnga and saree uploaded on ${when} — each compared with its own previous upload`;
+  const missing = CATS.filter(c => !cats.includes(c));
+  return `Only ${cats.join(' and ')} uploaded on ${when} — ${missing.join(' and ')} not compared`;
+}
+
 /** Current stock: each category from its own latest upload. */
 export const loadLatestStock = (deps = {}) => loadStockAsOf(deps);
 
