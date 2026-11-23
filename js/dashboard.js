@@ -179,7 +179,7 @@ function renderMissingAlerts() {
           <div class="w-2 h-2 rounded-full bg-red-400"></div>
           <span class="text-slate-300 text-sm">${formatDateDisplay(d)}</span>
         </div>
-        <a href="upload.html" class="text-xs text-emerald-400 hover:text-emerald-300 font-medium transition">Upload →</a>
+        <a href="upload.html?date=${d}" class="text-xs text-emerald-400 hover:text-emerald-300 font-medium transition">Upload →</a>
       </div>`).join('');
   }
 }
