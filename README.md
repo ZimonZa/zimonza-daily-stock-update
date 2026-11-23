@@ -92,7 +92,9 @@ Visit `http://localhost:8080`
 │   ├── auth.js             ← Authentication module
 │   ├── firestore-service.js← All Firestore read/write operations
 │   ├── excel-parser.js     ← SheetJS-powered Excel processor
-│   ├── stock-analyzer.js   ← Comparison engine (sold/restock/new)
+│   ├── stock-analyzer.js   ← Comparison engine (sold/restock/new), period totals
+│   ├── stock-store.js      ← One stock model: item identity, per-category latest upload
+│   ├── sample-files.js     ← "Download sample file" Excel templates for every upload
 │   ├── zm-mapper.js        ← ZM product code logic
 │   ├── myntra.js           ← SKU parsing, stock resolution, update generator
 │   ├── myntra-pricing.js   ← Myntra Pricing.xlsx parser + Pricing tab
@@ -314,6 +316,10 @@ The doubled class gives specificity `0-2-0`, which beats the Tailwind Play CDN r
 
 ---
 
+## 📄 PDF → Excel
+
+Pick the **Stock date** (defaults to today, no future dates) before exporting; every file is named `<PDF name>_<DD-MM-YYYY>.xlsx` (or `.csv`), e.g. `Saree_21-11-2026.xlsx`. The page shows the name it will use.
+
 ## 📄 PDF Sorter & Merger
 
 Second tab on the **PDF → Excel** page. Drop in any number of PDFs — `Label.pdf`, `Label (1).pdf`, `invoice.pdf`, anything — and get back **one merged PDF per document type**. Everything happens in the browser; no file is ever uploaded, which matters because labels carry customer addresses.
@@ -345,7 +351,7 @@ One page (`myntra.html`), seven sections:
 | Tab | What it does |
 |-----|--------------|
 | **Inventory Update** | Generates the `sellerSkuCode,quantity` file Myntra consumes. Takes a configurable % of each colour's stock above the gap threshold, and optionally adds usable Returns & RTO stock on top. A SKU switched off in Mapping is sent as **0** (locked), so Myntra shows it out of stock. |
-| **Mapping** | SellerSkuCode, Style ID, ZM code, colour, Item No., today's stock, Kuntal Selling Price, Myntra MRP and ISP, with the live status toggle. Bulk activate / deactivate. |
+| **Mapping** | SellerSkuCode, Style ID, ZM code, colour, Item No., today's stock, Kuntal Selling Price, Myntra MRP and ISP, with the live status toggle. Bulk activate / deactivate. Delete one mapping (bin on the row) or every ticked row (**Delete selected**); both ask first and cannot be undone. |
 | **Pricing** | Upload `Myntra Pricing.xlsx`, or edit it by hand — any cell, many rows at once, add or remove a style. Flags mapped styles that have no price (those cannot be billed). |
 | **Purchase** | Cart → GST bill → PDF. Saved, auto-numbered, re-downloadable. Also GR credit notes, short-receive, and the per-bill note. |
 | **Returns & RTO** | Register of goods coming back, with a stock summary. A label can be filled from it, and the inventory update can declare it. |
@@ -454,6 +460,29 @@ Pieces leave the register only through a **pick slip** or a **Goods Return**. Th
 
 ---
 
+## 🧮 How stock is read
+
+Every page (Dashboard, Stock Analysis, Low Stock, ZM Panel, Myntra, Skip Panel, Reports…) reads stock through `js/stock-store.js`, so they all agree.
+
+- **An item is category + clean code.** Lehnga and saree are never merged or compared with each other.
+- **`9551 M` = `9551`.** The saree file writes many codes with a trailing ` M` or `M.`; it is the same product, so the two are one item (colours added). Stored data from before this rule is merged when read.
+- **`(UNST)` is a different product** (unstitched blouse) and is never counted with the stitched code.
+- **Each category has its own latest upload.** A day with only the lehnga file keeps showing the last saree upload; nothing is marked sold out because a file was missing. Upload Center says so before you approve: *"Saree file not added — only lehnga is compared and saved today."*
+- **Re-uploading a date replaces it.** Items that are no longer in the new file are removed from that date.
+- **A Kuntal code in both files** (e.g. 3044) is a clash: the ZM Panel shows *In both files — choose*; pick Lehnga or Saree in the row's edit box (saved as the ZM mapping's `category`). Until chosen, the saree item is used. Myntra shows *Lehnga/Saree not chosen* on those rows.
+
+### Dashboard periods
+
+**Today** = latest upload, **Yesterday** = the upload before. **Last 7 / Last 30 Days** show the latest stock plus *totals* of Sold / Restocked / New Arrivals / Sold Out for every upload in the period, added up from each upload's saved summary (one small read per day). Lists and charts below stay on the latest day.
+
+### Stock Analysis
+
+All / Lehnga / Saree tabs with counts; 48 items per page with *Showing a–b of N* and every page reachable; a **Change** column (pieces now minus the previous upload of that category, or *new*); quick links to Low Stock, Sold Items, Restocked and Sold Out; CSV named `zimonza-stock_DD-MM-YYYY.csv` for the date shown.
+
+### Sample files
+
+Every Excel upload box (Upload Center, ZM Panel, Settings colours, Myntra inventory / mapping / pricing / returns) has **Download sample file** under it: a `Sample_*.xlsx` built on click with the exact headings, two example rows and a **How to fill** sheet (each column, required or optional, what to put, an example).
+
 ## 📊 Excel File Formats
 
 ### Lehnga / Saree Stock Files
@@ -470,7 +499,8 @@ Pieces leave the register only through a **pick slip** or a **Goods Return**. Th
 | Column | Description |
 |--------|-------------|
 | Zimonza Product Code | ZM code (e.g. ZM-1) |
-| Kuntal Product Code | Kuntal SKU (matches stock file ITEM NO) |
+| Kuntal Product Code | Kuntal SKU (matches stock file ITEM NO; `9551 M` and `9551` match) |
+| Category *(optional)* | `Lehnga` or `Saree` — only needed when the Kuntal code is in both files. Lehenga/Lehanga/Sari are accepted; anything else is left blank. |
 
 ---
 
@@ -483,7 +513,7 @@ daily_stock/
     saree/{sku}
     meta/summary        ← { newArrivals, sold, restocked, soldOut, ... }
 
-zm_mapping/{kuntalCode} ← { zmCode, kuntalCode }
+zm_mapping/{kuntalCode} ← { zmCode, kuntalCode, category? }   ← category only when chosen
 website_upload_status/{sku} ← { status, notes, updatedAt }
 skip_products/{sku}     ← { sku, notes, skippedAt }
 history/{YYYY-MM-DD}    ← { lehngaCount, sareeCount, totalSKUs, ... }
@@ -540,7 +570,7 @@ The runner copies `js/` into a sandbox, rewrites the CDN imports to generated st
 
 The parse check uses `vm.SourceTextModule`, not `node --check` — under Node 26 `node --check` exits 0 on files it cannot parse, which had already let a real unbalanced paren through. The runner re-execs itself with `--experimental-vm-modules` so no flag is needed at the call site.
 
-Suites cover the Order Map maths (PIN precedence, the seller's PIN never taken, unfulfillable orders left out, combo parcels under a product filter, risky thresholds, Monday weeks, zones, the Excel sheets), the geo data itself (every state name matches between the PIN directory and the outline; known PINs resolve), destination PIN and payment read from real labels, the re-drop fill-in that never touches a returned parcel, the RTO Kuntal-price export, local file dates, ZM-code normalisation, GST maths, day-first and Excel-serial dates, swatch luminance, PDF sorter ordering and conflict confidence, label field extraction, the barcode fallback, offender keys and re-keying, duplicate classification, the write payload that protects a recorded return, return intake, the inventory return boost, and the Orders tab driven end to end through a fake DOM.
+Suites cover the Order Map maths (PIN precedence, the seller's PIN never taken, unfulfillable orders left out, combo parcels under a product filter, risky thresholds, Monday weeks, zones, the Excel sheets), the geo data itself (every state name matches between the PIN directory and the outline; known PINs resolve), destination PIN and payment read from real labels, the re-drop fill-in that never touches a returned parcel, the RTO Kuntal-price export, local file dates, ZM-code normalisation, GST maths, day-first and Excel-serial dates, swatch luminance, PDF sorter ordering and conflict confidence, label field extraction, the barcode fallback, offender keys and re-keying, duplicate classification, the write payload that protects a recorded return, return intake, the inventory return boost, the Orders tab driven end to end through a fake DOM, stock identity (` M` codes, `(UNST)` kept apart, per-category latest upload, legacy history, clash lookup, re-upload removing stale items, change since last upload, dashboard period totals), the sample files (every one parses back through the app's own reader with zero errors), mapping delete, dated PDF export names, and charts redrawing on the same canvas.
 
 ---
 
