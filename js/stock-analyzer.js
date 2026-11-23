@@ -5,6 +5,7 @@
 
 import { CHANGE_TYPES } from './constants.js';
 import { getStockLevel, itemStockLevel, normColorKey } from './utils.js';
+import { mergeStockItems, stockKey } from './stock-store.js';
 
 /**
  * Compare current stock items against previous stock items
@@ -14,9 +15,17 @@ import { getStockLevel, itemStockLevel, normColorKey } from './utils.js';
  * @param {Array} previousItems - Items from previous upload date
  * @returns {Object} Analysis result
  */
-export function analyzeStockChanges(currentItems, previousItems) {
-  const prevMap = new Map((previousItems || []).map(i => [String(i.sku), i]));
-  const currMap = new Map(currentItems.map(i => [String(i.sku), i]));
+export function analyzeStockChanges(currentItemsIn, previousItemsIn, { categories } = {}) {
+  // Same product = same category + clean code ("9551 M" is 9551). Lehnga and
+  // saree are compared separately, and only the categories uploaded today:
+  // a lehnga-only day must not mark every saree "sold out".
+  const currentItems = mergeStockItems(currentItemsIn || []);
+  const cats = new Set(categories || currentItems.map(i => i.category).filter(Boolean));
+  const previousItems = mergeStockItems(previousItemsIn || [])
+    .filter(i => !cats.size || !i.category || cats.has(i.category));
+  const key = i => stockKey(i.category, i.sku);
+  const prevMap = new Map(previousItems.map(i => [key(i), i]));
+  const currMap = new Map(currentItems.map(i => [key(i), i]));
 
   const newArrivals = [];
   const soldItems = [];
@@ -26,8 +35,7 @@ export function analyzeStockChanges(currentItems, previousItems) {
 
   // Process current items
   for (const curr of currentItems) {
-    const sku = String(curr.sku);
-    const prev = prevMap.get(sku);
+    const prev = prevMap.get(key(curr));
 
     if (!prev) {
       // Brand new SKU
@@ -128,9 +136,8 @@ export function analyzeStockChanges(currentItems, previousItems) {
   }
 
   // Check for items that disappeared (sold out completely, not in current)
-  for (const prev of (previousItems || [])) {
-    const sku = String(prev.sku);
-    if (!currMap.has(sku) && prev.totalQty > 0) {
+  for (const prev of previousItems) {
+    if (!currMap.has(key(prev)) && prev.totalQty > 0) {
       soldOutItems.push({
         ...prev,
         changeType: CHANGE_TYPES.SOLD_OUT,
