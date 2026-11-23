@@ -180,9 +180,8 @@ async function init() {
 async function loadAnalytics() {
   if (!allDates.length) return;
   const date = allDates[0];
-  // Stock as of the latest upload; changes = that day's upload vs each
-  // category's own previous upload (was: whatever date was second newest)
-  const curr = allItemsOf(await loadStockAsOf({ asOf: date }));
+  // Changes = that day's upload vs each category's own previous upload
+  // (was: whatever date was second newest)
   const day = await loadDayChanges(date);
   const analysis = analyzeStockChanges(day.current, day.previous, { categories: day.categories });
   const fastMovers = findFastMovers(analysis.soldItems, 8);

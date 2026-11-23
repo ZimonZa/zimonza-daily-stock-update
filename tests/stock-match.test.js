@@ -7,7 +7,7 @@ globalThis.window = globalThis;
 
 import { normItemNo } from './utils.js';
 import { parseStockFile } from './excel-parser.js';
-import { stockKey, mergeStockItems, indexStock, lookupKuntal, latestPerCategory, loadLatestStock, loadStockAsOf, loadDayChanges, changeSinceLast } from './stock-store.js';
+import { stockKey, mergeStockItems, indexStock, lookupKuntal, latestPerCategory, loadLatestStock, loadStockAsOf, loadDayChanges, changeSinceLast, clearStockCache } from './stock-store.js';
 import { parseZMFile } from './excel-parser.js';
 import { resolveStock } from './myntra.js';
 import { analyzeStockChanges, sumSummaries } from './stock-analyzer.js';
@@ -110,9 +110,9 @@ const seen = [];
 const getS = async (d, c) => { seen.push(`${d}/${c}`); return [item(c, '1', [['Red', 1]])]; };
 await loadStockAsOf({ asOf: '2026-11-20', listHistory: hist, getStock: getS });
 eq('as of the 20th: lehnga from the 20th, saree from its last upload before (19th)', seen.sort(), ['2026-11-19/saree', '2026-11-20/lehnga']);
-seen.length = 0;
-await loadStockAsOf({ before: '2026-11-21', listHistory: hist, getStock: getS });
-eq('the day before the 21st, per category', seen.sort(), ['2026-11-19/saree', '2026-11-20/lehnga']);
+// (same files as above, so the page's read cache answers — check the dates used)
+const dayBefore = await loadStockAsOf({ before: '2026-11-21', listHistory: hist, getStock: getS });
+eq('the day before the 21st, per category', [dayBefore.lehnga.date, dayBefore.saree.date], ['2026-11-20', '2026-11-19']);
 
 // ════ 7. ZM codes carry an optional category ════
 eq('a 3-column ZM file reads the category',
@@ -183,6 +183,26 @@ eq('row shows the clean code', zp.kuntalCode, '3044');
 eq('row keeps the stored document id', zp.docId, '3044.');
 eq('code in both files is a clash', zp.clash, true);
 eq('chosen category is used', buildZMProduct({ zmCode: 'ZM-32', kuntalCode: '3044', category: 'lehnga' }, {}, zmIdx).totalQty, 2);
+
+// ════ 13. Each stock document is read once per page ════
+// Dashboard / Reports ask for "stock as of D" and "changes on D": both need
+// D's two categories and the history. Firestore bills every read.
+{
+  const reads = { history: 0, stock: [] };
+  const listHistory = async () => { reads.history++; return [{ date: '2026-11-20', lehngaCount: 1, sareeCount: 1 }, { date: '2026-11-21', lehngaCount: 1, sareeCount: 1 }]; };
+  const getStock = async (d, c) => { reads.stock.push(d + c); return [item(c, '7002', [['Rani', d === '2026-11-21' ? 1 : 3]])]; };
+  const now = await loadStockAsOf({ asOf: '2026-11-21', listHistory, getStock });
+  const day = await loadDayChanges('2026-11-21', { listHistory, getStock });
+  await loadStockAsOf({ before: '2026-11-21', listHistory, getStock });
+  eq('history read once', reads.history, 1);
+  eq('each day and category read once', reads.stock.sort(), ['2026-11-20lehnga', '2026-11-20saree', '2026-11-21lehnga', '2026-11-21saree']);
+  eq('cached reads give the same figures', [now.lehnga.items[0].totalQty, day.previous[0].totalQty], [1, 3]);
+  now.lehnga.items[0].colors[0].qty = 99;   // a page changing what it got…
+  eq('…never changes what the next caller gets', (await loadStockAsOf({ asOf: '2026-11-21', listHistory, getStock })).lehnga.items[0].totalQty, 1);
+  clearStockCache();
+  await loadStockAsOf({ asOf: '2026-11-21', listHistory, getStock });
+  eq('clearStockCache reads again', reads.history, 2);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

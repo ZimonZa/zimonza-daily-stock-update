@@ -94,6 +94,30 @@ export function latestPerCategory(history) {
   return out;
 }
 
+// ── Reads are remembered for the life of the page ──
+// "Stock as of D" and "changes on D" both need D's files and the history;
+// Firestore bills every document read, so each is fetched once per page.
+// Callers always get fresh copies (mergeStockItems copies items and colours).
+let memos = new WeakMap();   // loader → Map(key → Promise)
+function remembered(load, keyOf) {
+  if (!memos.has(load)) memos.set(load, new Map());
+  const cache = memos.get(load);
+  return (...args) => {
+    const key = keyOf(...args);
+    if (!cache.has(key)) {
+      const p = Promise.resolve().then(() => load(...args));
+      cache.set(key, p);
+      p.catch(() => cache.delete(key));   // a failed read is tried again next time
+    }
+    return cache.get(key);
+  };
+}
+const historyOnce = (listHistory) => remembered(listHistory, () => 'all');
+const stockOnce = (getStock) => remembered(getStock, (date, cat) => `${date}|${cat}`);
+
+/** Forget remembered reads (after this page writes stock or history). */
+export function clearStockCache() { memos = new WeakMap(); }
+
 /** Every history record, newest first (dates only matter here). */
 async function allHistory() {
   return (await getRecentHistory(10000)).map(h => ({ ...h, date: h.date || h.id }));
@@ -105,10 +129,11 @@ async function allHistory() {
  * @returns {Promise<{ lehnga: {date, items}, saree: {date, items} }>}
  */
 export async function loadStockAsOf({ asOf = null, before = null, listHistory = allHistory, getStock = getStockData } = {}) {
-  const history = (await listHistory()).filter(h =>
+  const history = (await historyOnce(listHistory)()).filter(h =>
     (!asOf || h.date <= asOf) && (!before || h.date < before));
   const dates = latestPerCategory(history);
-  const [l, s] = await Promise.all(CATS.map(cat => dates[cat] ? getStock(dates[cat], cat) : Promise.resolve([])));
+  const read = stockOnce(getStock);
+  const [l, s] = await Promise.all(CATS.map(cat => dates[cat] ? read(dates[cat], cat) : Promise.resolve([])));
   const tag = (list, cat) => mergeStockItems((list || []).map(i => ({ ...i, category: i.category || cat })));
   return {
     lehnga: { date: dates.lehnga, items: tag(l, CATEGORIES.LEHNGA) },
@@ -123,7 +148,8 @@ export async function loadStockAsOf({ asOf = null, before = null, listHistory = 
  * @returns {Promise<{ categories: string[], current: Array, previous: Array }>}
  */
 export async function loadDayChanges(date, { listHistory = allHistory, getStock = getStockData } = {}) {
-  const lists = await Promise.all(CATS.map(cat => getStock(date, cat)));
+  const read = stockOnce(getStock);
+  const lists = await Promise.all(CATS.map(cat => read(date, cat)));
   const categories = CATS.filter((_, i) => (lists[i] || []).length);
   const current = mergeStockItems(lists.flatMap((l, i) => (l || []).map(it => ({ ...it, category: it.category || CATS[i] }))));
   const before = await loadStockAsOf({ before: date, listHistory, getStock });
