@@ -123,10 +123,14 @@ function build() {
   ].join('\n'));
 
   // The page-level inline scripts, so their imports are checked too
-  for (const page of ['myntra.html', 'pdf-to-excel.html']) {
+  // Every page, every inline module script — a syntax error in any page's
+  // own script would otherwise only show up in the browser.
+  for (const page of readdirSync(repo).filter(f => f.endsWith('.html'))) {
     const html = readFileSync(join(repo, page), 'utf8');
-    const body = html.split('<script type="module">')[1]?.split('</script>')[0] ?? '';
-    writeFileSync(join(sandbox, `_page-${page.replace('.html', '')}.txt`), body);
+    html.split('<script type="module">').slice(1).forEach((chunk, n) => {
+      const body = chunk.split('</script>')[0] ?? '';
+      writeFileSync(join(sandbox, `_page-${page.replace('.html', '')}${n ? '-' + n : ''}.txt`), body);
+    });
   }
 
   // The map data, so suites can check it against the code that reads it

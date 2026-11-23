@@ -9,6 +9,7 @@ import { normItemNo } from './utils.js';
 import { parseStockFile } from './excel-parser.js';
 import { stockKey, mergeStockItems, indexStock, lookupKuntal, latestPerCategory, loadLatestStock } from './stock-store.js';
 import { analyzeStockChanges } from './stock-analyzer.js';
+import { staleStockIds } from './firestore-service.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => {
@@ -90,6 +91,11 @@ eq('…and still sees the lehnga sale', lehngaOnly.soldItems.map(i => i.sku), ['
 const sameSaree = analyzeStockChanges([item('saree', '9551', [['Rani', 2]]), item('saree', '1010', [['Pink', 1]])], yesterday, { categories: ['saree'] });
 eq('"9551 M" yesterday and "9551" today is the same, unchanged saree',
   [sameSaree.newArrivals.length, sameSaree.soldOutItems.length, sameSaree.unchangedItems.length], [0, 0, 2]);
+
+// ════ 5. Re-uploading a date replaces it ════
+eq('docs no longer in the file are removed (old "9551 M" and a dropped item)',
+  staleStockIds(['9551 M', '4132', '1121'], [{ sku: '9551' }, { sku: '4132' }]), ['9551 M', '1121']);
+eq('nothing stale → nothing removed', staleStockIds(['4132'], [{ sku: '4132' }]), []);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

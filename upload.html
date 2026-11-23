@@ -217,6 +217,7 @@
       <span class="text-slate-500 text-xs font-semibold uppercase tracking-wider">Review Changes Before Upload</span>
       <div class="h-px flex-1 bg-white/5"></div>
     </div>
+    <div id="review-missing" class="hidden p-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.08] text-amber-200 text-sm"></div>
     <div id="review-summary" class="flex flex-wrap gap-3"></div>
     <div id="review-new-arrivals" class="space-y-2"></div>
     <div id="review-sold"         class="space-y-2"></div>
@@ -267,7 +268,8 @@ import { renderShell } from './js/ui-components.js';
 import notify from './js/notifications.js';
 import { readExcelFile, parseStockFile, validateStockFile, getFileSummary } from './js/excel-parser.js';
 import { analyzeStockChanges } from './js/stock-analyzer.js';
-import { saveStockData, saveDailySummary, getStockData, getAllUploadDates, saveUploadHistory } from './js/firestore-service.js';
+import { replaceStockData, saveDailySummary, getStockData, getAllUploadDates, saveUploadHistory, getRecentHistory } from './js/firestore-service.js';
+import { latestPerCategory } from './js/stock-store.js';
 import { CATEGORIES } from './js/constants.js';
 import { today, formatDate, formatDateDisplay, formatNumber, worstColorLevel } from './js/utils.js';
 
@@ -531,20 +533,15 @@ window.startProcessing = async function() {
     const allCurrent  = [...lehngaItems, ...sareeItems];
     setStep('step-parse','done');
 
-    // Step 2: Compare
+    // Step 2: Compare — each category with ITS OWN last upload before this
+    // date, and only the categories added today. A missing file never marks
+    // the other category sold out.
     setStep('step-compare','active');
-    const allDates = await getAllUploadDates();
-    const prevDate  = allDates.find(d => d < uploadDate);
-    let prevItems = [];
-    if (prevDate) {
-      const [pl, ps] = await Promise.all([
-        getStockData(prevDate, CATEGORIES.LEHNGA),
-        getStockData(prevDate, CATEGORIES.SAREE)
-      ]);
-      prevItems = [...pl, ...ps];
-    }
-    const analysis = analyzeStockChanges(allCurrent, prevItems);
+    const uploaded = uploadedCategories();
+    const prevItems = await baselineItems(uploadDate, uploaded);
+    const analysis = analyzeStockChanges(allCurrent, prevItems, { categories: uploaded });
     setStep('step-compare','done');
+    showMissingWarning(uploaded);
 
     // Pause — show review panel for user approval before saving
     pendingUploadDate = uploadDate;
@@ -570,23 +567,24 @@ async function approveAndSave(items, uploadDate) {
 
     // Step 3: Save to Firestore
     setStep('step-save','active');
+    // Only the categories added today are written, and each REPLACES what that
+    // date held for it — a re-upload cannot leave stale items behind.
+    const uploaded = uploadedCategories();
     const saves = [];
-    if (lehngaItems.length) saves.push(saveStockData(uploadDate, CATEGORIES.LEHNGA, lehngaItems));
-    if (sareeItems.length)  saves.push(saveStockData(uploadDate, CATEGORIES.SAREE, sareeItems));
+    if (uploaded.includes(CATEGORIES.LEHNGA)) saves.push(replaceStockData(uploadDate, CATEGORIES.LEHNGA, lehngaItems));
+    if (uploaded.includes(CATEGORIES.SAREE))  saves.push(replaceStockData(uploadDate, CATEGORIES.SAREE, sareeItems));
     await Promise.all(saves);
 
-    // Re-analyze approved (possibly edited) items for accurate summary
-    const allDates = await getAllUploadDates();
-    const prevDate  = allDates.find(d => d < uploadDate);
-    let prevItems = [];
-    if (prevDate) {
-      const [pl, ps] = await Promise.all([
-        getStockData(prevDate, CATEGORIES.LEHNGA),
-        getStockData(prevDate, CATEGORIES.SAREE)
-      ]);
-      prevItems = [...pl, ...ps];
-    }
-    const finalAnalysis = analyzeStockChanges(items, prevItems);
+    // The day's summary covers every category stored for this date (an
+    // earlier same-day upload of the other file included), each compared
+    // with its own previous upload.
+    const [dayL, dayS] = await Promise.all([
+      getStockData(uploadDate, CATEGORIES.LEHNGA),
+      getStockData(uploadDate, CATEGORIES.SAREE)
+    ]);
+    const dayCats = [dayL.length ? CATEGORIES.LEHNGA : null, dayS.length ? CATEGORIES.SAREE : null].filter(Boolean);
+    const dayItems = [...dayL, ...dayS];
+    const finalAnalysis = analyzeStockChanges(dayItems, await baselineItems(uploadDate, dayCats), { categories: dayCats });
     // Persist per-row colour-pcs vs BAL PCS mismatches so Stock Analysis can show them
     const balPcsMismatches = [
       ...(state.lehnga?.summary?.balPcsMismatches || []),
@@ -598,10 +596,10 @@ async function approveAndSave(items, uploadDate) {
     // Step 4: History
     setStep('step-done','active');
     await saveUploadHistory(uploadDate, {
-      lehngaCount:    lehngaItems.length,
-      sareeCount:     sareeItems.length,
-      totalSKUs:      items.length,
-      totalPcs:       items.reduce((s,i) => s + (i.totalQty||0), 0),
+      lehngaCount:    dayL.length,
+      sareeCount:     dayS.length,
+      totalSKUs:      dayItems.length,
+      totalPcs:       dayItems.reduce((s,i) => s + (i.totalQty||0), 0),
       newArrivals:    finalAnalysis.summary.newArrivalsCount,
       soldCount:      finalAnalysis.summary.soldCount,
       restockedCount: finalAnalysis.summary.restockedCount,
@@ -783,6 +781,33 @@ function showResult(date, analysis, items) {
 }
 
 const delay = ms => new Promise(r => setTimeout(r, ms));
+
+/** Categories with a file added in this run. */
+function uploadedCategories() {
+  return [state.lehnga?.items?.length ? CATEGORIES.LEHNGA : null, state.saree?.items?.length ? CATEGORIES.SAREE : null].filter(Boolean);
+}
+
+/** For each category, the stock of its own last upload before `date`. */
+async function baselineItems(date, categories) {
+  const history = (await getRecentHistory(10000))
+    .map(h => ({ ...h, date: h.date || h.id }))
+    .filter(h => h.date < date);
+  const last = latestPerCategory(history);
+  const lists = await Promise.all(categories.map(cat => last[cat] ? getStockData(last[cat], cat) : Promise.resolve([])));
+  return lists.flat();
+}
+
+/** Say plainly when one of the two daily files was not added. */
+function showMissingWarning(uploaded) {
+  const el = document.getElementById('review-missing');
+  const missing = [CATEGORIES.LEHNGA, CATEGORIES.SAREE].filter(c => !uploaded.includes(c));
+  el.classList.toggle('hidden', missing.length === 0);
+  if (missing.length) {
+    const name = c => (c === CATEGORIES.LEHNGA ? 'Lehnga' : 'Saree');
+    el.textContent = `${missing.map(name).join(' and ')} file not added — only ${uploaded.map(c => name(c).toLowerCase()).join(' and ')} is compared and saved today. ` +
+      `The ${missing.map(c => name(c).toLowerCase()).join(' and ')} stock stays as last uploaded.`;
+  }
+}
 </script>
 </body>
 </html>

@@ -37,6 +37,25 @@ export async function saveStockData(date, category, items) {
   await runChunkedBatch(operations);
 }
 
+/** Stored item ids for a date+category that the new upload no longer has. PURE. */
+export function staleStockIds(existingIds, items) {
+  const keep = new Set((items || []).map(i => String(i.sku)));
+  return (existingIds || []).filter(id => !keep.has(String(id)));
+}
+
+/**
+ * Save a category's stock for a date, REPLACING what was there: items the
+ * new file no longer has (or old "9551 M" docs now saved as "9551") are
+ * deleted, so a re-upload can never leave stale items to be counted twice.
+ */
+export async function replaceStockData(date, category, items) {
+  const catRef = collection(db, COLLECTIONS.DAILY_STOCK, date, category);
+  const existing = await getDocs(catRef);
+  const stale = staleStockIds(existing.docs.map(d => d.id), items);
+  await saveStockData(date, category, items);
+  if (stale.length) await runChunkedBatch(stale.map(id => (batch) => batch.delete(doc(catRef, id))));
+}
+
 /** Save daily summary */
 export async function saveDailySummary(date, summary) {
   const ref = doc(db, COLLECTIONS.DAILY_STOCK, date, 'meta', 'summary');
