@@ -77,7 +77,11 @@ export const normColorKey = (s) => String(s ?? '').toLowerCase().trim().replace(
  * Canonical item number — drops trailing dots/spaces ("3121." → "3121")
  * while preserving meaningful suffixes like "(UNST)".
  */
-export const normItemNo = (s) => String(s ?? '').trim().replace(/[.\s]+$/, '').trim();
+// " M" / "M." after a digit-only code is the same product (owner, 2026-11-23):
+// the saree file prints "9551 M" for Kuntal code 9551. "(UNST)" is NOT
+// dropped — an unstitched blouse is a different product.
+export const normItemNo = (s) => String(s ?? '').trim().replace(/[.\s]+$/, '').trim()
+  .replace(/^(\d+)\s*M\.?$/i, '$1');
 
 /**
  * Blouse stitch type from an item number: "(UNST)" → unstitched, else stitched.
