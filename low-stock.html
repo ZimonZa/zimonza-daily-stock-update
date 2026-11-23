@@ -64,7 +64,7 @@ import notify from './js/notifications.js';
 import { getStockData, getAllUploadDates } from './js/firestore-service.js';
 import { CATEGORIES } from './js/constants.js';
 import { loadStockAsOf, loadDayChanges, allItemsOf, stockDatesLabel } from './js/stock-store.js';
-import { formatDateDisplay, debounce, lowColorEntries } from './js/utils.js';
+import { formatDateDisplay, debounce, lowColorEntries, escHtml as esc } from './js/utils.js';
 
 await requireAuth();
 renderShell('low-stock');
@@ -130,12 +130,12 @@ function renderCards(data) {
     return `<div class="bg-gradient-to-br ${urgency} border rounded-2xl p-5 flex flex-col gap-3 glass-card-hover">
       <div class="flex items-start justify-between gap-2">
         <div class="min-w-0">
-          <p class="text-white font-semibold text-sm truncate">${i.name}</p>
-          <p class="text-slate-500 text-xs mt-0.5">${i.sku} · ${i.category}</p>
+          <p class="text-white font-semibold text-sm truncate">${esc(i.name)}</p>
+          <p class="text-slate-500 text-xs mt-0.5">${esc(i.sku)} · ${esc(i.category)}</p>
         </div>
         ${badge}
       </div>
-      <div class="flex flex-wrap gap-1"><span class="color-badge text-xs">${i.colorName}×${i.qty}</span></div>
+      <div class="flex flex-wrap gap-1"><span class="color-badge text-xs">${esc(i.colorName)}×${i.qty}</span></div>
       <a href="zm-panel.html" class="text-xs text-emerald-400 hover:text-emerald-300 mt-auto transition font-medium">Mark for upload →</a>
     </div>`;
   }).join('');

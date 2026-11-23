@@ -10,7 +10,7 @@
 //   never make sarees look missing.
 // ═══════════════════════════════════════════════════════════════
 
-import { normItemNo, normColorKey } from './utils.js';
+import { normItemNo, normColorKey, worstColorLevel } from './utils.js';
 import { CATEGORIES } from './constants.js';
 import { getStockData, getRecentHistory } from './firestore-service.js';
 
@@ -180,6 +180,24 @@ export function dayChangesLabel(day, date, fmt = (d) => d) {
   if (cats.length === CATS.length) return `Lehnga and saree uploaded on ${when} — each compared with its own previous upload`;
   const missing = CATS.filter(c => !cats.includes(c));
   return `Only ${cats.join(' and ')} uploaded on ${when} — ${missing.join(' and ')} not compared`;
+}
+
+/**
+ * Upload review: set one colour's pieces on the item with this stockKey
+ * (category + code, so lehnga 7002 and saree "7002 M" never mix). Colour
+ * matched case-insensitively, exactly as typed in the file. Returns the
+ * item (total and level recomputed) or null.
+ */
+export function setColourQty(items, key, colourName, value) {
+  const item = (items || []).find(i => stockKey(i.category, i.sku) === key);
+  if (!item) return null;
+  const qty = Math.max(0, parseInt(value, 10) || 0);
+  const want = String(colourName ?? '').toLowerCase();
+  const c = (item.colors || []).find(x => String(x.name).toLowerCase() === want);
+  if (c) c.qty = qty;
+  item.totalQty = (item.colors || []).reduce((t, x) => t + (Number(x.qty) || 0), 0);
+  item.stockLevel = worstColorLevel(item.colors || []);
+  return item;
 }
 
 /** Current stock: each category from its own latest upload. */

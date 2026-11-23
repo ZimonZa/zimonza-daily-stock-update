@@ -7,7 +7,7 @@ globalThis.window = globalThis;
 
 import { normItemNo } from './utils.js';
 import { parseStockFile } from './excel-parser.js';
-import { stockKey, mergeStockItems, indexStock, lookupKuntal, latestPerCategory, loadLatestStock, loadStockAsOf, loadDayChanges, changeSinceLast, clearStockCache, dayChangesLabel } from './stock-store.js';
+import { stockKey, mergeStockItems, indexStock, lookupKuntal, latestPerCategory, loadLatestStock, loadStockAsOf, loadDayChanges, changeSinceLast, clearStockCache, dayChangesLabel, setColourQty } from './stock-store.js';
 import { parseZMFile } from './excel-parser.js';
 import { resolveStock } from './myntra.js';
 import { analyzeStockChanges, sumSummaries } from './stock-analyzer.js';
@@ -227,6 +227,19 @@ eq('both files that day', dayChangesLabel({ categories: ['lehnga', 'saree'] }, '
 eq('one file that day', dayChangesLabel({ categories: ['lehnga'] }, '2026-11-22', fmtD),
   'Only lehnga uploaded on 22/11/2026 — saree not compared');
 eq('nothing that day', dayChangesLabel({ categories: [] }, '2026-11-23', fmtD), 'Nothing uploaded on 23/11/2026');
+
+// ════ 16. Upload review: editing a colour changes the right item ════
+// Lehnga 7002 and saree "7002 M" are both code 7002 — the review must not
+// edit one when the owner changes the other.
+{
+  const items = [item('lehnga', '7002', [['Pink', 4]]), item('saree', '7002', [['Pink', 3], ["D'Firozi", 2]])];
+  const got = setColourQty(items, stockKey('saree', '7002'), 'pink', '1');
+  eq('the saree changes', [got.category, got.totalQty, items[1].colors[0].qty], ['saree', 3, 1]);
+  eq('the lehnga with the same code does not', items[0].totalQty, 4);
+  eq("a colour with an apostrophe can be edited", setColourQty(items, stockKey('saree', '7002'), "D'Firozi", '5').totalQty, 6);
+  eq('negative or blank → 0', setColourQty(items, stockKey('lehnga', '7002'), 'Pink', '-3').totalQty, 0);
+  eq('unknown item → null', setColourQty(items, stockKey('saree', '9999'), 'Pink', '1'), null);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

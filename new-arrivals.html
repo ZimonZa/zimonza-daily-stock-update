@@ -62,7 +62,7 @@ import { getStockData, getAllUploadDates } from './js/firestore-service.js';
 import { analyzeStockChanges } from './js/stock-analyzer.js';
 import { loadDayChanges, dayChangesLabel } from './js/stock-store.js';
 import { CATEGORIES } from './js/constants.js';
-import { formatDateDisplay, formatNumber, debounce } from './js/utils.js';
+import { formatDateDisplay, formatNumber, debounce, escHtml as esc } from './js/utils.js';
 
 await requireAuth();
 renderShell('new-arrivals');
@@ -117,11 +117,11 @@ function renderTable(data) {
   document.getElementById('item-count').textContent = f.length + ' items';
   if (!f.length) { document.getElementById('table-container').innerHTML = '<p class="text-slate-500 text-sm text-center py-12">No new arrivals found.</p>'; return; }
   const rows = f.map(i=>{
-    const colors = (i.colors||[]).map(c=>`<span class="color-badge">${c.name}×${c.qty}</span>`).join(' ');
+    const colors = (i.colors||[]).map(c=>`<span class="color-badge">${esc(c.name)}×${c.qty}</span>`).join(' ');
     return `<tr class="border-t border-white/5 hover:bg-white/3 transition">
-      <td class="px-4 py-3 text-emerald-400 font-mono text-sm">${i.sku}</td>
-      <td class="px-4 py-3 text-slate-200 text-sm">${i.name}</td>
-      <td class="px-4 py-3"><span class="badge badge-info capitalize">${i.category}</span></td>
+      <td class="px-4 py-3 text-emerald-400 font-mono text-sm">${esc(i.sku)}</td>
+      <td class="px-4 py-3 text-slate-200 text-sm">${esc(i.name)}</td>
+      <td class="px-4 py-3"><span class="badge badge-info capitalize">${esc(i.category)}</span></td>
       <td class="px-4 py-3"><span class="change-new font-bold">+${i.totalQty} pcs</span></td>
       <td class="px-4 py-3"><div class="flex flex-wrap gap-1">${colors}</div></td>
     </tr>`;

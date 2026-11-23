@@ -158,7 +158,7 @@ import { getStockData, getAllUploadDates } from './js/firestore-service.js';
 import { analyzeStockChanges, findFastMovers, getTopColors } from './js/stock-analyzer.js';
 import { CATEGORIES } from './js/constants.js';
 import { loadDayChanges, stockDatesLabel } from './js/stock-store.js';
-import { formatDateDisplay } from './js/utils.js';
+import { formatDateDisplay, escHtml as esc } from './js/utils.js';
 
 await requireAuth();
 renderShell('reports');
@@ -193,8 +193,8 @@ async function loadAnalytics() {
           <div class="flex items-center gap-3">
             <span class="text-slate-600 text-xs w-4 text-right">${idx+1}</span>
             <div>
-              <p class="text-slate-200 text-sm font-medium">${i.name}</p>
-              <p class="text-slate-500 text-xs">${i.sku} · ${i.category}</p>
+              <p class="text-slate-200 text-sm font-medium">${esc(i.name)}</p>
+              <p class="text-slate-500 text-xs">${esc(i.sku)} · ${esc(i.category)}</p>
             </div>
           </div>
           <span class="change-sold text-xs">−${i.totalSold} pcs</span>
@@ -206,7 +206,7 @@ async function loadAnalytics() {
         <div class="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
           <div class="flex items-center gap-3">
             <span class="text-slate-600 text-xs w-4 text-right">${idx+1}</span>
-            <span class="color-badge">${c.name}</span>
+            <span class="color-badge">${esc(c.name)}</span>
           </div>
           <span class="text-red-400 text-sm font-semibold">−${c.totalSold} pcs</span>
         </div>`).join('')
@@ -268,9 +268,9 @@ function showPreview(report, title) {
   const rows = report.items.slice(0,20).map(i => {
     const lvlCls = {high:'level-high',medium:'level-medium',low:'level-low',sold_out:'level-sold_out'}[i.stockLevel]||'level-sold_out';
     return `<tr class="border-t border-white/5">
-      <td class="px-3 py-2 text-emerald-400 font-mono text-xs">${i.sku}</td>
-      <td class="px-3 py-2 text-slate-200 text-xs">${i.name}</td>
-      <td class="px-3 py-2"><span class="badge badge-info text-xs capitalize">${i.category}</span></td>
+      <td class="px-3 py-2 text-emerald-400 font-mono text-xs">${esc(i.sku)}</td>
+      <td class="px-3 py-2 text-slate-200 text-xs">${esc(i.name)}</td>
+      <td class="px-3 py-2"><span class="badge badge-info text-xs capitalize">${esc(i.category)}</span></td>
       <td class="px-3 py-2 text-white font-semibold text-xs">${i.totalQty}</td>
       <td class="px-3 py-2"><span class="${lvlCls} text-xs">${i.stockLevel.replace('_',' ')}</span></td>
     </tr>`;

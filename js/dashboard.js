@@ -18,7 +18,7 @@ import {
 } from './charts.js';
 import { CATEGORIES } from './constants.js';
 import { loadStockAsOf, loadDayChanges, allItemsOf } from './stock-store.js';
-import { formatDateDisplay, formatNumber, today, daysAgo, lowColorEntries } from './utils.js';
+import { formatDateDisplay, formatNumber, today, daysAgo, lowColorEntries, escHtml as esc } from './utils.js';
 
 let allItems = [];
 let analysisResult = null;
@@ -122,7 +122,7 @@ function renderKPIs(items, analysis, date, period = null) {
           </div>
         </div>
         <span class="text-3xl font-bold text-white">${k.value}</span>
-        <span class="text-slate-500 text-xs">${k.sub}</span>
+        <span class="text-slate-500 text-xs">${esc(k.sub)}</span>
       </div>
     </div>`;
   }).join('');
@@ -204,8 +204,8 @@ function renderActivityFeed(analysis) {
         <i data-lucide="${e.icon}" class="w-3.5 h-3.5 ${e.color}"></i>
       </div>
       <div class="flex-1 min-w-0">
-        <p class="text-slate-300 text-sm truncate">${e.text}</p>
-        <p class="text-slate-500 text-xs">${e.sub}</p>
+        <p class="text-slate-300 text-sm truncate">${esc(e.text)}</p>
+        <p class="text-slate-500 text-xs">${esc(e.sub)}</p>
       </div>
     </div>`).join('');
 }
@@ -223,8 +223,8 @@ function renderLowStockList(items) {
       <div class="flex items-center gap-3 min-w-0">
         <div class="w-2 h-2 rounded-full bg-red-400 flex-shrink-0"></div>
         <div class="min-w-0">
-          <p class="text-slate-200 text-sm font-medium truncate">${i.name}</p>
-          <p class="text-slate-500 text-xs">${i.sku} · ${i.colorName}</p>
+          <p class="text-slate-200 text-sm font-medium truncate">${esc(i.name)}</p>
+          <p class="text-slate-500 text-xs">${esc(i.sku)} · ${esc(i.colorName)}</p>
         </div>
       </div>
       <span class="level-low ml-2 flex-shrink-0">${i.qty} pcs</span>
@@ -242,8 +242,8 @@ function renderNewArrivalsSummary(arrivals) {
   el.innerHTML = list.map(i=>`
     <div class="flex items-center justify-between py-2.5 border-b border-white/5 last:border-0">
       <div class="min-w-0">
-        <p class="text-slate-200 text-sm font-medium truncate">${i.name}</p>
-        <p class="text-slate-500 text-xs">${i.sku} · ${i.category}</p>
+        <p class="text-slate-200 text-sm font-medium truncate">${esc(i.name)}</p>
+        <p class="text-slate-500 text-xs">${esc(i.sku)} · ${esc(i.category)}</p>
       </div>
       <span class="change-new ml-2 flex-shrink-0">${i.totalQty} pcs</span>
     </div>`).join('');

@@ -73,7 +73,7 @@ import { requireAuth } from './js/auth.js';
 import { renderShell } from './js/ui-components.js';
 import notify from './js/notifications.js';
 import { loadSkipPanelData, unskipProduct } from './js/skip-manager.js';
-import { debounce } from './js/utils.js';
+import { debounce, escHtml as esc } from './js/utils.js';
 
 await requireAuth();
 renderShell('skip-panel');
@@ -112,11 +112,11 @@ function renderTable(data) {
   }[l]||'—');
 
   const rows = f.map(i => {
-    const colors = (i.colors||[]).slice(0,3).map(c=>`<span class="color-badge">${c.name}×${c.qty}</span>`).join(' ');
+    const colors = (i.colors||[]).slice(0,3).map(c=>`<span class="color-badge">${esc(c.name)}×${c.qty}</span>`).join(' ');
     const skippedAt = i.skippedAt?.toDate ? i.skippedAt.toDate().toLocaleDateString('en-IN') : '—';
     return `<tr class="border-t border-white/5 hover:bg-white/3 transition">
-      <td class="px-4 py-3 text-emerald-400 font-mono text-sm">${i.sku}</td>
-      <td class="px-4 py-3 text-slate-200 text-sm">${i.name}</td>
+      <td class="px-4 py-3 text-emerald-400 font-mono text-sm">${esc(i.sku)}</td>
+      <td class="px-4 py-3 text-slate-200 text-sm">${esc(i.name)}</td>
       <td class="px-4 py-3"><span class="badge badge-info capitalize">${i.category||'—'}</span></td>
       <td class="px-4 py-3">${lvlChip(i.stockLevel)}</td>
       <td class="px-4 py-3 text-white font-semibold">${i.totalQty}</td>
@@ -125,7 +125,7 @@ function renderTable(data) {
       <td class="px-4 py-3 text-slate-500 text-xs">${skippedAt}</td>
       <td class="px-4 py-3">
         <button class="unskip-btn text-xs text-amber-400 hover:text-amber-300 font-medium transition border border-amber-500/20 px-3 py-1 rounded-lg hover:bg-amber-500/10"
-          data-sku="${i.sku}">
+          data-sku="${esc(i.sku)}">
           Remove Skip
         </button>
       </td>

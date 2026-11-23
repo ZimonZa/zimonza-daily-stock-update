@@ -61,7 +61,7 @@ import notify from './js/notifications.js';
 import { getStockData, getAllUploadDates } from './js/firestore-service.js';
 import { CATEGORIES } from './js/constants.js';
 import { loadStockAsOf, loadDayChanges, allItemsOf, stockDatesLabel } from './js/stock-store.js';
-import { formatDateDisplay, debounce } from './js/utils.js';
+import { formatDateDisplay, debounce, escHtml as esc } from './js/utils.js';
 
 await requireAuth();
 renderShell('sold-out');
@@ -110,9 +110,9 @@ function renderTable(data) {
   document.getElementById('item-count').textContent = f.length + ' items';
   if (!f.length) { document.getElementById('table-container').innerHTML = '<p class="text-slate-500 text-sm text-center py-12">No sold-out items found.</p>'; return; }
   const rows = f.map(i=>`<tr class="border-t border-white/5 hover:bg-white/3 transition">
-    <td class="px-4 py-3 text-emerald-400 font-mono text-sm">${i.sku}</td>
-    <td class="px-4 py-3 text-slate-200 text-sm">${i.name}</td>
-    <td class="px-4 py-3"><span class="badge badge-info capitalize">${i.category}</span></td>
+    <td class="px-4 py-3 text-emerald-400 font-mono text-sm">${esc(i.sku)}</td>
+    <td class="px-4 py-3 text-slate-200 text-sm">${esc(i.name)}</td>
+    <td class="px-4 py-3"><span class="badge badge-info capitalize">${esc(i.category)}</span></td>
     <td class="px-4 py-3"><span class="change-soldout font-bold">Sold Out</span></td>
     <td class="px-4 py-3 text-slate-500 text-xs">${(i.colors||[]).map(c=>c.name).join(', ')||'—'}</td>
   </tr>`).join('');

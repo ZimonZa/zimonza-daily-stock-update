@@ -272,9 +272,9 @@ import notify from './js/notifications.js';
 import { readExcelFile, parseStockFile, validateStockFile, getFileSummary } from './js/excel-parser.js';
 import { analyzeStockChanges } from './js/stock-analyzer.js';
 import { replaceStockData, saveDailySummary, getStockData, getAllUploadDates, saveUploadHistory, getRecentHistory } from './js/firestore-service.js';
-import { latestPerCategory } from './js/stock-store.js';
+import { latestPerCategory, stockKey, setColourQty } from './js/stock-store.js';
 import { CATEGORIES } from './js/constants.js';
-import { today, formatDate, formatDateDisplay, formatNumber, worstColorLevel } from './js/utils.js';
+import { today, formatDate, formatDateDisplay, formatNumber, worstColorLevel, escHtml as esc } from './js/utils.js';
 
 await requireAuth();
 renderShell('upload');
@@ -353,7 +353,7 @@ async function handleFile(file, category, zone, fileId) {
   // Show loading state
   zone.innerHTML = `<div class="flex flex-col items-center gap-2 py-2">
     <div class="spinner"></div>
-    <p class="text-slate-400 text-xs">Parsing ${file.name}…</p>
+    <p class="text-slate-400 text-xs">Parsing ${esc(file.name)}…</p>
   </div>`;
 
   try {
@@ -473,7 +473,7 @@ function updateErrorPanel() {
           <td class="px-4 py-3">
             ${e.category === 'both'
               ? `<span class="px-2 py-0.5 rounded-full text-xs bg-purple-500/10 text-purple-400">lehnga</span> <span class="px-2 py-0.5 rounded-full text-xs bg-teal-500/10 text-teal-400">saree</span>`
-              : `<span class="px-2 py-0.5 rounded-full text-xs ${e.category === 'lehnga' ? 'bg-purple-500/10 text-purple-400' : 'bg-teal-500/10 text-teal-400'}">${e.category}</span>`}
+              : `<span class="px-2 py-0.5 rounded-full text-xs ${e.category === 'lehnga' ? 'bg-purple-500/10 text-purple-400' : 'bg-teal-500/10 text-teal-400'}">${esc(e.category)}</span>`}
           </td>
         </tr>`).join('');
 
@@ -481,10 +481,10 @@ function updateErrorPanel() {
     ? `<tr><td colspan="6" class="px-4 py-6 text-center text-slate-500 text-xs">No balance piece mismatches detected</td></tr>`
     : balMismatches.map(m => `
         <tr class="border-b border-white/5 hover:bg-white/3 transition">
-          <td class="px-4 py-3 font-mono text-xs text-slate-300">${m.sku}</td>
-          <td class="px-4 py-3 text-slate-400 text-xs" style="max-width:10rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${m.name}">${m.name}</td>
+          <td class="px-4 py-3 font-mono text-xs text-slate-300">${esc(m.sku)}</td>
+          <td class="px-4 py-3 text-slate-400 text-xs" style="max-width:10rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(m.name)}">${esc(m.name)}</td>
           <td class="px-4 py-3">
-            <span class="px-2 py-0.5 rounded-full text-xs ${m.category === 'lehnga' ? 'bg-purple-500/10 text-purple-400' : 'bg-teal-500/10 text-teal-400'}">${m.category}</span>
+            <span class="px-2 py-0.5 rounded-full text-xs ${m.category === 'lehnga' ? 'bg-purple-500/10 text-purple-400' : 'bg-teal-500/10 text-teal-400'}">${esc(m.category)}</span>
           </td>
           <td class="px-4 py-3 text-right text-slate-300 text-xs font-mono">${m.parsedTotal}</td>
           <td class="px-4 py-3 text-right text-slate-300 text-xs font-mono">${m.rowBalPcs}</td>
@@ -677,14 +677,13 @@ function renderReviewItem(item, type) {
   const locChips = Object.entries(locs)
     .map(([loc, colors]) => {
       const total = colors.reduce((s, c) => s + c.qty, 0);
-      return total > 0 ? `<span class="review-loc-chip">${loc}: ${total}</span>` : '';
+      return total > 0 ? `<span class="review-loc-chip">${esc(loc)}: ${total}</span>` : '';
     }).filter(Boolean).join('');
 
   const colorInputs = (item.colors || []).map(c => `
     <div class="flex items-center gap-3 py-1.5">
-      <span class="text-slate-300 text-sm w-32 truncate">${c.name}</span>
-      <input type="number" min="0" value="${c.qty}" class="review-qty-input"
-        oninput="updateApprovedQty('${item.sku}','${c.name.replace(/'/g,"\\'")}',this.value)">
+      <span class="text-slate-300 text-sm w-32 truncate">${esc(c.name)}</span>
+      <input type="number" min="0" value="${Number(c.qty) || 0}" class="review-qty-input" data-colour="${esc(c.name)}">
       <span class="text-slate-500 text-xs">pcs</span>
     </div>`).join('');
 
@@ -692,51 +691,51 @@ function renderReviewItem(item, type) {
   const currQ = item.currQty ?? item.totalQty;
 
   return `
-    <div class="review-item px-5 py-4" id="review-item-${item.sku}">
+    <div class="review-item px-5 py-4" data-key="${esc(stockKey(item.category, item.sku))}">
       <div class="flex items-start gap-3 flex-wrap">
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 mb-1 flex-wrap">
-            <span class="font-mono text-emerald-400 font-bold text-sm">${item.sku}</span>
-            <span class="text-slate-500 text-xs capitalize">${item.category}</span>
+            <span class="font-mono text-emerald-400 font-bold text-sm">${esc(item.sku)}</span>
+            <span class="text-slate-500 text-xs capitalize">${esc(item.category)}</span>
           </div>
-          <p class="text-slate-200 text-sm font-medium">${item.name}</p>
+          <p class="text-slate-200 text-sm font-medium">${esc(item.name)}</p>
           <div class="flex flex-wrap gap-1.5 mt-1.5">${locChips}</div>
         </div>
         <div class="text-right flex-shrink-0">
           <p class="text-white font-bold">${prevQ} → ${currQ} pcs</p>
           <div>${deltaStr}</div>
         </div>
-        <button onclick="toggleReviewEdit('${item.sku}')"
+        <button type="button" data-review-edit
           class="btn-secondary text-xs py-1.5 px-3 flex-shrink-0 flex items-center gap-1.5">
           <i data-lucide="edit-2" class="w-3 h-3"></i> Edit
         </button>
       </div>
-      <div id="edit-panel-${item.sku}" class="hidden mt-4 pt-4 border-t border-white/5">
+      <div class="review-edit-panel hidden mt-4 pt-4 border-t border-white/5">
         <p class="text-slate-500 text-xs mb-3">Adjust quantities per color:</p>
         ${colorInputs}
         <p class="text-slate-400 text-xs mt-3">
-          New Total: <span id="edit-total-${item.sku}" class="text-white font-semibold">${item.totalQty}</span> pcs
+          New Total: <span class="review-edit-total text-white font-semibold">${item.totalQty}</span> pcs
         </p>
       </div>
     </div>`;
 }
 
-window.toggleReviewEdit = function(sku) {
-  document.getElementById(`edit-panel-${sku}`).classList.toggle('hidden');
-  if (window.lucide) lucide.createIcons();
-};
-
-window.updateApprovedQty = function(sku, colorName, val) {
-  const qty = Math.max(0, parseInt(val, 10) || 0);
-  const item = approvedItems.find(i => i.sku === sku);
-  if (!item) return;
-  const c = item.colors.find(c => c.name.toLowerCase() === colorName.toLowerCase());
-  if (c) c.qty = qty;
-  item.totalQty   = item.colors.reduce((s, c) => s + c.qty, 0);
-  item.stockLevel = worstColorLevel(item.colors);
-  const el = document.getElementById(`edit-total-${sku}`);
-  if (el) el.textContent = item.totalQty;
-};
+// Review edits: one listener, the item found by category + code (was an
+// inline handler built from the code — an apostrophe in a code or colour
+// broke it, and lehnga 7002 / saree "7002 M" shared one row id).
+const reviewPanel = document.getElementById('review-panel');
+reviewPanel.addEventListener('click', e => {
+  const btn = e.target.closest('[data-review-edit]');
+  if (!btn) return;
+  btn.closest('.review-item').querySelector('.review-edit-panel').classList.toggle('hidden');
+});
+reviewPanel.addEventListener('input', e => {
+  const input = e.target.closest('.review-qty-input');
+  if (!input) return;
+  const row = input.closest('.review-item');
+  const item = setColourQty(approvedItems, row.dataset.key, input.dataset.colour, input.value);
+  if (item) row.querySelector('.review-edit-total').textContent = item.totalQty;
+});
 
 document.getElementById('approve-btn').addEventListener('click', async () => {
   document.getElementById('review-panel').classList.add('hidden');

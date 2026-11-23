@@ -74,6 +74,15 @@ export function parseColors(colorStr) {
 export const normColorKey = (s) => String(s ?? '').toLowerCase().trim().replace(/\s+/g, ' ');
 
 /**
+ * Text → safe HTML. Stock-file codes, names, colours and file names go into
+ * pages as HTML; a quote, apostrophe or < must show as text, never as markup
+ * (also safe inside "…" and '…' attribute values).
+ */
+export const escHtml = (s) => String(s ?? '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+/**
  * Canonical item number — drops trailing dots/spaces ("3121." → "3121")
  * while preserving meaningful suffixes like "(UNST)".
  */
