@@ -2,20 +2,24 @@
 // ZIMONZA — Report Generator (PDF, Excel, CSV)
 // ═══════════════════════════════════════════════════════════════
 
-import { getStockData, getAllUploadDates, getDailySummary } from './firestore-service.js';
+import { getAllUploadDates, getDailySummary } from './firestore-service.js';
+import { loadStockAsOf, allItemsOf } from './stock-store.js';
 import { computeStockHealth } from './stock-analyzer.js';
-import { CATEGORIES } from './constants.js';
 import { formatDateDisplay, toCSV, downloadFile, itemStockLevel } from './utils.js';
 
-/** Generate daily stock report data */
-export async function generateDailyReport(date) {
-  const [lehnga, saree, summary] = await Promise.all([
-    getStockData(date, CATEGORIES.LEHNGA),
-    getStockData(date, CATEGORIES.SAREE),
-    getDailySummary(date)
+/**
+ * Daily stock report data: stock as of `date`, each category from its own
+ * last upload on or before it (a lehnga-only day still lists the sarees),
+ * "9551 M" / "9551" merged. `deps` lets tests pass their own loaders.
+ */
+export async function generateDailyReport(date, deps = {}) {
+  const { getSummary = getDailySummary, ...loaders } = deps;
+  const [stock, summary] = await Promise.all([
+    loadStockAsOf({ asOf: date, ...loaders }),
+    getSummary(date)
   ]);
   // Recompute levels per worst colour so old Firestore docs report correctly
-  const items = [...lehnga, ...saree].map(i => ({ ...i, stockLevel: itemStockLevel(i) }));
+  const items = allItemsOf(stock).map(i => ({ ...i, stockLevel: itemStockLevel(i) }));
   const health = computeStockHealth(items);
 
   return {
@@ -24,6 +28,7 @@ export async function generateDailyReport(date) {
     items,
     summary: summary || {},
     health,
+    stockDates: { lehnga: stock.lehnga.date, saree: stock.saree.date },
     totalSKUs: items.length,
     totalPcs: items.reduce((s, i) => s + (i.totalQty || 0), 0)
   };

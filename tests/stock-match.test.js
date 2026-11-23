@@ -13,6 +13,7 @@ import { resolveStock } from './myntra.js';
 import { analyzeStockChanges, sumSummaries } from './stock-analyzer.js';
 import { staleStockIds } from './firestore-service.js';
 import { buildZMProduct } from './zm-mapper.js';
+import { generateDailyReport } from './report-generator.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => {
@@ -202,6 +203,21 @@ eq('chosen category is used', buildZMProduct({ zmCode: 'ZM-32', kuntalCode: '304
   clearStockCache();
   await loadStockAsOf({ asOf: '2026-11-21', listHistory, getStock });
   eq('clearStockCache reads again', reads.history, 2);
+}
+
+// ════ 14. Daily report = stock as of that date, each category its own upload ════
+{
+  const listHistory = async () => [{ date: '2026-11-21', lehngaCount: 1, sareeCount: 2 }, { date: '2026-11-22', lehngaCount: 1, sareeCount: 0 }];
+  const files = {
+    '2026-11-21|lehnga': [item('lehnga', '4132', [['Rani', 5]])],
+    '2026-11-21|saree': [item('saree', '9551 M', [['Pink', 2]]), item('saree', '9551', [['Rani', 1]])],
+    '2026-11-22|lehnga': [item('lehnga', '4132', [['Rani', 4]])]
+  };
+  const getStock = async (d, c) => files[`${d}|${c}`] || [];
+  const rep = await generateDailyReport('2026-11-22', { listHistory, getStock, getSummary: async () => null });
+  eq('lehnga-only day still reports the sarees from their last upload', rep.items.map(i => `${i.category} ${i.sku} ${i.totalQty}`).sort(), ['lehnga 4132 4', 'saree 9551 3']);
+  eq('report says which upload each category is from', rep.stockDates, { lehnga: '2026-11-22', saree: '2026-11-21' });
+  eq('totals follow', [rep.totalSKUs, rep.totalPcs], [2, 7]);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
