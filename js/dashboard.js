@@ -9,7 +9,7 @@ import {
   getUploadHistory
 } from './firestore-service.js';
 import {
-  analyzeStockChanges, computeColorHealth, findFastMovers
+  analyzeStockChanges, computeColorHealth, findFastMovers, sumSummaries
 } from './stock-analyzer.js';
 import {
   renderSalesTrendChart, renderStockHealthChart,
@@ -74,18 +74,28 @@ async function loadDashboard(date) {
   }
 }
 
-function renderKPIs(items, analysis, date) {
+/**
+ * @param period null for one upload day, or { days, uploads, missing } when
+ *   the change tiles show totals over the last N days (stock tiles stay latest)
+ */
+function renderKPIs(items, analysis, date, period = null) {
   // Health counts individual colours, not product totals
   const health = computeColorHealth(items);
   const { summary } = analysis;
+  const zeroNow = formatNumber(items.filter(i => (i.totalQty || 0) === 0).length);
+  const over = period
+    ? ` over ${period.uploads} upload${period.uploads === 1 ? '' : 's'}${period.missing ? ` (${period.missing} not summarised)` : ''}`
+    : '';
+  const tag = period ? ` · ${period.days} days` : '';
 
   const kpis = [
     { label: 'Total SKUs', value: formatNumber(items.length), icon: 'package', color: 'emerald', sub: `As of ${formatDateDisplay(date)}` },
     { label: 'Total Pieces', value: formatNumber(items.reduce((s,i)=>s+(i.totalQty||0),0)), icon: 'layers', color: 'blue', sub: 'All locations combined' },
-    { label: 'Sold Today', value: formatNumber(summary.totalSoldPcs || 0), icon: 'trending-down', color: 'red', sub: `${summary.soldCount} SKUs affected` },
-    { label: 'Restocked', value: formatNumber(summary.totalRestockedPcs || 0), icon: 'refresh-cw', color: 'amber', sub: `${summary.restockedCount} SKUs restocked` },
-    { label: 'New Arrivals', value: formatNumber(summary.newArrivalsCount || 0), icon: 'sparkles', color: 'purple', sub: 'New SKUs detected' },
-    { label: 'Sold Out', value: formatNumber(summary.soldOutCount || 0), icon: 'x-circle', color: 'red', sub: 'Zero quantity' },
+    { label: period ? `Sold${tag}` : (date === allDates[0] ? 'Sold Today' : `Sold on ${formatDateDisplay(date).slice(0, 5)}`), value: formatNumber(summary.totalSoldPcs || 0), icon: 'trending-down', color: 'red', sub: period ? `${formatNumber(summary.soldCount)} item sales${over}` : `${summary.soldCount} SKUs affected` },
+    { label: `Restocked${tag}`, value: formatNumber(summary.totalRestockedPcs || 0), icon: 'refresh-cw', color: 'amber', sub: period ? `${formatNumber(summary.restockedCount)} item restocks${over}` : `${summary.restockedCount} SKUs restocked` },
+    { label: `New Arrivals${tag}`, value: formatNumber(summary.newArrivalsCount || 0), icon: 'sparkles', color: 'purple', sub: period ? `New SKUs${over}` : 'New SKUs detected' },
+    // Ran out on this upload (or period); the Sold Out page lists every item at 0
+    { label: `Sold Out${tag}`, value: formatNumber(summary.soldOutCount || 0), icon: 'x-circle', color: 'red', sub: `Ran out ${period ? `in ${period.days} days` : 'since last upload'} · ${zeroNow} item${zeroNow === '1' ? '' : 's'} at 0` },
     { label: 'Low Stock', value: formatNumber(health.low || 0), icon: 'alert-triangle', color: 'amber', sub: 'Colours running low' },
     { label: 'Medium Stock', value: formatNumber(health.medium || 0), icon: 'minus-circle', color: 'blue', sub: 'Colours at medium level' },
     { label: 'High Stock', value: formatNumber(health.high || 0), icon: 'check-circle', color: 'emerald', sub: 'Colours well stocked' },
@@ -256,6 +266,27 @@ function updateDateLabel(date) {
   if (el) el.textContent = formatDateDisplay(date);
 }
 
+/** ISO date `days - 1` days before `iso` (so the period includes `iso`). */
+function periodStart(iso, days) {
+  const d = new Date(iso + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() - (days - 1));
+  return d.toISOString().slice(0, 10);
+}
+
+/** Change tiles → totals over the last `days` days, from each upload's saved summary. */
+async function showPeriodTotals(days) {
+  const latest = allDates[0];
+  if (!latest || !analysisResult) return;
+  const from = periodStart(latest, days);
+  const dates = allDates.filter(d => d >= from && d <= latest);
+  const summaries = await Promise.all(dates.map(d => getDailySummary(d).catch(() => null)));
+  const totals = sumSummaries(summaries);
+  renderKPIs(allItems, { summary: totals }, latest, { days, uploads: dates.length, missing: totals.missing });
+  const label = document.getElementById('dashboard-date-label');
+  if (label) label.textContent = `${formatDateDisplay(latest)} · totals ${formatDateDisplay(from)} – ${formatDateDisplay(latest)}`;
+  if (window.lucide) lucide.createIcons();
+}
+
 function bindFilters() {
   document.querySelectorAll('.quick-date-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -267,12 +298,14 @@ function bindFilters() {
       btn.classList.add('bg-emerald-500/20', 'text-emerald-400', 'border-emerald-500/30');
 
       const range = btn.dataset.range;
-      let targetDate;
-      if (range === 'today')     targetDate = allDates[0];
-      else if (range === 'yesterday') targetDate = allDates[1] || allDates[0];
-      else if (range === 'last7')     targetDate = allDates[Math.min(6, allDates.length - 1)];
-      else if (range === 'last30')    targetDate = allDates[Math.min(29, allDates.length - 1)];
-
+      // Was: Last 7 / Last 30 jumped to ONE older upload day and showed only
+      // that day. Now: latest stock + totals of every upload in the period.
+      if (range === 'last7' || range === 'last30') {
+        await loadDashboard(allDates[0]);
+        await showPeriodTotals(range === 'last7' ? 7 : 30);
+        return;
+      }
+      const targetDate = range === 'yesterday' ? (allDates[1] || allDates[0]) : allDates[0];
       if (targetDate) await loadDashboard(targetDate);
     });
   });

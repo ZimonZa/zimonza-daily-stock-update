@@ -176,6 +176,23 @@ export function analyzeStockChanges(currentItemsIn, previousItemsIn, { categorie
 }
 
 /**
+ * Totals over a period from the summaries each upload saved (one small read
+ * per day instead of re-reading every stock file). `null` = a day with no
+ * saved summary; counted in `missing`.
+ */
+export function sumSummaries(summaries) {
+  const keys = ['totalSoldPcs', 'soldCount', 'totalRestockedPcs', 'restockedCount', 'newArrivalsCount', 'soldOutCount'];
+  const out = Object.fromEntries(keys.map(k => [k, 0]));
+  out.days = 0; out.missing = 0;
+  for (const s of summaries || []) {
+    if (!s) { out.missing++; continue; }
+    out.days++;
+    for (const k of keys) out[k] += Number(s[k]) || 0;
+  }
+  return out;
+}
+
+/**
  * Compute stock health metrics from items
  */
 export function computeStockHealth(items) {

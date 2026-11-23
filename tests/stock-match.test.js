@@ -10,7 +10,7 @@ import { parseStockFile } from './excel-parser.js';
 import { stockKey, mergeStockItems, indexStock, lookupKuntal, latestPerCategory, loadLatestStock, loadStockAsOf, loadDayChanges, changeSinceLast } from './stock-store.js';
 import { parseZMFile } from './excel-parser.js';
 import { resolveStock } from './myntra.js';
-import { analyzeStockChanges } from './stock-analyzer.js';
+import { analyzeStockChanges, sumSummaries } from './stock-analyzer.js';
 import { staleStockIds } from './firestore-service.js';
 
 let pass = 0, fail = 0;
@@ -162,6 +162,16 @@ const ch = changeSinceLast(
 eq('fewer pieces than last upload', ch.get(stockKey('saree', '9551')), -2);
 eq('no change', ch.get(stockKey('lehnga', '4132')), 0);
 eq('a new item is marked new', ch.get(stockKey('saree', '7777')), 'new');
+
+// ════ 11. Dashboard period totals from the daily summaries ════
+const per = sumSummaries([
+  { totalSoldPcs: 116, soldCount: 56, totalRestockedPcs: 149, restockedCount: 44, newArrivalsCount: 3, soldOutCount: 2 },
+  null,
+  { totalSoldPcs: 4, soldCount: 2, totalRestockedPcs: 0, restockedCount: 0, newArrivalsCount: 1, soldOutCount: 0 }
+]);
+eq('period totals add up every saved day', [per.totalSoldPcs, per.soldCount, per.totalRestockedPcs, per.restockedCount, per.newArrivalsCount, per.soldOutCount], [120, 58, 149, 44, 4, 2]);
+eq('days with and without a saved summary are counted', [per.days, per.missing], [2, 1]);
+eq('nothing saved → zeros', sumSummaries([]).totalSoldPcs, 0);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
