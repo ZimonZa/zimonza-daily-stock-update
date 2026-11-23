@@ -15,6 +15,7 @@ import { swatchFor, luminance } from './swatches.js';
 import { fileStem, classifySize, classifyText, classifyPdf, buildGroups, mergedFileName, byFileName, copyIndex } from './pdf-merge.js';
 import { PURCHASE_DOC_TYPES, PURCHASE_ONLY_DOC_TYPES, isReturnDocType, isStockReturn, RETURN_TYPES } from './constants.js';
 import { keyFromSellerSku, skuKey } from './myntra-labels.js';
+import { datedExportName } from './pdf-to-excel.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => {
@@ -190,6 +191,14 @@ const groups = buildGroups([
   { fileName: 'c.pdf', pages: [], unreadable: true, decision: null }
 ]);
 eq('nothing is lost in grouping', groups.reduce((s, g) => s + g.pageCount, 0), 5);
+
+// ════ PDF → Excel: the export carries the stock date picked ════
+eq('Excel named with the date, day first', datedExportName('Saree', '2026-11-21', 'xlsx'), 'Saree_21-11-2026.xlsx');
+eq('CSV of one page', datedExportName('Saree', '2026-11-21', 'csv', 3), 'Saree_21-11-2026-page3.csv');
+const now = new Date(); const pad = n => String(n).padStart(2, '0');
+eq('no date picked → today, local', datedExportName('Lehenga Choli', '', 'xlsx'),
+  `Lehenga Choli_${pad(now.getDate())}-${pad(now.getMonth() + 1)}-${now.getFullYear()}.xlsx`);
+eq('an impossible date falls back to today too', datedExportName('S', '2026-02-30', 'xlsx').slice(0, 2), 'S_');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -47,6 +47,13 @@
 
  <div id="tab-convert" class="space-y-6">
 
+  <!-- The stock date this PDF is for: it goes into the exported file names -->
+  <div class="flex flex-wrap items-center gap-3 p-3 rounded-xl border border-white/10 bg-white/[0.03]">
+    <label for="pdf-stock-date" class="text-slate-400 text-xs font-semibold uppercase tracking-wide">Stock date</label>
+    <input id="pdf-stock-date" type="date" class="zm-input w-44">
+    <span class="text-slate-500 text-xs">Exports are named with this date, e.g. <span id="pdf-name-example" class="text-slate-300 font-mono">Saree_21-11-2026.xlsx</span></span>
+  </div>
+
   <!-- Upload Zone -->
   <div id="upload-section">
     <div id="drop-zone"
@@ -169,7 +176,8 @@
 import { requireAuth } from './js/auth.js';
 import { renderShell } from './js/ui-components.js';
 import notify from './js/notifications.js';
-import { convertPdfToGrid } from './js/pdf-to-excel.js';
+import { convertPdfToGrid, datedExportName } from './js/pdf-to-excel.js';
+import { today as todayIso } from './js/utils.js';
 import {
   describePdf, classifyPdf, buildGroups, mergeGroup, mergedFileName,
   downloadPdfBytes, groupLabel, byFileName, GROUPS, UNSORTED
@@ -186,6 +194,17 @@ let result = null;        // { mode, headers, pages, totalRows, dataCount }
 let activePage = 0;
 let sheetMode = 'single';
 let fileBaseName = 'converted';
+
+// Stock date: starts on today, never in the future; shown in the file names
+const stockDateEl = document.getElementById('pdf-stock-date');
+stockDateEl.value = todayIso();
+stockDateEl.max = todayIso();
+const showNameExample = () => {
+  document.getElementById('pdf-name-example').textContent = datedExportName(fileBaseName === 'converted' ? 'Saree' : fileBaseName, stockDateEl.value, 'xlsx');
+};
+stockDateEl.addEventListener('change', showNameExample);
+stockDateEl.addEventListener('input', showNameExample);
+showNameExample();
 
 // ─── DOM refs ────────────────────────────────────────────────
 const dropZone      = document.getElementById('drop-zone');
@@ -230,6 +249,7 @@ async function handleFile(file) {
     return;
   }
   fileBaseName = file.name.replace(/\.pdf$/i, '') || 'converted';
+  showNameExample();
 
   dropZone.classList.add('hidden');
   warnBanner.classList.add('hidden');
@@ -462,7 +482,7 @@ exportXlsxBtn.addEventListener('click', async () => {
     const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `${fileBaseName}.xlsx`; a.click();
+    a.href = url; a.download = datedExportName(fileBaseName, stockDateEl.value, 'xlsx'); a.click();
     URL.revokeObjectURL(url);
     notify.success('Excel downloaded');
   } catch (e) {
@@ -484,7 +504,7 @@ exportCsvBtn.addEventListener('click', () => {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${fileBaseName}-page${result.pages[activePage]?.pageNum || 1}.csv`;
+  a.download = datedExportName(fileBaseName, stockDateEl.value, 'csv', result.pages[activePage]?.pageNum || 1);
   a.click();
   URL.revokeObjectURL(url);
   notify.success('CSV downloaded');
