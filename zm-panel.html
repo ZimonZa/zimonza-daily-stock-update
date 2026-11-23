@@ -213,7 +213,7 @@ import { bindSampleLinks } from './js/sample-files.js';
 import notify from './js/notifications.js';
 import { loadZMPanelData, setUploadStatus } from './js/zm-mapper.js';
 import { skipProduct } from './js/skip-manager.js';
-import { debounce, toCSV, downloadFile, normColorKey, relativeTime } from './js/utils.js';
+import { debounce, toCSV, downloadFile, normColorKey, relativeTime, normItemNo } from './js/utils.js';
 import { readExcelFile, parseZMFile, validateZMFile } from './js/excel-parser.js';
 import { saveZMMapping, getAllZMMappings, setZMCategory } from './js/firestore-service.js';
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -308,7 +308,8 @@ window.resetZMDropGlobal = resetZMDrop;
 // ── ZM Manager: Manual Entry ──────────────────────────────────
 window.addManualMapping = async function() {
   const zmCode     = document.getElementById('manual-zm-code').value.trim();
-  const kuntalCode = document.getElementById('manual-kuntal-code').value.trim();
+  // Clean like the file upload does: "3044." / "9551 M" → the code itself
+  const kuntalCode = normItemNo(document.getElementById('manual-kuntal-code').value);
   if (!zmCode || !kuntalCode) { notify.error('Both ZM Code and Kuntal Code are required'); return; }
   const btn = document.getElementById('manual-add-btn');
   btn.disabled = true;
@@ -696,7 +697,7 @@ document.getElementById('modal-save').addEventListener('click', async () => {
   saveBtn.disabled = true;
   try {
     const chosen = document.getElementById('modal-category').value;
-    if (chosen !== (activeProduct.chosenCategory || '')) await setZMCategory(activeSku, chosen);
+    if (chosen !== (activeProduct.chosenCategory || '')) await setZMCategory(activeProduct.docId ?? activeSku, chosen);
     await setUploadStatus(activeSku, status, notes, uploadedColors);
     if (status === 'skipped') await skipProduct(activeSku, notes);
     notify.success('Status updated!');

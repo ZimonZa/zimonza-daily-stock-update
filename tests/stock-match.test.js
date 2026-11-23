@@ -12,6 +12,7 @@ import { parseZMFile } from './excel-parser.js';
 import { resolveStock } from './myntra.js';
 import { analyzeStockChanges, sumSummaries } from './stock-analyzer.js';
 import { staleStockIds } from './firestore-service.js';
+import { buildZMProduct } from './zm-mapper.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => {
@@ -172,6 +173,16 @@ const per = sumSummaries([
 eq('period totals add up every saved day', [per.totalSoldPcs, per.soldCount, per.totalRestockedPcs, per.restockedCount, per.newArrivalsCount, per.soldOutCount], [120, 58, 149, 44, 4, 2]);
 eq('days with and without a saved summary are counted', [per.days, per.missing], [2, 1]);
 eq('nothing saved → zeros', sumSummaries([]).totalSoldPcs, 0);
+
+// ════ 12. A ZM row remembers the id its mapping is stored under ════
+// Saved by hand as "3044." (as the saree file prints it): choosing Lehnga
+// must write to that document, not to a new "3044" one.
+const zmIdx = indexStock({ lehnga: [item('lehnga', '3044', [['Rani', 2]])], saree: [item('saree', '3044', [['Pink', 5]])] });
+const zp = buildZMProduct({ zmCode: 'ZM-32', kuntalCode: '3044.' }, {}, zmIdx);
+eq('row shows the clean code', zp.kuntalCode, '3044');
+eq('row keeps the stored document id', zp.docId, '3044.');
+eq('code in both files is a clash', zp.clash, true);
+eq('chosen category is used', buildZMProduct({ zmCode: 'ZM-32', kuntalCode: '3044', category: 'lehnga' }, {}, zmIdx).totalQty, 2);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

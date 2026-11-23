@@ -24,34 +24,7 @@ export async function loadZMPanelData() {
   const latestDate = [current.lehnga.date, current.saree.date].filter(Boolean).sort().pop() || null;
 
   // Merge data
-  const products = mappings.map(m => {
-    const sku = normItemNo(m.kuntalCode);
-    const hit = lookupKuntal(m.kuntalCode, m.category || '', index);
-    const stock = hit.stock;
-    const status = statuses[String(m.kuntalCode)] || statuses[sku] || { status: UPLOAD_STATUS.PENDING };
-    return {
-      zmCode: m.zmCode,
-      kuntalCode: sku,
-      sku,
-      itemType: itemStitchType(m.kuntalCode), // 'stitched' | 'unstitched'
-      name: stock?.name || '—',
-      category: stock?.category || '—',
-      colors: stock?.colors || [],
-      totalQty: stock?.totalQty || 0,
-      // Only a real stock doc gets a level; otherwise leave blank ('—') instead
-      // of mislabelling un-stocked mappings as "Sold Out".
-      stockLevel: stock ? itemStockLevel(stock) : '',
-      uploadStatus: status.status || UPLOAD_STATUS.PENDING,
-      uploadedColors: Array.isArray(status.uploadedColors) ? status.uploadedColors : [],
-      notes: status.notes || '',
-      updatedAt: status.updatedAt || null,
-      hasStock: !!stock,
-      chosenCategory: m.category || '',
-      clash: hit.clash,
-      both: hit.both ? { lehnga: hit.both.lehnga.totalQty, saree: hit.both.saree.totalQty,
-        lehngaName: hit.both.lehnga.name, sareeName: hit.both.saree.name } : null
-    };
-  });
+  const products = mappings.map(m => buildZMProduct(m, statuses, index));
 
   const totalColours    = products.reduce((s, p) => s + (p.colors?.length || 0), 0);
   const uploadedColours = products.reduce((s, p) => s + (p.uploadedColors?.length || 0), 0);
@@ -86,4 +59,39 @@ export async function loadZMPanelData() {
  */
 export async function setUploadStatus(sku, status, notes, uploadedColors) {
   await updateUploadStatus(sku, status, notes, uploadedColors);
+}
+
+/**
+ * One ZM Panel row: the mapping joined with its stock and upload status.
+ * `kuntalCode` is the clean code shown; `docId` is the id the mapping is
+ * stored under (it may be "3044." if typed that way) — writes go there.
+ */
+export function buildZMProduct(m, statuses, index) {
+  const sku = normItemNo(m.kuntalCode);
+  const hit = lookupKuntal(m.kuntalCode, m.category || '', index);
+  const stock = hit.stock;
+  const status = statuses[String(m.kuntalCode)] || statuses[sku] || { status: UPLOAD_STATUS.PENDING };
+  return {
+    docId: String(m.kuntalCode),
+    zmCode: m.zmCode,
+    kuntalCode: sku,
+    sku,
+    itemType: itemStitchType(m.kuntalCode), // 'stitched' | 'unstitched'
+    name: stock?.name || '—',
+    category: stock?.category || '—',
+    colors: stock?.colors || [],
+    totalQty: stock?.totalQty || 0,
+    // Only a real stock doc gets a level; otherwise leave blank ('—') instead
+    // of mislabelling un-stocked mappings as "Sold Out".
+    stockLevel: stock ? itemStockLevel(stock) : '',
+    uploadStatus: status.status || UPLOAD_STATUS.PENDING,
+    uploadedColors: Array.isArray(status.uploadedColors) ? status.uploadedColors : [],
+    notes: status.notes || '',
+    updatedAt: status.updatedAt || null,
+    hasStock: !!stock,
+    chosenCategory: m.category || '',
+    clash: hit.clash,
+    both: hit.both ? { lehnga: hit.both.lehnga.totalQty, saree: hit.both.saree.totalQty,
+      lehngaName: hit.both.lehnga.name, sareeName: hit.both.saree.name } : null
+  };
 }
