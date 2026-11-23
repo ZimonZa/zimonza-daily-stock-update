@@ -63,6 +63,7 @@
         <p class="text-slate-600 text-xs mt-1">LEHNGA STOCK .xlsx</p>
       </div>
       <input type="file" id="lehnga-file" accept=".xlsx,.xls" class="hidden">
+      <p class="zm-sample-row"><a href="#" data-sample="lehnga" class="zm-sample-link" title="Excel file with the right headings, two example rows and a How to fill sheet">&#10515; Download sample file</a><span> — headings, 2 example rows and a “How to fill” sheet</span></p>
       <div id="lehnga-status" class="hidden"></div>
     </div>
 
@@ -83,6 +84,7 @@
         <p class="text-slate-600 text-xs mt-1">SAREE STOCK .xlsx</p>
       </div>
       <input type="file" id="saree-file" accept=".xlsx,.xls" class="hidden">
+      <p class="zm-sample-row"><a href="#" data-sample="saree" class="zm-sample-link" title="Excel file with the right headings, two example rows and a How to fill sheet">&#10515; Download sample file</a><span> — headings, 2 example rows and a “How to fill” sheet</span></p>
       <div id="saree-status" class="hidden"></div>
     </div>
   </div>
@@ -265,6 +267,7 @@
 <script type="module">
 import { requireAuth } from './js/auth.js';
 import { renderShell } from './js/ui-components.js';
+import { bindSampleLinks } from './js/sample-files.js';
 import notify from './js/notifications.js';
 import { readExcelFile, parseStockFile, validateStockFile, getFileSummary } from './js/excel-parser.js';
 import { analyzeStockChanges } from './js/stock-analyzer.js';
@@ -275,6 +278,7 @@ import { today, formatDate, formatDateDisplay, formatNumber, worstColorLevel } f
 
 await requireAuth();
 renderShell('upload');
+bindSampleLinks();
 if (window.lucide) lucide.createIcons();
 
 // Date picker — defaults to today, no future dates allowed

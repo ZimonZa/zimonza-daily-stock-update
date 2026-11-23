@@ -69,6 +69,7 @@
             <p class="text-slate-600 text-xs mt-1">Zimonza-Kuntal product code .xlsx</p>
           </div>
           <input type="file" id="zm-panel-file" accept=".xlsx,.xls" class="hidden">
+          <p class="zm-sample-row"><a href="#" data-sample="zm" class="zm-sample-link" title="Excel file with the right headings, two example rows and a How to fill sheet">&#10515; Download sample file</a><span> — headings, 2 example rows and a “How to fill” sheet</span></p>
         </div>
 
         <!-- RIGHT: Manual Entry -->
@@ -208,6 +209,7 @@
 <script type="module">
 import { requireAuth } from './js/auth.js';
 import { renderShell } from './js/ui-components.js';
+import { bindSampleLinks } from './js/sample-files.js';
 import notify from './js/notifications.js';
 import { loadZMPanelData, setUploadStatus } from './js/zm-mapper.js';
 import { skipProduct } from './js/skip-manager.js';
@@ -218,6 +220,7 @@ const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').re
 
 await requireAuth();
 renderShell('zm-panel');
+bindSampleLinks();
 if (window.lucide) lucide.createIcons();
 
 let products = [], activeSku = null;

@@ -86,6 +86,7 @@
               <p class="text-slate-600 text-xs mt-1">sellerSkuCode,quantity — .csv / .xlsx</p>
             </div>
             <input type="file" id="inv-file" accept=".csv,.xlsx,.xls" class="hidden">
+            <p class="zm-sample-row"><a href="#" data-sample="myntraInventory" class="zm-sample-link" title="Excel file with the right headings, two example rows and a How to fill sheet">&#10515; Download sample file</a><span> — headings, 2 example rows and a “How to fill” sheet</span></p>
           </div>
           <div class="p-5 rounded-xl border border-white/10 bg-white/[0.03] flex flex-col items-center justify-center gap-2.5 text-center">
             <p class="text-slate-300 text-sm font-medium">No file? Generate for all saved SKUs</p>
@@ -155,6 +156,7 @@
           <p class="text-slate-600 text-xs mt-1">Myntra mapping .csv / .xlsx</p>
         </div>
         <input type="file" id="map-file" accept=".csv,.xlsx,.xls" class="hidden">
+        <p class="zm-sample-row"><a href="#" data-sample="myntraMapping" class="zm-sample-link" title="Excel file with the right headings, two example rows and a How to fill sheet">&#10515; Download sample file</a><span> — headings, 2 example rows and a “How to fill” sheet</span></p>
 
         <!-- Clickable summary chips -->
         <div id="map-summary" class="grid grid-cols-2 sm:grid-cols-6 gap-3 hidden"></div>
@@ -226,6 +228,7 @@
           <p class="text-slate-600 text-xs mt-1">Re-uploading updates existing styles and adds new ones</p>
         </div>
         <input type="file" id="price-file" accept=".csv,.xlsx,.xls" class="hidden">
+        <p class="zm-sample-row"><a href="#" data-sample="myntraPricing" class="zm-sample-link" title="Excel file with the right headings, two example rows and a How to fill sheet">&#10515; Download sample file</a><span> — headings, 2 example rows and a “How to fill” sheet</span></p>
 
         <div id="price-summary" class="grid grid-cols-2 sm:grid-cols-5 gap-3 hidden"></div>
 
@@ -748,6 +751,7 @@
           <p class="text-slate-600 text-xs mt-1">Columns are auto-detected — .csv / .xlsx</p>
         </div>
         <input type="file" id="ret-file" accept=".csv,.xlsx,.xls" class="hidden">
+        <p class="zm-sample-row"><a href="#" data-sample="myntraReturns" class="zm-sample-link" title="Excel file with the right headings, two example rows and a How to fill sheet">&#10515; Download sample file</a><span> — headings, 2 example rows and a “How to fill” sheet</span></p>
 
         <!-- Upload confirmation -->
         <div id="ret-confirm" class="hidden rounded-xl border border-emerald-500/25 bg-emerald-500/[0.05] overflow-hidden">
@@ -1117,6 +1121,7 @@
 <script type="module">
 import { requireAuth } from './js/auth.js';
 import { renderShell } from './js/ui-components.js';
+import { bindSampleLinks } from './js/sample-files.js';
 import notify from './js/notifications.js';
 import { readExcelFile } from './js/excel-parser.js';
 import {
@@ -1144,6 +1149,7 @@ import { swatchChip, swatchDot } from './js/swatches.js';
 
 await requireAuth();
 renderShell('myntra');
+bindSampleLinks();
 if (window.lucide) lucide.createIcons();
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');

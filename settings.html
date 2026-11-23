@@ -267,6 +267,7 @@
       <p class="text-slate-600 text-xs mt-1">Column A — one colour name per row (header optional)</p>
     </div>
     <input type="file" id="colour-file-input" accept=".xlsx,.xls" class="hidden">
+    <p class="zm-sample-row"><a href="#" data-sample="colours" class="zm-sample-link" title="Excel file with the right headings, two example rows and a How to fill sheet">&#10515; Download sample file</a><span> — headings, 2 example rows and a “How to fill” sheet</span></p>
 
     <!-- Manual add -->
     <div class="flex gap-2">
@@ -306,6 +307,7 @@
 import { requireAuth, logOut } from './js/auth.js';
 import { resetPassword } from './js/auth.js';
 import { renderShell } from './js/ui-components.js';
+import { bindSampleLinks } from './js/sample-files.js';
 import notify from './js/notifications.js';
 import { saveSettings, getSettings, getAllUploadDates, saveCustomColours, getCustomColours } from './js/firestore-service.js';
 import { storage, formatDateDisplay } from './js/utils.js';
@@ -315,6 +317,7 @@ import app from './js/firebase-config.js';
 
 const user = await requireAuth();
 renderShell('settings');
+bindSampleLinks();
 if (window.lucide) lucide.createIcons();
 
 // ── Account section ──────────────────────────────────────────
