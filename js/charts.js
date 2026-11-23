@@ -63,15 +63,24 @@ function baseOptions(extra = {}) {
 const chartRegistry = new Map();
 
 function registerChart(id, instance) {
-  if (chartRegistry.has(id)) chartRegistry.get(id).destroy();
   chartRegistry.set(id, instance);
+}
+
+/**
+ * The canvas's 2D context, with any chart already on it destroyed first.
+ * Chart.js refuses a canvas that still holds a chart, so destroying only
+ * after drawing (as before) threw on every redraw.
+ */
+function freshContext(id) {
+  if (chartRegistry.has(id)) { chartRegistry.get(id).destroy(); chartRegistry.delete(id); }
+  return document.getElementById(id)?.getContext('2d');
 }
 
 /**
  * Sales Trend Line Chart
  */
 export function renderSalesTrendChart(canvasId, labels, soldData, restockedData) {
-  const ctx = document.getElementById(canvasId)?.getContext('2d');
+  const ctx = freshContext(canvasId);
   if (!ctx) return;
 
   const gradient = ctx.createLinearGradient(0, 0, 0, 200);
@@ -118,7 +127,7 @@ export function renderSalesTrendChart(canvasId, labels, soldData, restockedData)
  * Stock Health Donut Chart
  */
 export function renderStockHealthChart(canvasId, health) {
-  const ctx = document.getElementById(canvasId)?.getContext('2d');
+  const ctx = freshContext(canvasId);
   if (!ctx) return;
 
   const chart = new Chart(ctx, {
@@ -165,7 +174,7 @@ export function renderStockHealthChart(canvasId, health) {
  * Category Distribution Bar Chart
  */
 export function renderCategoryChart(canvasId, lehngaCount, sareeCount) {
-  const ctx = document.getElementById(canvasId)?.getContext('2d');
+  const ctx = freshContext(canvasId);
   if (!ctx) return;
 
   const chart = new Chart(ctx, {
@@ -206,7 +215,7 @@ export function renderCategoryChart(canvasId, lehngaCount, sareeCount) {
  * Top Sold SKUs Horizontal Bar
  */
 export function renderTopSoldChart(canvasId, items) {
-  const ctx = document.getElementById(canvasId)?.getContext('2d');
+  const ctx = freshContext(canvasId);
   if (!ctx) return;
 
   const labels = items.map(i => `${i.sku}`);
@@ -248,7 +257,7 @@ export function renderTopSoldChart(canvasId, items) {
  * Upload Coverage Chart (last N days)
  */
 export function renderUploadCoverageChart(canvasId, dates, uploadedFlags) {
-  const ctx = document.getElementById(canvasId)?.getContext('2d');
+  const ctx = freshContext(canvasId);
   if (!ctx) return;
 
   const chart = new Chart(ctx, {
@@ -287,7 +296,7 @@ export function renderUploadCoverageChart(canvasId, dates, uploadedFlags) {
  * Restock Trend Chart
  */
 export function renderRestockTrendChart(canvasId, labels, data) {
-  const ctx = document.getElementById(canvasId)?.getContext('2d');
+  const ctx = freshContext(canvasId);
   if (!ctx) return;
 
   const chart = new Chart(ctx, {
