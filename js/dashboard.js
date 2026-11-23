@@ -64,6 +64,7 @@ async function loadDashboard(date) {
 
     renderKPIs(allItems, analysisResult, currentDate);
     await renderCharts(allItems, analysisResult);
+    setTopSoldNote(currentDate === latest ? 'By pieces sold today' : `By pieces sold on ${formatDateDisplay(currentDate)}`);
     renderWidgets(allItems, analysisResult);
     updateDateLabel(currentDate);
 
@@ -273,6 +274,12 @@ function periodStart(iso, days) {
   return d.toISOString().slice(0, 10);
 }
 
+/** The line under "Top Sold SKUs" — says which day the chart is for. */
+function setTopSoldNote(text) {
+  const el = document.getElementById('top-sold-note');
+  if (el) el.textContent = text;
+}
+
 /** Change tiles → totals over the last `days` days, from each upload's saved summary. */
 async function showPeriodTotals(days) {
   const latest = allDates[0];
@@ -282,6 +289,8 @@ async function showPeriodTotals(days) {
   const summaries = await Promise.all(dates.map(d => getDailySummary(d).catch(() => null)));
   const totals = sumSummaries(summaries);
   renderKPIs(allItems, { summary: totals }, latest, { days, uploads: dates.length, missing: totals.missing });
+  // The tiles are period totals; this chart still shows one upload
+  setTopSoldNote(`Latest upload only (${formatDateDisplay(latest)}) — the totals above cover ${days} days`);
   const label = document.getElementById('dashboard-date-label');
   if (label) label.textContent = `${formatDateDisplay(latest)} · totals ${formatDateDisplay(from)} – ${formatDateDisplay(latest)}`;
   if (window.lucide) lucide.createIcons();
