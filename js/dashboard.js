@@ -17,6 +17,7 @@ import {
   renderUploadCoverageChart, renderRestockTrendChart
 } from './charts.js';
 import { CATEGORIES } from './constants.js';
+import { loadStockAsOf, loadDayChanges, allItemsOf } from './stock-store.js';
 import { formatDateDisplay, formatNumber, today, daysAgo, lowColorEntries } from './utils.js';
 
 let allItems = [];
@@ -54,24 +55,12 @@ async function loadDashboard(date) {
       return;
     }
 
-    const [lehnga, saree] = await Promise.all([
-      getStockData(currentDate, CATEGORIES.LEHNGA),
-      getStockData(currentDate, CATEGORIES.SAREE)
-    ]);
-    allItems = [...lehnga, ...saree];
-
-    // Previous date comparison
-    const prevDate = allDates[1] || null;
-    let prevItems = [];
-    if (prevDate) {
-      const [pl, ps] = await Promise.all([
-        getStockData(prevDate, CATEGORIES.LEHNGA),
-        getStockData(prevDate, CATEGORIES.SAREE)
-      ]);
-      prevItems = [...pl, ...ps];
-    }
-
-    analysisResult = analyzeStockChanges(allItems, prevItems);
+    // Stock as of the chosen date (each category from its own last upload),
+    // and that day's changes against each category's own previous upload.
+    // Was: always compared with the second-newest date, whatever was picked.
+    allItems = allItemsOf(await loadStockAsOf({ asOf: currentDate }));
+    const day = await loadDayChanges(currentDate);
+    analysisResult = analyzeStockChanges(day.current, day.previous, { categories: day.categories });
 
     renderKPIs(allItems, analysisResult, currentDate);
     await renderCharts(allItems, analysisResult);

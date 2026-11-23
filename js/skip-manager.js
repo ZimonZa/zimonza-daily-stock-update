@@ -6,6 +6,7 @@ import {
   updateUploadStatus, getStockData, getAllUploadDates
 } from './firestore-service.js';
 import { UPLOAD_STATUS, CATEGORIES } from './constants.js';
+import { loadLatestStock, indexStock, lookupKuntal } from './stock-store.js';
 import { itemStockLevel } from './utils.js';
 
 export async function loadSkipPanelData() {
@@ -13,17 +14,10 @@ export async function loadSkipPanelData() {
     getAllSkippedProducts(),
     getAllUploadDates()
   ]);
-  const latestDate = dates[0];
-  let stockMap = new Map();
-  if (latestDate) {
-    const [lehnga, saree] = await Promise.all([
-      getStockData(latestDate, CATEGORIES.LEHNGA),
-      getStockData(latestDate, CATEGORIES.SAREE)
-    ]);
-    [...lehnga, ...saree].forEach(i => stockMap.set(String(i.sku), i));
-  }
+  const latest = await loadLatestStock();
+  const index = indexStock({ lehnga: latest.lehnga.items, saree: latest.saree.items });
   return skipped.map(s => {
-    const stock = stockMap.get(String(s.sku));
+    const stock = lookupKuntal(s.sku, '', index).stock;
     return {
       ...s,
       name: stock?.name || '—',

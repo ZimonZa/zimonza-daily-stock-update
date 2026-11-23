@@ -136,6 +136,7 @@ import { renderShell } from './js/ui-components.js';
 import notify from './js/notifications.js';
 import { getStockData, getAllUploadDates, getDailySummary } from './js/firestore-service.js';
 import { CATEGORIES } from './js/constants.js';
+import { loadStockAsOf, loadDayChanges, allItemsOf, stockDatesLabel } from './js/stock-store.js';
 import { filterItems, paginate } from './js/filters.js';
 import { exportCSV } from './js/report-generator.js';
 import { formatNumber, debounce, formatDateDisplay, itemStockLevel } from './js/utils.js';
@@ -169,11 +170,7 @@ async function load() {
       document.getElementById('card-container').innerHTML =
         `<div class="col-span-full p-12 flex justify-center"><div class="spinner"></div></div>`;
       try {
-        const [l2, s2] = await Promise.all([
-          getStockData(selected, CATEGORIES.LEHNGA),
-          getStockData(selected, CATEGORIES.SAREE)
-        ]);
-        allItems = [...l2, ...s2].map(item => ({
+        allItems = allItemsOf(await loadStockAsOf({ asOf: selected })).map(item => ({
           ...item,
           stockLevel: itemStockLevel(item)
         }));
@@ -188,12 +185,9 @@ async function load() {
       }
     });
 
-    const [l, s] = await Promise.all([
-      getStockData(date, CATEGORIES.LEHNGA),
-      getStockData(date, CATEGORIES.SAREE)
-    ]);
-    // Recompute stockLevel per worst colour (old docs carry a total-based level)
-    allItems = [...l, ...s].map(item => ({
+    // Each category as of this date; recompute stockLevel per worst colour
+    // (old docs carry a total-based level)
+    allItems = allItemsOf(await loadStockAsOf({ asOf: date })).map(item => ({
       ...item,
       stockLevel: itemStockLevel(item)
     }));

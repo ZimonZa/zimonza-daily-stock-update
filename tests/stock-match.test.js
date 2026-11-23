@@ -7,7 +7,9 @@ globalThis.window = globalThis;
 
 import { normItemNo } from './utils.js';
 import { parseStockFile } from './excel-parser.js';
-import { stockKey, mergeStockItems, indexStock, lookupKuntal, latestPerCategory, loadLatestStock } from './stock-store.js';
+import { stockKey, mergeStockItems, indexStock, lookupKuntal, latestPerCategory, loadLatestStock, loadStockAsOf, loadDayChanges } from './stock-store.js';
+import { parseZMFile } from './excel-parser.js';
+import { resolveStock } from './myntra.js';
 import { analyzeStockChanges } from './stock-analyzer.js';
 import { staleStockIds } from './firestore-service.js';
 
@@ -96,6 +98,61 @@ eq('"9551 M" yesterday and "9551" today is the same, unchanged saree',
 eq('docs no longer in the file are removed (old "9551 M" and a dropped item)',
   staleStockIds(['9551 M', '4132', '1121'], [{ sku: '9551' }, { sku: '4132' }]), ['9551 M', '1121']);
 eq('nothing stale → nothing removed', staleStockIds(['4132'], [{ sku: '4132' }]), []);
+
+// ════ 6. Stock as of a chosen date ════
+const hist = async () => [
+  { date: '2026-11-21', lehngaCount: 2, sareeCount: 3 },
+  { date: '2026-11-20', lehngaCount: 2, sareeCount: 0 },
+  { date: '2026-11-19', lehngaCount: 2, sareeCount: 3 }
+];
+const seen = [];
+const getS = async (d, c) => { seen.push(`${d}/${c}`); return [item(c, '1', [['Red', 1]])]; };
+await loadStockAsOf({ asOf: '2026-11-20', listHistory: hist, getStock: getS });
+eq('as of the 20th: lehnga from the 20th, saree from its last upload before (19th)', seen.sort(), ['2026-11-19/saree', '2026-11-20/lehnga']);
+seen.length = 0;
+await loadStockAsOf({ before: '2026-11-21', listHistory: hist, getStock: getS });
+eq('the day before the 21st, per category', seen.sort(), ['2026-11-19/saree', '2026-11-20/lehnga']);
+
+// ════ 7. ZM codes carry an optional category ════
+eq('a 3-column ZM file reads the category',
+  parseZMFile([['Zimonza Product Code', 'Kuntal Product Code', 'Category'], ['ZM-38', '9551', 'Saree'], ['ZM-32', '3044', '']]),
+  [{ zmCode: 'ZM-38', kuntalCode: '9551', category: 'saree' }, { zmCode: 'ZM-32', kuntalCode: '3044', category: '' }]);
+eq('a 2-column ZM file has no category',
+  parseZMFile([['Zimonza Product Code', 'Kuntal Product Code'], ['ZM-1', '4132']]), [{ zmCode: 'ZM-1', kuntalCode: '4132', category: '' }]);
+eq('an unknown category is left blank, never guessed',
+  parseZMFile([['Zimonza Product Code', 'Kuntal Product Code', 'Category'], ['ZM-1', '4132', 'gown']])[0].category, '');
+
+// ════ 8. Myntra finds the saree, and flags a code in both files ════
+const ctx = {
+  index: indexStock({
+    lehnga: [item('lehnga', '3044', [['Mehandi', 1]]), item('lehnga', '4132', [['Rani', 5]])],
+    saree: [item('saree', '9551 M', [['Rani', 2]]), item('saree', '3044.', [['Pink', 6]]), item('saree', '3107(UNST)', [['Mustard', 1]])]
+  }),
+  zmToKuntal: new Map([
+    ['ZM-38', [{ kuntalCode: '9551', category: '' }]],
+    ['ZM-32', [{ kuntalCode: '3044', category: '' }]],
+    ['ZM-33', [{ kuntalCode: '3044', category: 'lehnga' }]],
+    ['ZM-40', [{ kuntalCode: '3107', category: '' }, { kuntalCode: '3107(UNST)', category: '' }]]
+  ])
+};
+const r38 = resolveStock('ZM-38', ctx);
+eq('ZM-38 = 9551 finds the saree "9551 M"', [r38.stock?.category, r38.kuntalCode, r38.clash], ['saree', '9551', false]);
+const r32 = resolveStock('ZM-32', ctx);
+eq('ZM-32 = 3044 in both files: saree used, flagged', [r32.stock?.category, r32.clash], ['saree', true]);
+eq('category chosen → that file', [resolveStock('ZM-33', ctx).stock?.category, resolveStock('ZM-33', ctx).clash], ['lehnga', false]);
+eq('a ZM code listing stitched + UNST finds the one in stock', resolveStock('ZM-40', ctx).kuntalCode, '3107(UNST)');
+eq('no mapping', resolveStock('ZM-99', ctx).reason, 'no_zm_mapping');
+// The old context shape (tests and saved callers) still works
+const oldCtx = { zmToKuntal: new Map([['ZM-1', ['4132']]]), stockMap: new Map([['4132', item('lehnga', '4132', [['Rani', 5]])]]) };
+eq('the older context shape still resolves', resolveStock('ZM-1', oldCtx).stock?.sku, '4132');
+
+// ════ 9. The changes made on one day ════
+const day = await loadDayChanges('2026-11-20', {
+  listHistory: hist,
+  getStock: async (d, c) => (d === '2026-11-20' && c === 'saree') ? [] : [item(c, d === '2026-11-20' ? '4132' : '4132', [['Rani', d === '2026-11-20' ? 3 : 5]])]
+});
+eq('only categories uploaded that day are compared', day.categories, ['lehnga']);
+eq("…against each one's own previous upload", [day.current.length, day.previous.length, day.previous[0]?.totalQty], [1, 1, 5]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

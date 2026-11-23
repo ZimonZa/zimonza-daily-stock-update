@@ -95,9 +95,18 @@ export async function getPreviousUploadDate(date) {
 export async function saveZMMapping(mappings) {
   const operations = mappings.map(m => (batch) => {
     const ref = doc(db, COLLECTIONS.ZM_MAPPING, String(m.kuntalCode));
-    batch.set(ref, { zmCode: m.zmCode, kuntalCode: m.kuntalCode, updatedAt: serverTimestamp() });
+    // A file without a Category column leaves a chosen category untouched
+    const data = { zmCode: m.zmCode, kuntalCode: m.kuntalCode, updatedAt: serverTimestamp() };
+    if (m.category) data.category = m.category;
+    batch.set(ref, data, { merge: true });
   });
   await runChunkedBatch(operations);
+}
+
+/** Choose which stock file a Kuntal code belongs to: 'lehnga' | 'saree' | '' (not chosen). */
+export async function setZMCategory(kuntalCode, category) {
+  await setDoc(doc(db, COLLECTIONS.ZM_MAPPING, String(kuntalCode)),
+    { category: category || '', updatedAt: serverTimestamp() }, { merge: true });
 }
 
 /** Get all ZM mappings */

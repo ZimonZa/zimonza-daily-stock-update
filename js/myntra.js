@@ -3,7 +3,8 @@
 // Mapping file parsing, SKU → stock resolution, inventory generator
 // ═══════════════════════════════════════════════════════════════
 
-import { getAllZMMappings, getStockData, getAllUploadDates } from './firestore-service.js';
+import { getAllZMMappings } from './firestore-service.js';
+import { loadLatestStock, indexStock, lookupKuntal } from './stock-store.js';
 import { CATEGORIES } from './constants.js';
 import { normItemNo, normColorKey, normZmCode } from './utils.js';
 
@@ -131,25 +132,11 @@ export function parseInventoryFile(rows) {
  * latest upload date, stock indexed by item number, and ZM code → Kuntal codes.
  */
 export async function loadMyntraStockContext() {
-  const [zmMappings, dates] = await Promise.all([
-    getAllZMMappings(),
-    getAllUploadDates()
-  ]);
+  const [zmMappings, stock] = await Promise.all([getAllZMMappings(), loadLatestStock()]);
 
-  const latestDate = dates[0] || null;
-  let lehngaStock = [], sareeStock = [];
-  if (latestDate) {
-    [lehngaStock, sareeStock] = await Promise.all([
-      getStockData(latestDate, CATEGORIES.LEHNGA),
-      getStockData(latestDate, CATEGORIES.SAREE)
-    ]);
-  }
-
-  const norm = v => normItemNo(v).toUpperCase();
-  const stockMap = new Map([
-    ...lehngaStock.map(i => [norm(i.sku), i]),
-    ...sareeStock.map(i => [norm(i.sku), i])
-  ]);
+  // Each category from its own latest upload; "9551 M" and "9551" are one item
+  const index = indexStock({ lehnga: stock.lehnga.items, saree: stock.saree.items });
+  const latestDate = [stock.lehnga.date, stock.saree.date].filter(Boolean).sort().pop() || null;
 
   // A ZM code can map to several Kuntal codes (e.g. stitched + unstitched).
   // Keyed by normZmCode so zero-padded codes ("ZM-01") join plain ones ("ZM-1").
@@ -158,10 +145,10 @@ export async function loadMyntraStockContext() {
     const key = normZmCode(m.zmCode);
     if (!key) continue;
     if (!zmToKuntal.has(key)) zmToKuntal.set(key, []);
-    zmToKuntal.get(key).push(m.kuntalCode);
+    zmToKuntal.get(key).push({ kuntalCode: m.kuntalCode, category: m.category || '' });
   }
 
-  return { latestDate, stockMap, zmToKuntal };
+  return { latestDate, dates: { lehnga: stock.lehnga.date, saree: stock.saree.date }, index, zmToKuntal };
 }
 
 /**
@@ -171,12 +158,20 @@ export async function loadMyntraStockContext() {
  */
 export function resolveStock(zmCode, ctx) {
   const kuntals = ctx.zmToKuntal.get(normZmCode(zmCode));
-  if (!kuntals || !kuntals.length) return { stock: null, kuntalCode: null, reason: 'no_zm_mapping' };
-  for (const k of kuntals) {
-    const stock = ctx.stockMap.get(normItemNo(k).toUpperCase());
-    if (stock) return { stock, kuntalCode: normItemNo(k), reason: null };
+  if (!kuntals || !kuntals.length) return { stock: null, kuntalCode: null, reason: 'no_zm_mapping', clash: false };
+  for (const entry of kuntals) {
+    // Older contexts list plain codes against one flat stockMap
+    const code = typeof entry === 'string' ? entry : entry.kuntalCode;
+    if (ctx.index) {
+      const hit = lookupKuntal(code, typeof entry === 'string' ? '' : entry.category, ctx.index);
+      if (hit.stock) return { stock: hit.stock, kuntalCode: normItemNo(code), reason: null, clash: hit.clash };
+    } else {
+      const stock = ctx.stockMap?.get(normItemNo(code).toUpperCase());
+      if (stock) return { stock, kuntalCode: normItemNo(code), reason: null, clash: false };
+    }
   }
-  return { stock: null, kuntalCode: normItemNo(kuntals[0]), reason: 'no_stock_item' };
+  const first = kuntals[0];
+  return { stock: null, kuntalCode: normItemNo(typeof first === 'string' ? first : first.kuntalCode), reason: 'no_stock_item', clash: false };
 }
 
 /**

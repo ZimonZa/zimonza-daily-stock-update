@@ -1336,8 +1336,10 @@ async function load() {
     state.skuStatus = skuStatus;
     state.purchaseSettings = purchaseSettings;
 
-    el('stock-date-label').textContent =
-      ctx.latestDate ? `Stock as of ${formatDateDisplay(ctx.latestDate)}` : 'No stock uploaded yet';
+    // Each category comes from its own latest upload — say which
+    el('stock-date-label').textContent = ctx.latestDate
+      ? `Stock: Lehnga ${formatDateDisplay(ctx.dates?.lehnga) || '—'} · Saree ${formatDateDisplay(ctx.dates?.saree) || '—'}`
+      : 'No stock uploaded yet';
     gapNote();
     populateColourFilter();
     renderMappings();
@@ -1382,7 +1384,7 @@ function renderPartiesLine() {
 function mappingRows() {
   const priceIdx = pricingIndex(state.pricing);
   return state.mappings.map(m => {
-    const { stock, kuntalCode } = resolveStock(m.zmCode, state.ctx);
+    const { stock, kuntalCode, clash } = resolveStock(m.zmCode, state.ctx);
     const qty = stock ? findColourQty(stock, m.colourName) : null;
     const p = priceIdx.get(normZmCode(m.zmCode));
     return {
@@ -1391,6 +1393,7 @@ function mappingRows() {
       productName: stock?.name || '',
       qty,
       hasStock: !!stock,
+      clash: !!clash,
       active: isActive(m.sellerSkuCode),
       kuntalSellingPrice: p?.kuntalSellingPrice ?? null,
       myntraMrp: p?.myntraMrp ?? null,
@@ -1421,7 +1424,8 @@ function stockChip(r) {
   if (r.qty === null) return `<span class="level-low text-xs">colour not found</span>`;
   if (r.qty === 0) return `<span class="level-sold_out text-xs">0 pcs</span>`;
   const cls = r.qty > getMyntraGapThreshold() ? 'level-high' : 'level-medium';
-  return `<span class="${cls} text-xs">${r.qty} pcs</span>`;
+  const clash = r.clash ? ' <span class="zm-clash" title="This Kuntal code is in both stock files; the saree stock is used. Choose Lehnga or Saree for it in the ZM Panel.">Lehnga/Saree not chosen</span>' : '';
+  return `<span class="${cls} text-xs">${r.qty} pcs</span>${clash}`;
 }
 
 const stockText = r => !r.hasStock ? 'no stock item' : (r.qty === null ? 'colour not found' : r.qty);

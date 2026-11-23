@@ -62,6 +62,7 @@ import { renderShell } from './js/ui-components.js';
 import notify from './js/notifications.js';
 import { getStockData, getAllUploadDates } from './js/firestore-service.js';
 import { CATEGORIES } from './js/constants.js';
+import { loadStockAsOf, loadDayChanges, allItemsOf, stockDatesLabel } from './js/stock-store.js';
 import { formatDateDisplay, debounce, lowColorEntries } from './js/utils.js';
 
 await requireAuth();
@@ -74,11 +75,9 @@ async function load(date) {
   document.getElementById('cards-grid').innerHTML = Array(8).fill(0).map(()=>
     `<div class="animate-pulse bg-white/5 rounded-2xl h-40 border border-white/5"></div>`).join('');
   try {
-    const [l, s] = await Promise.all([
-      getStockData(date, CATEGORIES.LEHNGA),
-      getStockData(date, CATEGORIES.SAREE)
-    ]);
-    items = lowColorEntries([...l, ...s]);
+    // Each category as of this date (from its own last upload on or before it)
+    const stock = await loadStockAsOf({ asOf: date });
+    items = lowColorEntries(allItemsOf(stock));
     renderStats(items);
     renderCards(items);
   } catch(e) { notify.error('Failed to load.'); }

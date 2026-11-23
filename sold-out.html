@@ -59,6 +59,7 @@ import { renderShell } from './js/ui-components.js';
 import notify from './js/notifications.js';
 import { getStockData, getAllUploadDates } from './js/firestore-service.js';
 import { CATEGORIES } from './js/constants.js';
+import { loadStockAsOf, loadDayChanges, allItemsOf, stockDatesLabel } from './js/stock-store.js';
 import { formatDateDisplay, debounce } from './js/utils.js';
 
 await requireAuth();
@@ -70,8 +71,8 @@ let items = [];
 async function load(date) {
   document.getElementById('table-container').innerHTML = '<div class="p-8 flex justify-center"><div class="spinner"></div></div>';
   try {
-    const [l, s] = await Promise.all([getStockData(date, CATEGORIES.LEHNGA), getStockData(date, CATEGORIES.SAREE)]);
-    items = [...l, ...s].filter(i => (i.totalQty||0) === 0);
+    const stock = await loadStockAsOf({ asOf: date });
+    items = allItemsOf(stock).filter(i => (i.totalQty||0) === 0);
     renderStats(items);
     renderTable(items);
   } catch(e) { notify.error('Failed to load.'); }

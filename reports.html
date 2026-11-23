@@ -157,6 +157,7 @@ import { generateDailyReport, exportCSV, exportExcel, exportPDF } from './js/rep
 import { getStockData, getAllUploadDates } from './js/firestore-service.js';
 import { analyzeStockChanges, findFastMovers, getTopColors } from './js/stock-analyzer.js';
 import { CATEGORIES } from './js/constants.js';
+import { loadStockAsOf, loadDayChanges, allItemsOf, stockDatesLabel } from './js/stock-store.js';
 import { formatDateDisplay } from './js/utils.js';
 
 await requireAuth();
@@ -179,21 +180,11 @@ async function init() {
 async function loadAnalytics() {
   if (!allDates.length) return;
   const date = allDates[0];
-  const [l, s] = await Promise.all([
-    getStockData(date, CATEGORIES.LEHNGA),
-    getStockData(date, CATEGORIES.SAREE)
-  ]);
-  const curr = [...l, ...s];
-  const prevDate = allDates[1];
-  let prev = [];
-  if (prevDate) {
-    const [pl, ps] = await Promise.all([
-      getStockData(prevDate, CATEGORIES.LEHNGA),
-      getStockData(prevDate, CATEGORIES.SAREE)
-    ]);
-    prev = [...pl, ...ps];
-  }
-  const analysis = analyzeStockChanges(curr, prev);
+  // Stock as of the latest upload; changes = that day's upload vs each
+  // category's own previous upload (was: whatever date was second newest)
+  const curr = allItemsOf(await loadStockAsOf({ asOf: date }));
+  const day = await loadDayChanges(date);
+  const analysis = analyzeStockChanges(day.current, day.previous, { categories: day.categories });
   const fastMovers = findFastMovers(analysis.soldItems, 8);
   const topColors = getTopColors(analysis.soldItems, 8);
 

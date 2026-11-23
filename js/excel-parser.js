@@ -219,7 +219,10 @@ export function parseStockFile(rows, category) {
  * Returns array of { zmCode, kuntalCode }
  */
 export function parseZMFile(rows) {
-  // Skip header row (row 0)
+  // Row 0 is the header. An optional "Category" column (Lehnga / Saree)
+  // says which stock file a code belongs to when it is in both.
+  const header = (rows[0] || []).map(c => String(c ?? '').trim());
+  const catCol = header.findIndex(c => /^categor/i.test(c));
   const dataRows = rows.slice(1);
   const mappings = [];
 
@@ -228,11 +231,19 @@ export function parseZMFile(rows) {
     const zmCode = String(row[ZM_COLS.ZM_CODE] || '').trim();
     const kuntalCode = normItemNo(row[ZM_COLS.KUNTAL_CODE]); // "3121." → "3121"; keeps "(UNST)"
     if (zmCode && kuntalCode && zmCode !== 'Zimonza Product Code') {
-      mappings.push({ zmCode, kuntalCode });
+      mappings.push({ zmCode, kuntalCode, category: catCol >= 0 ? zmCategory(row[catCol]) : '' });
     }
   }
 
   return mappings;
+}
+
+/** "Lehenga", "LEHNGA", "Saree", "sari" → 'lehnga' | 'saree'; anything else → ''. */
+export function zmCategory(v) {
+  const t = String(v ?? '').trim().toLowerCase();
+  if (/^leh[ae]?n?n?g/.test(t)) return CATEGORIES.LEHNGA;
+  if (/^sar(ee|i)$/.test(t)) return CATEGORIES.SAREE;
+  return '';
 }
 
 /**

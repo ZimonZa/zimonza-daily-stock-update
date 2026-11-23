@@ -1196,3 +1196,10 @@ td.text-right, th.text-right { font-variant-numeric: tabular-nums; }
 .pr-pending { position: sticky; bottom: 12px; z-index: 20; backdrop-filter: blur(6px); background: rgba(30,24,12,0.92); }
 .light-mode .pr-cell { color: #241F16; }
 .light-mode .pr-pending { background: rgba(255,250,238,0.95); }
+
+/* A Kuntal code found in both stock files (ZM Panel, Myntra Mapping) */
+.zm-clash {
+  display: inline-block; margin-top: 3px; font-size: 10.5px; white-space: nowrap;
+  padding: 1px 7px; border-radius: 999px; cursor: help;
+  background: rgba(245,158,11,0.12); color: #FCD34D; border: 1px solid rgba(245,158,11,0.35);
+}

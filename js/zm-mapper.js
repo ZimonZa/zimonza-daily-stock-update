@@ -2,42 +2,32 @@
 // ZIMONZA — ZM Panel Mapper Logic
 // ═══════════════════════════════════════════════════════════════
 
-import { saveZMMapping, getAllZMMappings, updateUploadStatus, getAllUploadStatuses, getStockData, getAllUploadDates } from './firestore-service.js';
+import { saveZMMapping, getAllZMMappings, updateUploadStatus, getAllUploadStatuses } from './firestore-service.js';
 import { UPLOAD_STATUS, CATEGORIES } from './constants.js';
 import { normItemNo, itemStitchType, normColorKey, itemStockLevel } from './utils.js';
+import { loadLatestStock, indexStock, lookupKuntal } from './stock-store.js';
 
 /**
  * Load full ZM panel data: mappings + stock + statuses
  */
 export async function loadZMPanelData() {
-  const [mappings, statuses, dates] = await Promise.all([
+  const [mappings, statuses, current] = await Promise.all([
     getAllZMMappings(),
     getAllUploadStatuses(),
-    getAllUploadDates()
+    loadLatestStock()
   ]);
 
-  const latestDate = dates[0];
-  let lehngaStock = [], sareeStock = [];
-
-  if (latestDate) {
-    [lehngaStock, sareeStock] = await Promise.all([
-      getStockData(latestDate, CATEGORIES.LEHNGA),
-      getStockData(latestDate, CATEGORIES.SAREE)
-    ]);
-  }
-
-  // Normalised key (drops trailing dot, case-insensitive) so mapping codes
-  // join their stock despite formatting drift. Keeps "(UNST)" distinct.
-  const norm = v => normItemNo(v).toUpperCase();
-  const stockMap = new Map([
-    ...lehngaStock.map(i => [norm(i.sku), i]),
-    ...sareeStock.map(i => [norm(i.sku), i])
-  ]);
+  // Each category from its own latest upload; "9551 M" finds 9551, "(UNST)"
+  // stays its own product. A code in BOTH files uses the chosen category, or
+  // is flagged so the owner can choose.
+  const index = indexStock({ lehnga: current.lehnga.items, saree: current.saree.items });
+  const latestDate = [current.lehnga.date, current.saree.date].filter(Boolean).sort().pop() || null;
 
   // Merge data
   const products = mappings.map(m => {
     const sku = normItemNo(m.kuntalCode);
-    const stock = stockMap.get(norm(m.kuntalCode));
+    const hit = lookupKuntal(m.kuntalCode, m.category || '', index);
+    const stock = hit.stock;
     const status = statuses[String(m.kuntalCode)] || statuses[sku] || { status: UPLOAD_STATUS.PENDING };
     return {
       zmCode: m.zmCode,
@@ -55,7 +45,11 @@ export async function loadZMPanelData() {
       uploadedColors: Array.isArray(status.uploadedColors) ? status.uploadedColors : [],
       notes: status.notes || '',
       updatedAt: status.updatedAt || null,
-      hasStock: !!stock
+      hasStock: !!stock,
+      chosenCategory: m.category || '',
+      clash: hit.clash,
+      both: hit.both ? { lehnga: hit.both.lehnga.totalQty, saree: hit.both.saree.totalQty,
+        lehngaName: hit.both.lehnga.name, sareeName: hit.both.saree.name } : null
     };
   });
 
@@ -77,13 +71,14 @@ export async function loadZMPanelData() {
     saree:        products.filter(p => p.category === CATEGORIES.SAREE).length,
     stitched:     products.filter(p => p.itemType === 'stitched').length,
     unstitched:   products.filter(p => p.itemType === 'unstitched').length,
+    clashes:      products.filter(p => p.clash).length,
     totalColours,
     uploadedColours,
     outOfStockColours,
     uploadedPct:  totalColours ? Math.round((uploadedColours / totalColours) * 100) : 0,
   };
 
-  return { products, summary, latestDate };
+  return { products, summary, latestDate, stockDates: { lehnga: current.lehnga.date, saree: current.saree.date } };
 }
 
 /**

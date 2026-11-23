@@ -59,6 +59,7 @@ import { renderShell } from './js/ui-components.js';
 import notify from './js/notifications.js';
 import { getStockData, getAllUploadDates } from './js/firestore-service.js';
 import { analyzeStockChanges } from './js/stock-analyzer.js';
+import { loadStockAsOf, loadDayChanges, allItemsOf, stockDatesLabel } from './js/stock-store.js';
 import { CATEGORIES } from './js/constants.js';
 import { formatDateDisplay, formatNumber, debounce } from './js/utils.js';
 
@@ -71,16 +72,9 @@ let items = [], allDates = [];
 async function load(date) {
   document.getElementById('table-container').innerHTML = '<div class="p-8 flex justify-center"><div class="spinner"></div></div>';
   try {
-    const [l, s] = await Promise.all([getStockData(date, CATEGORIES.LEHNGA), getStockData(date, CATEGORIES.SAREE)]);
-    const curr = [...l, ...s];
-    const allD = await getAllUploadDates();
-    const prevDate = allD.find(d => d < date);
-    let prev = [];
-    if (prevDate) {
-      const [pl, ps] = await Promise.all([getStockData(prevDate, CATEGORIES.LEHNGA), getStockData(prevDate, CATEGORIES.SAREE)]);
-      prev = [...pl, ...ps];
-    }
-    const analysis = analyzeStockChanges(curr, prev);
+    // Only what was uploaded that day, each category against its own last upload
+    const day = await loadDayChanges(date);
+    const analysis = analyzeStockChanges(day.current, day.previous, { categories: day.categories });
     items = analysis.newArrivals;
     renderStats(items);
     renderTable(items);

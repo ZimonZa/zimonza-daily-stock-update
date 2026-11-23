@@ -100,15 +100,45 @@ async function allHistory() {
 }
 
 /**
- * Current stock: each category from its own latest upload, merged.
+ * Stock as of a date: each category from its own last upload on or before
+ * `asOf` (or strictly before `before`); no date → the latest. Merged.
  * @returns {Promise<{ lehnga: {date, items}, saree: {date, items} }>}
  */
-export async function loadLatestStock({ listHistory = allHistory, getStock = getStockData } = {}) {
-  const dates = latestPerCategory(await listHistory());
+export async function loadStockAsOf({ asOf = null, before = null, listHistory = allHistory, getStock = getStockData } = {}) {
+  const history = (await listHistory()).filter(h =>
+    (!asOf || h.date <= asOf) && (!before || h.date < before));
+  const dates = latestPerCategory(history);
   const [l, s] = await Promise.all(CATS.map(cat => dates[cat] ? getStock(dates[cat], cat) : Promise.resolve([])));
   const tag = (list, cat) => mergeStockItems((list || []).map(i => ({ ...i, category: i.category || cat })));
   return {
     lehnga: { date: dates.lehnga, items: tag(l, CATEGORIES.LEHNGA) },
     saree: { date: dates.saree, items: tag(s, CATEGORIES.SAREE) }
   };
+}
+
+/**
+ * What changed on one upload day: the categories uploaded ON that date,
+ * each against its own previous upload. Feed to analyzeStockChanges(current,
+ * previous, { categories }).
+ * @returns {Promise<{ categories: string[], current: Array, previous: Array }>}
+ */
+export async function loadDayChanges(date, { listHistory = allHistory, getStock = getStockData } = {}) {
+  const lists = await Promise.all(CATS.map(cat => getStock(date, cat)));
+  const categories = CATS.filter((_, i) => (lists[i] || []).length);
+  const current = mergeStockItems(lists.flatMap((l, i) => (l || []).map(it => ({ ...it, category: it.category || CATS[i] }))));
+  const before = await loadStockAsOf({ before: date, listHistory, getStock });
+  const previous = categories.flatMap(cat => before[cat].items);
+  return { categories, current, previous };
+}
+
+/** Current stock: each category from its own latest upload. */
+export const loadLatestStock = (deps = {}) => loadStockAsOf(deps);
+
+/** Both categories' items as one list (for pages that show everything). */
+export const allItemsOf = (stock) => [...(stock?.lehnga?.items || []), ...(stock?.saree?.items || [])];
+
+/** "Lehnga 21/11 · Saree 21/11" — which upload each category comes from. */
+export function stockDatesLabel(stock, fmt = (d) => d) {
+  const part = (name, d) => `${name} ${d ? fmt(d) : '—'}`;
+  return `${part('Lehnga', stock?.lehnga?.date)} · ${part('Saree', stock?.saree?.date)}`;
 }
