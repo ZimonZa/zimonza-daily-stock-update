@@ -45,7 +45,7 @@ eq('lehnga sample headings', sampleSheets('lehnga').data[0],
 const zmRows = sampleSheets('zm').data;
 eq('zm: accepted', validateZMFile(zmRows).valid, true);
 eq('zm: headings', zmRows[0], ['Zimonza Product Code', 'Kuntal Product Code', 'Category']);
-eq('zm: two codes with their category', parseZMFile(zmRows).map(m => [m.zmCode, m.category]), [['ZM-1', 'lehnga'], ['ZM-38', 'saree']]);
+eq('zm: two codes with their category', parseZMFile(zmRows).map(m => [m.zmCode, m.category]), [['ZM-9001', 'lehnga'], ['ZM-9002', 'saree']]);
 
 // Colour list (Settings reads names from column A, skipping a "Colour" header)
 const colRows = sampleSheets('colours').data;
@@ -69,6 +69,20 @@ const ret = parseReturnsFile(retRows, []);
 eq('returns: two rows', ret.rows.length, 2);
 ok('returns: dates read', ret.rows.every(r => /^\d{4}-\d{2}-\d{2}$/.test(r.date || '')), JSON.stringify(ret.rows.map(r => r.date)));
 eq('returns: SellerSkuCode marked required', sampleSheets('myntraReturns').help.find(r => r[0] === 'SellerSkuCode')?.[1], 'Required');
+
+// ════ Samples never carry real codes ════
+// ZM, Pricing and Mapping uploads save at once; a sample uploaded unchanged
+// "to try it" must not overwrite a real style's prices or mapping.
+for (const key of Object.keys(SAMPLES)) {
+  const { data } = sampleSheets(key);
+  const [head, ...rows] = data;
+  const cells = rows.flat().map(v => String(v));
+  const realZm = cells.filter(c => /ZM-0*\d{1,3}(\b|-)/i.test(c) && !/ZM-9\d{3}/i.test(c));
+  ok(`${key}: no real-looking ZM code`, realZm.length === 0, JSON.stringify(realZm));
+  const codeCols = head.map((h, i) => (/kuntal (product )?code|^item no$/i.test(String(h)) ? i : -1)).filter(i => i >= 0);
+  const realKuntal = rows.map(r => codeCols.map(i => String(r[i] ?? ''))).flat().filter(c => c && !/^9\d{4}$/.test(c));
+  ok(`${key}: Kuntal codes are clearly fake (9xxxx)`, realKuntal.length === 0, JSON.stringify(realKuntal));
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

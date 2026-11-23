@@ -28,20 +28,20 @@ const stock = (what, rows) => ({
 
 export const SAMPLES = {
   lehnga: stock('Lehnga', [
-    ['4132', 'RANI LEHENGA CHOLI', 'MAIN GODOWN', '(Rani * 2 )( Black * 1 )', 3, 0, 3],
-    ['4136', 'PISTA LEHENGA CHOLI', 'SALES STUDIO', '(Pista * 1 )', 1, 0, 1]
+    ['90001', 'RANI LEHENGA CHOLI', 'MAIN GODOWN', '(Rani * 2 )( Black * 1 )', 3, 0, 3],
+    ['90002', 'PISTA LEHENGA CHOLI', 'SALES STUDIO', '(Pista * 1 )', 1, 0, 1]
   ]),
   saree: stock('Saree', [
-    ['9551', 'SAREE 9551', 'MAIN GODOWN', '(Pink * 2 )( Firozi * 1 )', 3, 0, 3],
-    ['1008', 'SAREE 1008', 'WAREHOUSE', '(Rani * 1 )', 1, 0, 1]
+    ['90003', 'SAREE 90003', 'MAIN GODOWN', '(Pink * 2 )( Firozi * 1 )', 3, 0, 3],
+    ['90004', 'SAREE 90004', 'WAREHOUSE', '(Rani * 1 )', 1, 0, 1]
   ]),
   zm: {
     fileName: 'Sample_ZM_Codes.xlsx',
     headers: ['Zimonza Product Code', 'Kuntal Product Code', 'Category'],
-    rows: [['ZM-1', '4132', 'Lehnga'], ['ZM-38', '9551', 'Saree']],
+    rows: [['ZM-9001', '90001', 'Lehnga'], ['ZM-9002', '90003', 'Saree']],
     help: [
-      ['Zimonza Product Code', R, 'Your ZM code. Keep this heading exactly — the upload checks it.', 'ZM-1'],
-      ['Kuntal Product Code', R, 'The Kuntal code (ITEM NO in the stock files). Write (UNST) for an unstitched blouse.', '4132'],
+      ['Zimonza Product Code', R, 'Your ZM code. Keep this heading exactly — the upload checks it.', 'ZM-9001'],
+      ['Kuntal Product Code', R, 'The Kuntal code (ITEM NO in the stock files). Write (UNST) for an unstitched blouse.', '90001'],
       ['Category', O, 'Lehnga or Saree — only needed when the same Kuntal code is in both stock files. Leave blank otherwise.', 'Lehnga']
     ]
   },
@@ -54,30 +54,30 @@ export const SAMPLES = {
   myntraInventory: {
     fileName: 'Sample_Myntra_Inventory.xlsx',
     headers: ['sellerSkuCode', 'quantity'],
-    rows: [['ZM-1-Rani', 3], ['ZM-38-Pink', 2]],
+    rows: [['ZM-9001-Rani', 3], ['ZM-9002-Pink', 2]],
     help: [
-      ['sellerSkuCode', R, 'Myntra SellerSkuCode: ZM code, then the colour — ZM-<number>-<Colour>', 'ZM-1-Rani'],
+      ['sellerSkuCode', R, 'Myntra SellerSkuCode: ZM code, then the colour — ZM-<number>-<Colour>', 'ZM-9001-Rani'],
       ['quantity', O, 'Ignored on upload — the app works the quantity out from today\'s stock', '3']
     ]
   },
   myntraMapping: {
     fileName: 'Sample_Myntra_Mapping.xlsx',
     headers: ['Style Id', 'Article Type', 'Colour', 'SellerSkuCode'],
-    rows: [['33445511', 'Lehenga Choli', 'Rani', 'ZM-1-Rani'], ['33445512', 'Saree', 'Pink', 'ZM-38-Pink']],
+    rows: [['33445511', 'Lehenga Choli', 'Rani', 'ZM-9001-Rani'], ['33445512', 'Saree', 'Pink', 'ZM-9002-Pink']],
     help: [
       ['Style Id', O, 'Myntra Style ID', '33445511'],
       ['Article Type', O, 'Myntra article type', 'Lehenga Choli'],
       ['Colour', O, 'Colour as listed on Myntra', 'Rani'],
-      ['SellerSkuCode', R, 'ZM code, then the colour — ZM-<number>-<Colour>. The colour must match the stock file\'s colour name.', 'ZM-1-Rani']
+      ['SellerSkuCode', R, 'ZM code, then the colour — ZM-<number>-<Colour>. The colour must match the stock file\'s colour name.', 'ZM-9001-Rani']
     ]
   },
   myntraPricing: {
     fileName: 'Sample_Myntra_Pricing.xlsx',
     headers: ['ZM Code', 'Kuntal Code', 'Category', 'Kuntal Selling Price', 'Myntra MRP', 'Myntra MU Price', 'Myntra ISP'],
-    rows: [['ZM-01', '4132', 'lehnga', 8990, 24999, 13830.77, 13849], ['ZM-38', '9551', 'saree', 2400, 6999, 3692.31, 3699]],
+    rows: [['ZM-9001', '90001', 'lehnga', 8990, 24999, 13830.77, 13849], ['ZM-9002', '90003', 'saree', 2400, 6999, 3692.31, 3699]],
     help: [
-      ['ZM Code', R, 'ZM code (ZM-01 and ZM-1 are the same)', 'ZM-01'],
-      ['Kuntal Code', O, 'Kuntal code of the style', '4132'],
+      ['ZM Code', R, 'ZM code (leading zeros do not matter: ZM-01 is ZM-1)', 'ZM-9001'],
+      ['Kuntal Code', O, 'Kuntal code of the style', '90001'],
       ['Category', O, 'lehnga or saree — decides the GST rate on purchase bills', 'lehnga'],
       ['Kuntal Selling Price', R, 'The rate you buy at (before GST). A style without it cannot be billed.', '8990'],
       ['Myntra MRP', O, 'MRP on Myntra. Leave blank if not set — it stays blank, never 0.', '24999'],
@@ -89,14 +89,14 @@ export const SAMPLES = {
     fileName: 'Sample_Returns_RTO.xlsx',
     headers: ['Type', 'SellerSkuCode', 'ZM Code', 'Kuntal Code', 'Colour', 'Qty', 'Date', 'Condition', 'Reason', 'Notes'],
     rows: [
-      ['RTO', 'ZM-1-Rani', 'ZM-1', '4132', 'Rani', 1, '20-11-2026', 'good', '', ''],
-      ['Customer Return', 'ZM-38-Pink', 'ZM-38', '9551', 'Pink', 1, '21-11-2026', 'damaged', 'Torn', 'Stitching open']
+      ['RTO', 'ZM-9001-Rani', 'ZM-9001', '90001', 'Rani', 1, '20-11-2026', 'good', '', ''],
+      ['Customer Return', 'ZM-9002-Pink', 'ZM-9002', '90003', 'Pink', 1, '21-11-2026', 'damaged', 'Torn', 'Stitching open']
     ],
     help: [
       ['Type', R, 'RTO or Customer Return', 'RTO'],
-      ['SellerSkuCode', R, 'ZM-<number>-<Colour>. Rows without it are skipped.', 'ZM-1-Rani'],
-      ['ZM Code', O, 'Filled from the SellerSkuCode if blank', 'ZM-1'],
-      ['Kuntal Code', O, 'Filled from pricing / ZM list if blank', '4132'],
+      ['SellerSkuCode', R, 'ZM-<number>-<Colour>. Rows without it are skipped.', 'ZM-9001-Rani'],
+      ['ZM Code', O, 'Filled from the SellerSkuCode if blank', 'ZM-9001'],
+      ['Kuntal Code', O, 'Filled from pricing / ZM list if blank', '90001'],
       ['Colour', O, 'Filled from the SellerSkuCode if blank; spelling is corrected', 'Rani'],
       ['Qty', R, 'Pieces that came back', '1'],
       ['Date', O, 'Day it came back, day first: DD-MM-YYYY', '20-11-2026'],
