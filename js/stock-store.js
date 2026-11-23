@@ -22,29 +22,47 @@ export function stockKey(category, code) {
   return `${category || ''}|${cleanCode(code)}`;
 }
 
+const copyColours = (list) => (list || []).map(c => ({ ...c, qty: Number(c.qty) || 0 }));
+/** Add `more` colours into `into` (same colour → pieces added). */
+function addColours(into, more) {
+  for (const c of more || []) {
+    const hit = into.find(x => normColorKey(x.name) === normColorKey(c.name));
+    if (hit) hit.qty += Number(c.qty) || 0;
+    else into.push({ ...c, qty: Number(c.qty) || 0 });
+  }
+}
+
 /**
  * Items that are the same product (same category, same clean code) become
- * one: colour quantities added, total recomputed, `sku` the clean code.
- * Order of first appearance is kept.
+ * one: colour quantities added (overall and per location), total and level
+ * recomputed, `sku` the clean code. Order of first appearance is kept; the
+ * input records are never changed.
  */
 export function mergeStockItems(items) {
   const byKey = new Map();
+  const merged = new Set();
   for (const it of items || []) {
     if (!it) continue;
     const key = stockKey(it.category, it.sku);
-    const code = normItemNo(it.sku);
     if (!byKey.has(key)) {
-      byKey.set(key, { ...it, sku: code, colors: (it.colors || []).map(c => ({ ...c, qty: Number(c.qty) || 0 })) });
+      const first = { ...it, sku: normItemNo(it.sku), colors: copyColours(it.colors) };
+      if (it.locations) first.locations = Object.fromEntries(Object.entries(it.locations).map(([loc, cols]) => [loc, copyColours(cols)]));
+      byKey.set(key, first);
       continue;
     }
     const into = byKey.get(key);
-    for (const c of it.colors || []) {
-      const hit = into.colors.find(x => normColorKey(x.name) === normColorKey(c.name));
-      if (hit) hit.qty += Number(c.qty) || 0;
-      else into.colors.push({ ...c, qty: Number(c.qty) || 0 });
+    merged.add(key);
+    addColours(into.colors, it.colors);
+    if (it.locations) {
+      into.locations ||= {};
+      for (const [loc, cols] of Object.entries(it.locations)) addColours(into.locations[loc] ||= [], cols);
     }
   }
-  return [...byKey.values()].map(it => ({ ...it, totalQty: it.colors.reduce((t, c) => t + c.qty, 0) }));
+  return [...byKey.entries()].map(([key, it]) => {
+    const out = { ...it, totalQty: it.colors.reduce((t, c) => t + c.qty, 0) };
+    if (merged.has(key)) out.stockLevel = worstColorLevel(out.colors);   // was the first record's level
+    return out;
+  });
 }
 
 /** Stock by category, each keyed by clean code: { lehnga: Map, saree: Map }. */

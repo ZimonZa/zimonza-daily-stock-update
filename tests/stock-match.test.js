@@ -252,5 +252,19 @@ eq('nothing that day', dayChangesLabel({ categories: [] }, '2026-11-23', fmtD), 
   eq('capped for the 1 MB document limit', mergeMismatches([], Array.from({ length: 2500 }, (_, i) => ({ sku: String(i), category: 'saree' })), ['saree']).length, 2000);
 }
 
+// ════ 18. Merging old "9551 M" + "9551" records keeps everything ════
+{
+  const a = { ...item('saree', '9551 M', [['Rani', 1]]), stockLevel: 'low',
+    locations: { 'MAIN GODOWN': [{ name: 'Rani', qty: 1 }] } };
+  const b = { ...item('saree', '9551', [['Rani', 9], ['Pink', 8]]), stockLevel: 'high',
+    locations: { 'MAIN GODOWN': [{ name: 'Rani', qty: 4 }], 'SALES STUDIO': [{ name: 'Rani', qty: 5 }, { name: 'Pink', qty: 8 }] } };
+  const [m] = mergeStockItems([a, b]);
+  eq('locations from both records, pieces added per colour', m.locations,
+    { 'MAIN GODOWN': [{ name: 'Rani', qty: 5 }], 'SALES STUDIO': [{ name: 'Rani', qty: 5 }, { name: 'Pink', qty: 8 }] });
+  eq('level worked out again from the merged colours', m.stockLevel, 'high');
+  eq('a single record is left as it is', mergeStockItems([a])[0].stockLevel, 'low');
+  eq('the input records are not changed', a.locations['MAIN GODOWN'][0].qty, 1);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
