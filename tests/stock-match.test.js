@@ -14,6 +14,7 @@ import { analyzeStockChanges, sumSummaries, mergeMismatches } from './stock-anal
 import { staleStockIds } from './firestore-service.js';
 import { buildZMProduct } from './zm-mapper.js';
 import { generateDailyReport, reportFileName } from './report-generator.js';
+import { buildSkipRows } from './skip-manager.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => {
@@ -270,6 +271,19 @@ eq('nothing that day', dayChangesLabel({ categories: [] }, '2026-11-23', fmtD), 
 eq('daily CSV', reportFileName('daily', '2026-11-21', 'csv'), 'zimonza-daily_21-11-2026.csv');
 eq('weekly PDF', reportFileName('weekly', '2026-11-21', 'pdf'), 'zimonza-weekly_21-11-2026.pdf');
 eq('no slash ever reaches a file name', /[\\/]/.test(reportFileName('daily', '2026-11-21', 'xlsx')), false);
+
+// ════ 20. Skip Panel follows the Lehnga / Saree choice made in the ZM Panel ════
+{
+  const idx = indexStock({ lehnga: [item('lehnga', '3044', [['Rani', 2]])], saree: [item('saree', '3044', [['Pink', 5]]), item('saree', '9551', [['Pink', 7]])] });
+  const rows = buildSkipRows(
+    [{ sku: '3044', notes: 'x' }, { sku: '9551 M' }, { sku: '4113' }],
+    [{ zmCode: 'ZM-32', kuntalCode: '3044.', category: 'lehnga' }],
+    idx);
+  eq('chosen category used (mapping stored as "3044.")', [rows[0].category, rows[0].totalQty], ['lehnga', 2]);
+  eq('no choice → the one file that has it', [rows[1].category, rows[1].totalQty], ['saree', 7]);
+  eq('not in stock', [rows[2].name, rows[2].stockLevel], ['—', 'sold_out']);
+  eq('notes kept', rows[0].notes, 'x');
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

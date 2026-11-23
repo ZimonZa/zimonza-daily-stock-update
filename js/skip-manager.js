@@ -3,21 +3,31 @@
 // ═══════════════════════════════════════════════════════════════
 import {
   addToSkip, removeFromSkip, getAllSkippedProducts,
-  updateUploadStatus, getStockData, getAllUploadDates
+  updateUploadStatus, getAllZMMappings
 } from './firestore-service.js';
-import { UPLOAD_STATUS, CATEGORIES } from './constants.js';
+import { UPLOAD_STATUS } from './constants.js';
 import { loadLatestStock, indexStock, lookupKuntal } from './stock-store.js';
-import { itemStockLevel } from './utils.js';
+import { itemStockLevel, normItemNo } from './utils.js';
 
 export async function loadSkipPanelData() {
-  const [skipped, dates] = await Promise.all([
+  const [skipped, zm, latest] = await Promise.all([
     getAllSkippedProducts(),
-    getAllUploadDates()
+    getAllZMMappings(),
+    loadLatestStock()
   ]);
-  const latest = await loadLatestStock();
-  const index = indexStock({ lehnga: latest.lehnga.items, saree: latest.saree.items });
-  return skipped.map(s => {
-    const stock = lookupKuntal(s.sku, '', index).stock;
+  return buildSkipRows(skipped, zm, indexStock({ lehnga: latest.lehnga.items, saree: latest.saree.items }));
+}
+
+/**
+ * Skip Panel rows: each skipped Kuntal code with its stock. A code in both
+ * files uses the Lehnga / Saree choice made in the ZM Panel (was: always
+ * the saree one).
+ */
+export function buildSkipRows(skipped, zmMappings, index) {
+  const chosen = new Map((zmMappings || []).filter(m => m.category)
+    .map(m => [normItemNo(m.kuntalCode).toUpperCase(), m.category]));
+  return (skipped || []).map(s => {
+    const stock = lookupKuntal(s.sku, chosen.get(normItemNo(s.sku).toUpperCase()) || '', index).stock;
     return {
       ...s,
       name: stock?.name || '—',

@@ -1208,7 +1208,7 @@ function resetDrop(zone, hint) {
 
 // ── Shared page state handed to the tab modules ───────────────
 const state = {
-  ctx: null,               // { latestDate, stockMap, zmToKuntal }
+  ctx: null,               // { latestDate, dates: {lehnga, saree}, index, zmToKuntal: Map<zm, [{kuntalCode, category}]> }
   mappings: [],
   pricing: [],
   skuStatus: {},           // sellerSkuCode → { active }
