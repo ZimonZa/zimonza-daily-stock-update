@@ -52,7 +52,7 @@ function build() {
     }
   }
   const special = {
-    writeBatch: 'export const writeBatch = () => ({ set(){}, delete(){}, update(){}, commit: async()=>{} });',
+    writeBatch: 'export const writeBatch = () => ({ set(){}, delete(ref){ (globalThis.__fsDeletes ||= []).push(ref); }, update(){}, commit: async()=>{} });',
     // A suite may set globalThis.__fsExists(ref) to say which documents
     // exist, and read globalThis.__fsSets / __fsUpdates to see what was written.
     doc: 'export const doc = (db, col, id) => ({ col, id });',

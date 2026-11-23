@@ -1209,3 +1209,6 @@ td.text-right, th.text-right { font-variant-numeric: tabular-nums; }
 .zm-sample-link { color: var(--zari); font-weight: 600; text-decoration: none; }
 .zm-sample-link:hover { text-decoration: underline; color: #F3D98B; }
 @media (max-width: 640px) { .zm-sample-row span { display: none; } }
+
+.map-del-btn { color: var(--silk-4); padding: 4px; border-radius: 6px; }
+.map-del-btn:hover { color: #F0999C; background: rgba(229,86,91,0.08); }

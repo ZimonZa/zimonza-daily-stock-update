@@ -191,6 +191,9 @@
           <button id="map-bulk-deactivate" class="btn-secondary text-xs py-2 px-3">
             <i data-lucide="x-circle" class="w-3.5 h-3.5 inline-block mr-1"></i> Deactivate
           </button>
+          <button id="map-bulk-delete" class="btn-secondary text-xs py-2 px-3 text-red-300">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5 inline-block mr-1"></i> Delete selected
+          </button>
           <button id="map-bulk-clear" class="text-slate-400 hover:text-slate-200 text-xs ml-auto">Clear selection</button>
         </div>
 
@@ -1125,7 +1128,7 @@ import { bindSampleLinks } from './js/sample-files.js';
 import notify from './js/notifications.js';
 import { readExcelFile } from './js/excel-parser.js';
 import {
-  saveMyntraMappings, getAllMyntraMappings, getAllMyntraPricing,
+  saveMyntraMappings, getAllMyntraMappings, getAllMyntraPricing, deleteMyntraMappings,
   getAllMyntraSkuStatus, setMyntraSkuActive, setMyntraSkuActiveBulk,
   getPurchaseSettings
 } from './js/firestore-service.js';
@@ -1527,6 +1530,7 @@ function renderMappings() {
         ${thSort(mapView,'kuntalSellingPrice','Kuntal Selling Price', true)}
         ${thSort(mapView,'myntraMrp','Myntra MRP', true)}
         ${thSort(mapView,'myntraIsp','Myntra ISP', true)}
+        <th class="px-2 py-2.5"></th>
       </tr></thead>
       <tbody>${f.map(r=>`
         <tr class="border-b border-white/5 hover:bg-white/[0.02] ${r.active ? '' : 'opacity-60'}">
@@ -1546,6 +1550,7 @@ function renderMappings() {
           <td class="px-4 py-2.5 text-right ${r.kuntalSellingPrice === null ? 'text-slate-600' : 'text-emerald-300 font-semibold'}">${money(r.kuntalSellingPrice)}</td>
           <td class="px-4 py-2.5 text-right text-slate-300">${money(r.myntraMrp)}</td>
           <td class="px-4 py-2.5 text-right text-slate-300">${money(r.myntraIsp)}</td>
+          <td class="px-2 py-2.5 text-right"><button data-map-del="${esc(r.sellerSkuCode)}" class="map-del-btn" title="Delete this mapping"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button></td>
         </tr>`).join('')}
       </tbody>
     </table>`;
@@ -1644,6 +1649,32 @@ async function bulkSetActive(active) {
 el('map-bulk-activate').addEventListener('click', () => bulkSetActive(true));
 el('map-bulk-deactivate').addEventListener('click', () => bulkSetActive(false));
 el('map-bulk-clear').addEventListener('click', () => { mapSelection.clear(); renderMappings(); });
+
+// ── Delete mappings: one row, or every ticked row ──
+async function deleteMappings(skus) {
+  if (!skus.length) return;
+  const msg = skus.length === 1
+    ? `Delete mapping ${skus[0]}? This cannot be undone.`
+    : `Delete ${skus.length} selected mapping(s)? This cannot be undone.`;
+  if (!confirm(msg)) return;
+  try {
+    const n = await deleteMyntraMappings(skus);
+    const gone = new Set(skus);
+    state.mappings = state.mappings.filter(m => !gone.has(m.sellerSkuCode));
+    for (const sku of skus) mapSelection.delete(sku);   // a deleted SKU never stays selected
+    populateColourFilter();
+    renderMappings();
+    renderKpis();
+    notify.success(`${n} mapping(s) deleted`);
+  } catch (err) {
+    notify.error('Delete failed: ' + err.message);
+  }
+}
+el('map-bulk-delete').addEventListener('click', () => deleteMappings([...mapSelection]));
+el('map-table').addEventListener('click', e => {
+  const del = e.target.closest('button[data-map-del]');
+  if (del) deleteMappings([del.dataset.mapDel]);
+});
 
 // Export mappings (full table, with today's stock + price columns)
 const MAP_EXPORT_COLUMNS = [

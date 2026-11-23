@@ -168,6 +168,18 @@ export async function getAllMyntraPricing() {
   return snap.docs.map(d => d.data());
 }
 
+/**
+ * Delete Myntra mappings by SellerSkuCode. The SKU's Live / Deactivated
+ * choice is kept (myntra_sku_status), so it returns if the SKU is uploaded
+ * again.
+ */
+export async function deleteMyntraMappings(sellerSkuCodes) {
+  const ids = [...new Set((sellerSkuCodes || []).map(s => String(s).replace(/\//g, '_')).filter(Boolean))];
+  if (!ids.length) return 0;
+  await runChunkedBatch(ids.map(id => (batch) => batch.delete(doc(db, COLLECTIONS.MYNTRA_MAPPING, id))));
+  return ids.length;
+}
+
 /** Delete the pricing rows of these ZM codes (hand edits in the Pricing tab) */
 export async function deleteMyntraPricing(zmCodes) {
   const ids = [...new Set((zmCodes || []).map(normZmCode).filter(Boolean))];
