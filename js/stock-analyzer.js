@@ -193,6 +193,17 @@ export function sumSummaries(summaries) {
 }
 
 /**
+ * BAL PCS mismatch rows for a day's summary: the rows already saved for
+ * categories NOT uploaded this time are kept, the uploaded ones replaced —
+ * a saree file added later the same day no longer wipes the lehnga rows.
+ * Capped at 2000 for the 1 MB Firestore document limit.
+ */
+export function mergeMismatches(saved, fresh, uploadedCategories) {
+  const replaced = new Set(uploadedCategories || []);
+  return [...(saved || []).filter(m => !replaced.has(m?.category)), ...(fresh || [])].slice(0, 2000);
+}
+
+/**
  * Compute stock health metrics from items
  */
 export function computeStockHealth(items) {

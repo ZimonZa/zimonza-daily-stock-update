@@ -10,7 +10,7 @@ import { parseStockFile } from './excel-parser.js';
 import { stockKey, mergeStockItems, indexStock, lookupKuntal, latestPerCategory, loadLatestStock, loadStockAsOf, loadDayChanges, changeSinceLast, clearStockCache, dayChangesLabel, setColourQty } from './stock-store.js';
 import { parseZMFile } from './excel-parser.js';
 import { resolveStock } from './myntra.js';
-import { analyzeStockChanges, sumSummaries } from './stock-analyzer.js';
+import { analyzeStockChanges, sumSummaries, mergeMismatches } from './stock-analyzer.js';
 import { staleStockIds } from './firestore-service.js';
 import { buildZMProduct } from './zm-mapper.js';
 import { generateDailyReport } from './report-generator.js';
@@ -239,6 +239,17 @@ eq('nothing that day', dayChangesLabel({ categories: [] }, '2026-11-23', fmtD), 
   eq("a colour with an apostrophe can be edited", setColourQty(items, stockKey('saree', '7002'), "D'Firozi", '5').totalQty, 6);
   eq('negative or blank → 0', setColourQty(items, stockKey('lehnga', '7002'), 'Pink', '-3').totalQty, 0);
   eq('unknown item → null', setColourQty(items, stockKey('saree', '9999'), 'Pink', '1'), null);
+}
+
+// ════ 17. BAL PCS mismatches survive a second upload the same day ════
+{
+  const morning = [{ sku: '4132', category: 'lehnga', diff: 2 }, { sku: '9551', category: 'saree', diff: -1 }];
+  const sareeAgain = [{ sku: '1008', category: 'saree', diff: 3 }];
+  eq('a saree-only re-upload keeps the lehnga rows and replaces the saree ones',
+    mergeMismatches(morning, sareeAgain, ['saree']).map(m => m.sku), ['4132', '1008']);
+  eq('both files again → only the new rows', mergeMismatches(morning, sareeAgain, ['lehnga', 'saree']).map(m => m.sku), ['1008']);
+  eq('nothing saved before', mergeMismatches(null, sareeAgain, ['saree']).length, 1);
+  eq('capped for the 1 MB document limit', mergeMismatches([], Array.from({ length: 2500 }, (_, i) => ({ sku: String(i), category: 'saree' })), ['saree']).length, 2000);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

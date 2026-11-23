@@ -270,8 +270,8 @@ import { renderShell } from './js/ui-components.js';
 import { bindSampleLinks } from './js/sample-files.js';
 import notify from './js/notifications.js';
 import { readExcelFile, parseStockFile, validateStockFile, getFileSummary } from './js/excel-parser.js';
-import { analyzeStockChanges } from './js/stock-analyzer.js';
-import { replaceStockData, saveDailySummary, getStockData, getAllUploadDates, saveUploadHistory, getRecentHistory } from './js/firestore-service.js';
+import { analyzeStockChanges, mergeMismatches } from './js/stock-analyzer.js';
+import { replaceStockData, saveDailySummary, getDailySummary, getStockData, getAllUploadDates, saveUploadHistory, getRecentHistory } from './js/firestore-service.js';
 import { latestPerCategory, stockKey, setColourQty } from './js/stock-store.js';
 import { CATEGORIES } from './js/constants.js';
 import { today, formatDate, formatDateDisplay, formatNumber, worstColorLevel, escHtml as esc } from './js/utils.js';
@@ -589,11 +589,13 @@ async function approveAndSave(items, uploadDate) {
     const dayCats = [dayL.length ? CATEGORIES.LEHNGA : null, dayS.length ? CATEGORIES.SAREE : null].filter(Boolean);
     const dayItems = [...dayL, ...dayS];
     const finalAnalysis = analyzeStockChanges(dayItems, await baselineItems(uploadDate, dayCats), { categories: dayCats });
-    // Persist per-row colour-pcs vs BAL PCS mismatches so Stock Analysis can show them
-    const balPcsMismatches = [
+    // Persist per-row colour-pcs vs BAL PCS mismatches so Stock Analysis can
+    // show them; rows saved earlier today for the other category are kept
+    const savedSummary = await getDailySummary(uploadDate).catch(() => null);
+    const balPcsMismatches = mergeMismatches(savedSummary?.balPcsMismatches, [
       ...(state.lehnga?.summary?.balPcsMismatches || []),
       ...(state.saree?.summary?.balPcsMismatches || []),
-    ].slice(0, 2000); // cap for Firestore 1MB doc safety
+    ], uploadedCategories());
     await saveDailySummary(uploadDate, { ...finalAnalysis.summary, uploadDate, balPcsMismatches });
     setStep('step-save','done');
 
