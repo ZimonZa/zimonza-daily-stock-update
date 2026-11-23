@@ -183,6 +183,8 @@ const zmIdx = indexStock({ lehnga: [item('lehnga', '3044', [['Rani', 2]])], sare
 const zp = buildZMProduct({ zmCode: 'ZM-32', kuntalCode: '3044.' }, {}, zmIdx);
 eq('row shows the clean code', zp.kuntalCode, '3044');
 eq('row keeps the stored document id', zp.docId, '3044.');
+eq('the id read from the store wins', buildZMProduct({ id: '3044.', zmCode: 'ZM-32', kuntalCode: '3044' }, {}, zmIdx).docId, '3044.');
+eq('a stray record (category only, no code) can still be addressed', buildZMProduct({ id: '3044', category: 'lehnga' }, {}, zmIdx).docId, '3044');
 eq('code in both files is a clash', zp.clash, true);
 eq('chosen category is used', buildZMProduct({ zmCode: 'ZM-32', kuntalCode: '3044', category: 'lehnga' }, {}, zmIdx).totalQty, 2);
 

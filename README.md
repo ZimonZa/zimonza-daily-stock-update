@@ -479,6 +479,10 @@ Every page (Dashboard, Stock Analysis, Low Stock, ZM Panel, Myntra, Skip Panel, 
 
 All / Lehnga / Saree tabs with counts; 48 items per page with *Showing a–b of N* and every page reachable; a **Change** column (pieces now minus the previous upload of that category, or *new*); quick links to Low Stock, Sold Items, Restocked and Sold Out; CSV named `zimonza-stock_DD-MM-YYYY.csv` for the date shown.
 
+### ZM Panel: deleting ZM codes
+
+A bin on each row deletes that ZM code; tick rows (or *select all shown* in the header) and use **Delete selected** for many. Both ask first and cannot be undone. Only the ZM ↔ Kuntal mapping (`zm_mapping/{id}`) is removed — upload status, notes and the stock files stay, so adding the same Kuntal code again brings its status back. Myntra rows for a deleted ZM code show no stock until it is added again. A ticked row hidden by a filter is unticked, so Delete selected only acts on rows you can see.
+
 ### Report files
 
 Reports downloads are named day first: `zimonza-daily_21-11-2026.csv` / `.xlsx` / `.pdf`. The preview says which upload each category comes from.

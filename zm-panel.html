@@ -145,6 +145,13 @@
 
   <!-- ZM Products Table -->
   <div class="glass-card overflow-hidden">
+    <div id="zm-bulk" class="hidden flex items-center gap-3 px-4 py-2.5 border-b border-white/5 text-sm">
+      <span id="zm-sel-count" class="text-slate-300"></span>
+      <button id="zm-bulk-delete" class="btn-secondary text-xs py-2 px-3 text-red-300">
+        <i data-lucide="trash-2" class="w-3.5 h-3.5 inline-block mr-1"></i> Delete selected
+      </button>
+      <button id="zm-bulk-clear" class="text-slate-400 hover:text-slate-200 text-xs ml-auto">Clear selection</button>
+    </div>
     <div id="zm-table-container">
       <div class="p-8 flex justify-center"><div class="spinner"></div></div>
     </div>
@@ -217,7 +224,7 @@ import { skipProduct } from './js/skip-manager.js';
 import { debounce, toCSV, downloadFile, normColorKey, relativeTime, normItemNo, formatDateDisplay } from './js/utils.js';
 import { stockDatesLabel } from './js/stock-store.js';
 import { readExcelFile, parseZMFile, validateZMFile } from './js/excel-parser.js';
-import { saveZMMapping, getAllZMMappings, setZMCategory } from './js/firestore-service.js';
+import { saveZMMapping, getAllZMMappings, setZMCategory, deleteZMMappings } from './js/firestore-service.js';
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 await requireAuth();
@@ -226,6 +233,7 @@ bindSampleLinks();
 if (window.lucide) lucide.createIcons();
 
 let products = [], activeSku = null;
+const zmSelection = new Set();   // docIds of ticked rows (always rows shown)
 
 // ── Column sorting ────────────────────────────────────────────
 let sortKey = null, sortDir = 1; // 1 = asc, -1 = desc
@@ -476,9 +484,15 @@ function renderTable(data) {
 
   document.getElementById('zm-count').textContent = `${filtered.length} products`;
 
+  // A row hidden by a filter is never left selected, so Delete selected
+  // only ever acts on rows you can see.
+  const shownIds = new Set(filtered.map(p => p.docId));
+  for (const id of [...zmSelection]) if (!shownIds.has(id)) zmSelection.delete(id);
+
   if (!filtered.length) {
     document.getElementById('zm-table-container').innerHTML =
       `<p class="text-center py-12 text-slate-500 text-sm">No products match.</p>`;
+    updateBulkBar();
     return;
   }
 
@@ -519,6 +533,7 @@ function renderTable(data) {
     const partialNote = (p.uploadStatus === 'uploaded' || p.uploadStatus === 'partial')
       ? `<span class="text-xs text-slate-400 ml-1">${(p.uploadedColors||[]).length}/${(p.colors||[]).length}</span>` : '';
     return `<tr class="border-t border-white/5 hover:bg-white/3 transition">
+      <td class="pl-4 pr-1 py-3"><input type="checkbox" class="zm-sel accent-emerald-500" data-id="${esc(p.docId)}" ${zmSelection.has(p.docId) ? 'checked' : ''} aria-label="Select ${esc(p.zmCode || p.docId)}"></td>
       <td class="px-4 py-3 text-xs font-mono text-purple-400">${esc(p.zmCode)||'—'}</td>
       <td class="px-4 py-3 text-xs font-mono text-emerald-400">${esc(p.kuntalCode)}</td>
       <td class="px-4 py-3 text-slate-200 text-sm max-w-[180px]"><span class="block truncate">${esc(p.name)}</span>${p.clash
@@ -530,9 +545,14 @@ function renderTable(data) {
       <td class="px-4 py-3"><div class="flex flex-wrap gap-1">${colors}</div></td>
       <td class="px-4 py-3 whitespace-nowrap">${statusChip(p.uploadStatus)}${partialNote}</td>
       <td class="px-4 py-3">
-        <button class="edit-btn text-xs text-slate-400 hover:text-emerald-400 transition mr-2" data-sku="${esc(p.kuntalCode)}" title="Details / edit">
-          <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
-        </button>
+        <div class="flex items-center gap-1 whitespace-nowrap">
+          <button class="edit-btn text-xs text-slate-400 hover:text-emerald-400 transition mr-1" data-id="${esc(p.docId)}" title="Details / edit">
+            <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
+          </button>
+          <button class="zm-del-btn map-del-btn" data-id="${esc(p.docId)}" title="Delete this ZM code">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
       </td>
     </tr>`;
   }).join('');
@@ -546,6 +566,7 @@ function renderTable(data) {
     <div class="overflow-x-auto">
       <table class="w-full zm-table">
         <thead><tr>
+          <th class="pl-4 pr-1"><input type="checkbox" id="zm-sel-all" class="accent-emerald-500" title="Select all shown" aria-label="Select all shown"></th>
           ${th('ZM Code','zmCode')}${th('Kuntal Code','kuntalCode')}${th('Item Name','name')}${th('Category','category')}${th('Type','itemType')}
           ${th('Level','stockLevel')}${th('Qty','totalQty')}${th('Colors','colors')}${th('Status','uploadStatus')}<th></th>
         </tr></thead>
@@ -562,11 +583,64 @@ function renderTable(data) {
   });
   document.querySelectorAll('.edit-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const p = products.find(x => String(x.kuntalCode) === btn.dataset.sku);
+      const p = products.find(x => x.docId === btn.dataset.id);
       if (p) openModal(p);
     });
   });
+  updateBulkBar();
   if (window.lucide) lucide.createIcons();
+}
+
+// ── Delete ZM codes: one row, or every ticked row ──────────────
+// Only the ZM ↔ Kuntal mapping is removed; upload status, notes and the
+// stock files stay (re-adding the Kuntal code brings status/notes back).
+
+function updateBulkBar() {
+  const n = zmSelection.size;
+  document.getElementById('zm-bulk').classList.toggle('hidden', n === 0);
+  document.getElementById('zm-sel-count').textContent = `${n} selected`;
+  const all = document.getElementById('zm-sel-all');
+  if (all) {
+    const boxes = [...document.querySelectorAll('#zm-table-container .zm-sel')];
+    all.checked = boxes.length > 0 && boxes.every(b => b.checked);
+    all.indeterminate = !all.checked && boxes.some(b => b.checked);
+  }
+}
+
+const zmTableBox = document.getElementById('zm-table-container');
+zmTableBox.addEventListener('change', e => {
+  if (e.target.id === 'zm-sel-all') {
+    zmTableBox.querySelectorAll('.zm-sel').forEach(b => {
+      b.checked = e.target.checked;
+      if (b.checked) zmSelection.add(b.dataset.id); else zmSelection.delete(b.dataset.id);
+    });
+  } else if (e.target.classList.contains('zm-sel')) {
+    if (e.target.checked) zmSelection.add(e.target.dataset.id); else zmSelection.delete(e.target.dataset.id);
+  } else return;
+  updateBulkBar();
+});
+zmTableBox.addEventListener('click', e => {
+  const del = e.target.closest('.zm-del-btn');
+  if (del) deleteZM([del.dataset.id]);
+});
+document.getElementById('zm-bulk-delete').addEventListener('click', () => deleteZM([...zmSelection]));
+document.getElementById('zm-bulk-clear').addEventListener('click', () => { zmSelection.clear(); renderTable(products); });
+
+async function deleteZM(ids) {
+  const rows = ids.map(id => products.find(p => p.docId === id)).filter(Boolean);
+  if (!rows.length) return;
+  const msg = rows.length === 1
+    ? `Delete ${rows[0].zmCode || 'this mapping'} (Kuntal ${rows[0].docId})?\n\nIts Myntra rows will show no stock until it is added again. Upload status and notes are kept. This cannot be undone.`
+    : `Delete ${rows.length} ZM codes?\n\nTheir Myntra rows will show no stock until they are added again. Upload status and notes are kept. This cannot be undone.`;
+  if (!confirm(msg)) return;
+  try {
+    const n = await deleteZMMappings(rows.map(r => r.docId));
+    for (const r of rows) zmSelection.delete(r.docId);
+    notify.success(`${n} ZM code${n === 1 ? '' : 's'} deleted`);
+    await load();
+  } catch (err) {
+    notify.error('Delete failed: ' + err.message);
+  }
 }
 
 // ── Detail / status modal ─────────────────────────────────────

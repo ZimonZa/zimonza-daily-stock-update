@@ -72,7 +72,7 @@ export function buildZMProduct(m, statuses, index) {
   const stock = hit.stock;
   const status = statuses[String(m.kuntalCode)] || statuses[sku] || { status: UPLOAD_STATUS.PENDING };
   return {
-    docId: String(m.kuntalCode),
+    docId: m.id != null ? String(m.id) : String(m.kuntalCode),
     zmCode: m.zmCode,
     kuntalCode: sku,
     sku,

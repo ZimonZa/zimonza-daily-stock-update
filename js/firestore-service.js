@@ -109,10 +109,22 @@ export async function setZMCategory(kuntalCode, category) {
     { category: category || '', updatedAt: serverTimestamp() }, { merge: true });
 }
 
-/** Get all ZM mappings */
+/** Get all ZM mappings; `id` is the document id (the Kuntal code as stored) */
 export async function getAllZMMappings() {
   const snap = await getDocs(collection(db, COLLECTIONS.ZM_MAPPING));
-  return snap.docs.map(d => d.data());
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+/**
+ * Delete ZM ↔ Kuntal mappings by their stored ids (ZM Panel delete).
+ * Only the mapping goes: upload status, notes and stock are kept.
+ * @returns {Promise<number>} how many were deleted
+ */
+export async function deleteZMMappings(docIds) {
+  const ids = [...new Set((docIds || []).map(String).filter(Boolean))];
+  if (!ids.length) return 0;
+  await runChunkedBatch(ids.map(id => (batch) => batch.delete(doc(db, COLLECTIONS.ZM_MAPPING, id))));
+  return ids.length;
 }
 
 // ─── Myntra Mapping ─────────────────────────────────────────────
