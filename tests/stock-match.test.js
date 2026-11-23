@@ -13,7 +13,7 @@ import { resolveStock } from './myntra.js';
 import { analyzeStockChanges, sumSummaries, mergeMismatches } from './stock-analyzer.js';
 import { staleStockIds } from './firestore-service.js';
 import { buildZMProduct } from './zm-mapper.js';
-import { generateDailyReport } from './report-generator.js';
+import { generateDailyReport, reportFileName } from './report-generator.js';
 
 let pass = 0, fail = 0;
 const eq = (n, g, w) => {
@@ -265,6 +265,11 @@ eq('nothing that day', dayChangesLabel({ categories: [] }, '2026-11-23', fmtD), 
   eq('a single record is left as it is', mergeStockItems([a])[0].stockLevel, 'low');
   eq('the input records are not changed', a.locations['MAIN GODOWN'][0].qty, 1);
 }
+
+// ════ 19. Report files are named with the day first ════
+eq('daily CSV', reportFileName('daily', '2026-11-21', 'csv'), 'zimonza-daily_21-11-2026.csv');
+eq('weekly PDF', reportFileName('weekly', '2026-11-21', 'pdf'), 'zimonza-weekly_21-11-2026.pdf');
+eq('no slash ever reaches a file name', /[\\/]/.test(reportFileName('daily', '2026-11-21', 'xlsx')), false);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

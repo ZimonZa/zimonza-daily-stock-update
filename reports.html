@@ -153,7 +153,7 @@
 import { requireAuth } from './js/auth.js';
 import { renderShell } from './js/ui-components.js';
 import notify from './js/notifications.js';
-import { generateDailyReport, exportCSV, exportExcel, exportPDF } from './js/report-generator.js';
+import { generateDailyReport, exportCSV, exportExcel, exportPDF, reportFileName } from './js/report-generator.js';
 import { getStockData, getAllUploadDates } from './js/firestore-service.js';
 import { analyzeStockChanges, findFastMovers, getTopColors } from './js/stock-analyzer.js';
 import { CATEGORIES } from './js/constants.js';
@@ -231,12 +231,12 @@ document.querySelectorAll('[data-report][data-format]').forEach(btn => {
 
       const report = await generateDailyReport(date);
       const items = report.items;
-      const filename = `zimonza-${type}-${date}`;
+
       const title = `${type.charAt(0).toUpperCase()+type.slice(1)} Stock Report — ${formatDateDisplay(date)}`;
 
-      if (format === 'csv') { exportCSV(items, `${filename}.csv`); notify.success('CSV downloaded!'); }
-      else if (format === 'excel') { exportExcel(items, `${filename}.xlsx`); notify.success('Excel downloaded!'); }
-      else if (format === 'pdf') { exportPDF(items, title, formatDateDisplay(date)); notify.success('PDF downloaded!'); }
+      if (format === 'csv') { exportCSV(items, reportFileName(type, date, 'csv')); notify.success('CSV downloaded!'); }
+      else if (format === 'excel') { exportExcel(items, reportFileName(type, date, 'xlsx')); notify.success('Excel downloaded!'); }
+      else if (format === 'pdf') { exportPDF(items, title, formatDateDisplay(date), reportFileName(type, date, 'pdf')); notify.success('PDF downloaded!'); }
 
       showPreview(report, title);
     } catch(e) {
