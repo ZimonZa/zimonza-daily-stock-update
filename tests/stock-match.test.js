@@ -7,7 +7,7 @@ globalThis.window = globalThis;
 
 import { normItemNo } from './utils.js';
 import { parseStockFile } from './excel-parser.js';
-import { stockKey, mergeStockItems, indexStock, lookupKuntal, latestPerCategory, loadLatestStock, loadStockAsOf, loadDayChanges } from './stock-store.js';
+import { stockKey, mergeStockItems, indexStock, lookupKuntal, latestPerCategory, loadLatestStock, loadStockAsOf, loadDayChanges, changeSinceLast } from './stock-store.js';
 import { parseZMFile } from './excel-parser.js';
 import { resolveStock } from './myntra.js';
 import { analyzeStockChanges } from './stock-analyzer.js';
@@ -153,6 +153,15 @@ const day = await loadDayChanges('2026-11-20', {
 });
 eq('only categories uploaded that day are compared', day.categories, ['lehnga']);
 eq("…against each one's own previous upload", [day.current.length, day.previous.length, day.previous[0]?.totalQty], [1, 1, 5]);
+
+// ════ 10. Change since the last upload, per item ════
+const ch = changeSinceLast(
+  [item('saree', '9551', [['Rani', 6]]), item('lehnga', '4132', [['Rani', 5]]), item('saree', '7777', [['Pink', 3]])],
+  [item('saree', '9551 M', [['Rani', 8]]), item('lehnga', '4132', [['Rani', 5]])]
+);
+eq('fewer pieces than last upload', ch.get(stockKey('saree', '9551')), -2);
+eq('no change', ch.get(stockKey('lehnga', '4132')), 0);
+eq('a new item is marked new', ch.get(stockKey('saree', '7777')), 'new');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

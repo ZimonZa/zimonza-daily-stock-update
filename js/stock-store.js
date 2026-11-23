@@ -131,6 +131,18 @@ export async function loadDayChanges(date, { listHistory = allHistory, getStock 
   return { categories, current, previous };
 }
 
+/**
+ * Per item, pieces now minus pieces at the previous upload; 'new' for an
+ * item the previous upload didn't have. Keyed by stockKey.
+ */
+export function changeSinceLast(currentItems, previousItems) {
+  const before = new Map(mergeStockItems(previousItems || []).map(i => [stockKey(i.category, i.sku), i.totalQty]));
+  return new Map(mergeStockItems(currentItems || []).map(i => {
+    const k = stockKey(i.category, i.sku);
+    return [k, before.has(k) ? i.totalQty - before.get(k) : 'new'];
+  }));
+}
+
 /** Current stock: each category from its own latest upload. */
 export const loadLatestStock = (deps = {}) => loadStockAsOf(deps);
 

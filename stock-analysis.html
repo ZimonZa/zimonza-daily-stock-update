@@ -81,6 +81,22 @@
     <p id="changes-note" class="hidden text-slate-500 text-xs px-5 py-3"></p>
   </div>
 
+  <!-- Category tabs + quick links -->
+  <div class="flex flex-wrap items-center gap-3">
+    <div id="sa-tabs" class="om-seg" role="tablist" aria-label="Category">
+      <button data-sa-cat="all" class="is-on">All <span id="sa-n-all" class="opacity-70"></span></button>
+      <button data-sa-cat="lehnga">Lehnga <span id="sa-n-lehnga" class="opacity-70"></span></button>
+      <button data-sa-cat="saree">Saree <span id="sa-n-saree" class="opacity-70"></span></button>
+    </div>
+    <span id="sa-stock-dates" class="text-slate-500 text-xs"></span>
+    <nav class="ml-auto flex flex-wrap gap-2 text-xs" aria-label="Related lists">
+      <a href="low-stock.html" class="sa-link">Low Stock</a>
+      <a href="sold-items.html" class="sa-link">Sold Items</a>
+      <a href="restocked.html" class="sa-link">Restocked</a>
+      <a href="sold-out.html" class="sa-link">Sold Out</a>
+    </nav>
+  </div>
+
   <!-- Filters Bar -->
   <div class="glass-card p-4 flex flex-wrap gap-3 items-center">
     <input id="search-input" type="text" placeholder="Search SKU or name…" class="zm-input w-48">
@@ -136,16 +152,37 @@ import { renderShell } from './js/ui-components.js';
 import notify from './js/notifications.js';
 import { getStockData, getAllUploadDates, getDailySummary } from './js/firestore-service.js';
 import { CATEGORIES } from './js/constants.js';
-import { loadStockAsOf, loadDayChanges, allItemsOf, stockDatesLabel } from './js/stock-store.js';
+import { loadStockAsOf, loadDayChanges, allItemsOf, stockDatesLabel, changeSinceLast, stockKey } from './js/stock-store.js';
 import { filterItems, paginate } from './js/filters.js';
 import { exportCSV } from './js/report-generator.js';
-import { formatNumber, debounce, formatDateDisplay, itemStockLevel } from './js/utils.js';
+import { formatNumber, debounce, formatDateDisplay, itemStockLevel, exportDateStamp } from './js/utils.js';
 
 await requireAuth();
 renderShell('stock-analysis');
 if (window.lucide) lucide.createIcons();
 
-let allItems = [], page = 1, viewMode = 'grid';
+let allItems = [], page = 1, viewMode = 'grid', changeMap = new Map(), shownDate = '';
+
+/** Stock as of `date` (each category from its own last upload) and the change since the upload before. */
+async function loadFor(date) {
+  const now = await loadStockAsOf({ asOf: date });
+  const before = await loadStockAsOf({ before: date });
+  // recompute stockLevel per worst colour (old docs carry a total-based level)
+  allItems = allItemsOf(now).map(item => ({ ...item, stockLevel: itemStockLevel(item) }));
+  changeMap = changeSinceLast(allItems, allItemsOf(before));
+  shownDate = date;
+  document.getElementById('sa-stock-dates').textContent = `Stock: ${stockDatesLabel(now, formatDateDisplay)}`;
+}
+
+/** "+3" / "−2" / "new" / "" for an item. */
+function changeHTML(item) {
+  const c = changeMap.get(stockKey(item.category, item.sku));
+  if (c === 'new') return '<span class="sa-chg sa-chg-new" title="Not in the previous upload">new</span>';
+  if (!c) return '<span class="sa-chg sa-chg-zero" title="Same as the previous upload">0</span>';
+  return c > 0
+    ? `<span class="sa-chg sa-chg-up" title="More than the previous upload">+${c}</span>`
+    : `<span class="sa-chg sa-chg-down" title="Fewer than the previous upload">−${Math.abs(c)}</span>`;
+}
 const PER_PAGE = 48;
 
 async function load() {
@@ -170,10 +207,7 @@ async function load() {
       document.getElementById('card-container').innerHTML =
         `<div class="col-span-full p-12 flex justify-center"><div class="spinner"></div></div>`;
       try {
-        allItems = allItemsOf(await loadStockAsOf({ asOf: selected })).map(item => ({
-          ...item,
-          stockLevel: itemStockLevel(item)
-        }));
+        await loadFor(selected);
         document.getElementById('data-date-label').textContent = formatDateDisplay(selected);
         page = 1;
         renderStatsBar(allItems);
@@ -185,12 +219,7 @@ async function load() {
       }
     });
 
-    // Each category as of this date; recompute stockLevel per worst colour
-    // (old docs carry a total-based level)
-    allItems = allItemsOf(await loadStockAsOf({ asOf: date })).map(item => ({
-      ...item,
-      stockLevel: itemStockLevel(item)
-    }));
+    await loadFor(date);
     renderStatsBar(allItems);
     renderChanges(date);
     renderView();
@@ -207,7 +236,23 @@ function renderStatsBar(items) {
   document.getElementById('stat-total-pcs').textContent  = formatNumber(items.reduce((s,i)=>s+(i.totalQty||0),0));
   document.getElementById('stat-low').textContent        = formatNumber(items.filter(i=>i.stockLevel==='low').length);
   document.getElementById('stat-soldout').textContent    = formatNumber(items.filter(i=>i.stockLevel==='sold_out').length);
+  document.getElementById('sa-n-all').textContent = formatNumber(items.length);
+  document.getElementById('sa-n-lehnga').textContent = formatNumber(items.filter(i => i.category === 'lehnga').length);
+  document.getElementById('sa-n-saree').textContent = formatNumber(items.filter(i => i.category === 'saree').length);
 }
+
+// Tabs drive the category filter
+document.getElementById('sa-tabs').addEventListener('click', e => {
+  const b = e.target.closest('[data-sa-cat]');
+  if (!b) return;
+  document.getElementById('cat-filter').value = b.dataset.saCat;
+  syncTabs(); page = 1; renderView();
+});
+function syncTabs() {
+  const v = document.getElementById('cat-filter').value;
+  document.querySelectorAll('#sa-tabs [data-sa-cat]').forEach(b => b.classList.toggle('is-on', b.dataset.saCat === v));
+}
+document.getElementById('cat-filter').addEventListener('change', syncTabs);
 
 function esc(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -265,7 +310,8 @@ function getFilters() {
 function renderView() {
   const filtered = filterItems(allItems, getFilters());
   const { items, total, totalPages } = paginate(filtered, page, PER_PAGE);
-  document.getElementById('result-count').textContent = `${total} items`;
+  const from = total ? (page - 1) * PER_PAGE + 1 : 0;
+  document.getElementById('result-count').textContent = `Showing ${from}–${Math.min(page * PER_PAGE, total)} of ${formatNumber(total)}`;
 
   if (viewMode === 'grid') {
     document.getElementById('card-container').classList.remove('hidden');
@@ -301,7 +347,7 @@ function renderCardGrid(items) {
     const lvl = lvlClass[item.stockLevel] || 'level-sold_out';
     const cat = catStyle[item.category] || catStyle.saree;
     const colorPills = (item.colors || []).map(c =>
-      `<span class="color-pill"><span class="text-slate-200">${c.name}</span><span class="text-slate-500 ml-1">×${c.qty}</span></span>`
+      `<span class="color-pill"><span class="text-slate-200">${esc(c.name)}</span><span class="text-slate-500 ml-1">×${esc(c.qty)}</span></span>`
     ).join('');
 
     const totalQtyColor = item.stockLevel === 'sold_out' ? 'text-slate-400'
@@ -315,14 +361,14 @@ function renderCardGrid(items) {
       <div class="flex items-start justify-between gap-2 mb-3">
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2 mb-1.5 flex-wrap">
-            <span class="font-mono font-bold text-sm text-emerald-400">${item.sku}</span>
-            <span class="text-xs px-2 py-0.5 rounded-full font-semibold capitalize" style="${cat}">${item.category}</span>
+            <span class="font-mono font-bold text-sm text-emerald-400">${esc(item.sku)}</span>
+            <span class="text-xs px-2 py-0.5 rounded-full font-semibold capitalize" style="${cat}">${esc(item.category)}</span>
           </div>
-          <p class="text-slate-200 text-sm font-medium line-clamp-2 leading-snug">${item.name}</p>
+          <p class="text-slate-200 text-sm font-medium line-clamp-2 leading-snug">${esc(item.name)}</p>
         </div>
         <div class="text-right flex-shrink-0 ml-2">
           <p class="${totalQtyColor} font-bold text-2xl leading-none">${formatNumber(item.totalQty)}</p>
-          <p class="text-slate-600 text-xs mt-0.5">pcs</p>
+          <p class="text-slate-600 text-xs mt-0.5">pcs ${changeHTML(item)}</p>
         </div>
       </div>
 
@@ -352,14 +398,15 @@ function renderTable(items) {
 
   const rows = items.map(i => {
     const colorBadges = (i.colors||[]).slice(0,4).map(c=>
-      `<span class="color-badge">${c.name} ×${c.qty}</span>`).join(' ');
+      `<span class="color-badge">${esc(c.name)} ×${esc(c.qty)}</span>`).join(' ');
     const extra = (i.colors||[]).length > 4 ? `<span class="text-slate-500 text-xs">+${(i.colors||[]).length-4} more</span>` : '';
     const lvlCls = { high:'level-high', medium:'level-medium', low:'level-low', sold_out:'level-sold_out' }[i.stockLevel]||'level-sold_out';
     return `<tr class="border-t border-white/5 hover:bg-white/3 transition">
-      <td class="px-4 py-3"><span class="text-emerald-400 font-mono font-medium text-sm">${i.sku}</span></td>
-      <td class="px-4 py-3 text-slate-200 text-sm" style="max-width:220px">${i.name}</td>
-      <td class="px-4 py-3"><span class="badge badge-info capitalize">${i.category}</span></td>
+      <td class="px-4 py-3"><span class="text-emerald-400 font-mono font-medium text-sm">${esc(i.sku)}</span></td>
+      <td class="px-4 py-3 text-slate-200 text-sm" style="max-width:220px">${esc(i.name)}</td>
+      <td class="px-4 py-3"><span class="badge badge-info capitalize">${esc(i.category)}</span></td>
       <td class="px-4 py-3 text-white font-semibold">${formatNumber(i.totalQty)}</td>
+      <td class="px-4 py-3">${changeHTML(i)}</td>
       <td class="px-4 py-3"><span class="${lvlCls}">${(i.stockLevel || 'sold_out').replace('_',' ')}</span></td>
       <td class="px-4 py-3"><div class="flex flex-wrap gap-1">${colorBadges}${extra}</div></td>
     </tr>`;
@@ -370,7 +417,7 @@ function renderTable(items) {
       <table class="w-full zm-table">
         <thead><tr>
           <th>SKU</th><th>Item Name</th><th>Category</th>
-          <th>Qty</th><th>Level</th><th>Colors</th>
+          <th>Qty</th><th>Change</th><th>Level</th><th>Colors</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -380,16 +427,24 @@ function renderTable(items) {
 function renderPagination(totalPages) {
   const container = document.getElementById('pagination-container');
   if (totalPages <= 1) { container.innerHTML = ''; return; }
-  const maxBtns = 10;
-  const btns = Array.from({length: Math.min(totalPages, maxBtns)}, (_,i) => `
-    <button class="page-btn w-9 h-9 text-xs rounded-xl transition ${i+1===page
+  // First, last, and a window around the current page — every page reachable
+  const want = new Set([1, totalPages]);
+  for (let p = page - 2; p <= page + 2; p++) if (p >= 1 && p <= totalPages) want.add(p);
+  const pages = [...want].sort((a, b) => a - b);
+  const btn = (p, label, disabled = false) => `<button class="page-btn min-w-9 h-9 px-2 text-xs rounded-xl transition ${p === page && !disabled && label === String(p)
       ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-semibold'
-      : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5'}"
-      data-p="${i+1}">${i+1}</button>`).join('');
-  container.innerHTML = `<div class="flex gap-1.5">${btns}</div>`;
-  container.querySelectorAll('.page-btn').forEach(b => b.addEventListener('click', () => {
+      : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5'} ${disabled ? 'opacity-40 cursor-not-allowed' : ''}"
+      data-p="${p}" ${disabled ? 'disabled' : ''}>${label}</button>`;
+  const parts = [btn(page - 1, '‹ Prev', page === 1)];
+  pages.forEach((p, k) => {
+    if (k && p - pages[k - 1] > 1) parts.push('<span class="text-slate-600 px-1 self-center">…</span>');
+    parts.push(btn(p, String(p)));
+  });
+  parts.push(btn(page + 1, 'Next ›', page === totalPages));
+  container.innerHTML = `<div class="flex flex-wrap gap-1.5 items-center">${parts.join('')}</div>`;
+  container.querySelectorAll('.page-btn:not([disabled])').forEach(b => b.addEventListener('click', () => {
     page = +b.dataset.p; renderView();
-    document.getElementById('card-container').scrollIntoView({ behavior:'smooth', block:'start' });
+    document.getElementById(viewMode === 'grid' ? 'card-container' : 'table-container').scrollIntoView({ behavior:'smooth', block:'start' });
   }));
 }
 
@@ -422,7 +477,7 @@ document.getElementById('level-filter').addEventListener('change', () => { page=
 // Export
 document.getElementById('export-csv-btn').addEventListener('click', () => {
   const filtered = filterItems(allItems, getFilters());
-  exportCSV(filtered, 'zimonza-stock.csv');
+  exportCSV(filtered, `zimonza-stock_${exportDateStamp(shownDate ? new Date(shownDate + 'T00:00:00') : new Date())}.csv`);
   notify.success('CSV exported!');
 });
 
