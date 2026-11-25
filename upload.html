@@ -389,6 +389,9 @@ async function handleFile(file, category, zone, fileId) {
     const validation = validateStockFile(rows, cat);
     if (!validation.valid) { notify.error(validation.error); resetZone(zone); return; }
     const { items, validationStats } = parseStockFile(rows, cat);
+    await rulesReady;
+    // A replaced file starts from its own defaults, not the last file's ticks
+    for (const k of [...ticked.keys()]) if (k.startsWith(`${cat}|`)) ticked.delete(k);
     state[category] = { raw: items, stats: validationStats, file };
     refreshFixed();
     const summary = state[category].summary;
@@ -558,7 +561,14 @@ function updateProcessBtn() {
 const ticked = new Map();                 // fix.key → ticked
 const CATS_ORDER = [CATEGORIES.LEHNGA, CATEGORIES.SAREE];
 let baseRules = [];
-try { baseRules = await loadItemFixRules(); } catch (e) { console.error(e); }
+let rulesFailed = false;      // remembered choices could not be read → never overwrite them
+let reviewing = false;        // after Process: the card is locked until Cancel
+let pendingRules = null;      // the rules Process used (review, baseline, save)
+const rulesReady = loadItemFixRules().then(r => { baseRules = r || []; }, e => {
+  console.error(e);
+  rulesFailed = true;
+  notify.warning('Your remembered item-number choices could not be loaded. Fixes start ticked, and choices made now will not be saved.');
+});
 
 /** Each file's fixes with the remembered rules (status fixed / clash / kept). */
 function allFixes() {
@@ -625,7 +635,7 @@ function renderItemCheck() {
   document.getElementById('ic-tbody').innerHTML = shown.map(f => {
     const on = !!ticked.get(f.key);
     return `<tr class="border-t border-white/5">
-      <td class="px-3 py-2"><input type="checkbox" class="ic-tick accent-emerald-500" data-key="${esc(f.key)}" ${on ? 'checked' : ''} aria-label="Fix ${esc(f.from.sku)}"></td>
+      <td class="px-3 py-2"><input type="checkbox" class="ic-tick accent-emerald-500" data-key="${esc(f.key)}" ${on ? 'checked' : ''} ${reviewing ? 'disabled' : ''} aria-label="Fix ${esc(f.from.sku)}"></td>
       <td class="px-3 py-2 text-slate-400 text-xs">${fileName(f.category)}</td>
       <td class="px-3 py-2 font-mono text-xs ${on ? 'ic-old' : 'text-slate-200'}">${esc(f.from.sku)} | ${esc(f.from.name)}</td>
       <td class="px-3 py-2 font-mono text-xs ${on ? 'text-emerald-300 font-semibold' : 'text-slate-500'}">${esc(f.to.sku)} | ${esc(f.to.name)}</td>
@@ -634,7 +644,15 @@ function renderItemCheck() {
   }).join('') || `<tr><td colspan="5" class="px-3 py-6 text-center text-slate-500 text-xs">No rows match.</td></tr>`;
 }
 
+/** After Process the choices are fixed until Cancel: the review shows them. */
+function lockItemCheck(on) {
+  reviewing = on;
+  for (const id of ['ic-tick-all', 'ic-untick-all']) document.getElementById(id).disabled = on;
+  renderItemCheck();
+}
+
 function onTicksChanged() {
+  if (reviewing) return;
   refreshFixed();
   updatePreview();
   updateErrorPanel();
@@ -642,12 +660,12 @@ function onTicksChanged() {
 }
 document.getElementById('ic-tbody').addEventListener('change', e => {
   const box = e.target.closest('.ic-tick');
-  if (!box) return;
+  if (!box || reviewing) return;
   ticked.set(box.dataset.key, box.checked);
   onTicksChanged();
 });
-document.getElementById('ic-tick-all').addEventListener('click', () => { for (const f of allFixes()) ticked.set(f.key, true); onTicksChanged(); });
-document.getElementById('ic-untick-all').addEventListener('click', () => { for (const f of allFixes()) ticked.set(f.key, false); onTicksChanged(); });
+document.getElementById('ic-tick-all').addEventListener('click', () => { if (reviewing) return; for (const f of allFixes()) ticked.set(f.key, true); onTicksChanged(); });
+document.getElementById('ic-untick-all').addEventListener('click', () => { if (reviewing) return; for (const f of allFixes()) ticked.set(f.key, false); onTicksChanged(); });
 document.getElementById('ic-search').addEventListener('input', () => renderItemCheck());
 
 window.startProcessing = async function() {
@@ -658,6 +676,8 @@ window.startProcessing = async function() {
   document.getElementById('review-panel').classList.add('hidden');
 
   const uploadDate = selectedDate;
+  pendingRules = currentRules();
+  lockItemCheck(true);
 
   try {
     // Step 1: Parse
@@ -690,6 +710,8 @@ window.startProcessing = async function() {
   } catch(err) {
     notify.error('Processing failed: ' + err.message);
     console.error(err);
+    pendingRules = null;
+    lockItemCheck(false);
     document.getElementById('process-btn').disabled = false;
   }
 };
@@ -713,7 +735,7 @@ async function approveAndSave(items, uploadDate) {
     // The day's summary covers every category stored for this date (an
     // earlier same-day upload of the other file included), each compared
     // with its own previous upload.
-    const rulesNow = currentRules();
+    const rulesNow = pendingRules ?? currentRules();
     const [dayL, dayS] = (await Promise.all([
       getStockData(uploadDate, CATEGORIES.LEHNGA),
       getStockData(uploadDate, CATEGORIES.SAREE)
@@ -748,7 +770,9 @@ async function approveAndSave(items, uploadDate) {
     // Remember the item-number choices (only now — a cancelled or failed
     // upload changes nothing), then forget cached reads so pages use them.
     const sig = (rs) => JSON.stringify([...rs].map(r => [r.category, r.from, r.to, r.decision].join('|')).sort());
-    if (sig(rulesNow) !== sig(baseRules)) {
+    if (rulesFailed) {
+      // never overwrite choices we could not read
+    } else if (sig(rulesNow) !== sig(baseRules)) {
       try { await saveItemFixRules(rulesNow); baseRules = rulesNow; }
       catch (e) { console.error(e); notify.warning('Stock saved, but your item-number choices could not be remembered: ' + e.message); }
     }
@@ -759,6 +783,8 @@ async function approveAndSave(items, uploadDate) {
   } catch(err) {
     notify.error('Save failed: ' + err.message);
     console.error(err);
+    pendingRules = null;
+    lockItemCheck(false);
     document.getElementById('process-btn').disabled = false;
   }
 }
@@ -886,6 +912,8 @@ document.getElementById('approve-btn').addEventListener('click', async () => {
 });
 
 document.getElementById('cancel-review-btn').addEventListener('click', () => {
+  pendingRules = null;
+  lockItemCheck(false);
   document.getElementById('review-panel').classList.add('hidden');
   document.getElementById('steps-list').classList.add('hidden');
   document.getElementById('process-btn').disabled = false;
@@ -941,7 +969,7 @@ async function baselineItems(date, categories) {
   const last = latestPerCategory(history);
   const lists = await Promise.all(categories.map(cat => last[cat] ? getStockData(last[cat], cat) : Promise.resolve([])));
   // Saved days may hold "VELLY | 3447"; read them with the same rule as today's file
-  const rules = currentRules();
+  const rules = pendingRules ?? currentRules();
   return categories.flatMap((cat, i) => fixSavedItems(lists[i], cat, rules));
 }
 
