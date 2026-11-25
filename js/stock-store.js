@@ -12,7 +12,8 @@
 
 import { normItemNo, normColorKey, worstColorLevel } from './utils.js';
 import { CATEGORIES } from './constants.js';
-import { getStockData, getRecentHistory } from './firestore-service.js';
+import { getStockData, getRecentHistory, getItemFixRules } from './firestore-service.js';
+import { fixItemColumns } from './item-columns.js';
 
 const CATS = [CATEGORIES.LEHNGA, CATEGORIES.SAREE];
 const cleanCode = (code) => normItemNo(code).toUpperCase();
@@ -131,6 +132,19 @@ function remembered(load, keyOf) {
   };
 }
 const historyOnce = (listHistory) => remembered(listHistory, () => 'all');
+const rulesOnce = (getRules) => remembered(getRules, () => 'rules');
+
+/** The remembered item-number decisions, read once per page. */
+export const loadItemFixRules = (getRules = getItemFixRules) => rulesOnce(getRules)();
+
+/**
+ * Saved stock as the owner wants it read: swapped / mixed item numbers
+ * fixed (old days were saved with the word as the code), then merged.
+ */
+export function fixSavedItems(items, category, rules) {
+  const tagged = (items || []).map(i => ({ ...i, category: i.category || category }));
+  return mergeStockItems(fixItemColumns(tagged, category, rules).items);
+}
 const stockOnce = (getStock) => remembered(getStock, (date, cat) => `${date}|${cat}`);
 
 /** Forget remembered reads (after this page writes stock or history). */
@@ -146,13 +160,14 @@ async function allHistory() {
  * `asOf` (or strictly before `before`); no date → the latest. Merged.
  * @returns {Promise<{ lehnga: {date, items}, saree: {date, items} }>}
  */
-export async function loadStockAsOf({ asOf = null, before = null, listHistory = allHistory, getStock = getStockData } = {}) {
+export async function loadStockAsOf({ asOf = null, before = null, listHistory = allHistory, getStock = getStockData, getRules = getItemFixRules } = {}) {
   const history = (await historyOnce(listHistory)()).filter(h =>
     (!asOf || h.date <= asOf) && (!before || h.date < before));
   const dates = latestPerCategory(history);
   const read = stockOnce(getStock);
   const [l, s] = await Promise.all(CATS.map(cat => dates[cat] ? read(dates[cat], cat) : Promise.resolve([])));
-  const tag = (list, cat) => mergeStockItems((list || []).map(i => ({ ...i, category: i.category || cat })));
+  const rules = await loadItemFixRules(getRules);
+  const tag = (list, cat) => fixSavedItems(list, cat, rules);
   return {
     lehnga: { date: dates.lehnga, items: tag(l, CATEGORIES.LEHNGA) },
     saree: { date: dates.saree, items: tag(s, CATEGORIES.SAREE) }
@@ -165,12 +180,13 @@ export async function loadStockAsOf({ asOf = null, before = null, listHistory = 
  * previous, { categories }).
  * @returns {Promise<{ categories: string[], current: Array, previous: Array }>}
  */
-export async function loadDayChanges(date, { listHistory = allHistory, getStock = getStockData } = {}) {
+export async function loadDayChanges(date, { listHistory = allHistory, getStock = getStockData, getRules = getItemFixRules } = {}) {
   const read = stockOnce(getStock);
   const lists = await Promise.all(CATS.map(cat => read(date, cat)));
   const categories = CATS.filter((_, i) => (lists[i] || []).length);
-  const current = mergeStockItems(lists.flatMap((l, i) => (l || []).map(it => ({ ...it, category: it.category || CATS[i] }))));
-  const before = await loadStockAsOf({ before: date, listHistory, getStock });
+  const rules = await loadItemFixRules(getRules);
+  const current = lists.flatMap((l, i) => fixSavedItems(l, CATS[i], rules));
+  const before = await loadStockAsOf({ before: date, listHistory, getStock, getRules });
   const previous = categories.flatMap(cat => before[cat].items);
   return { categories, current, previous };
 }

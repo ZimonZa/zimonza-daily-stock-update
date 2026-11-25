@@ -678,3 +678,16 @@ export async function getCustomColours() {
   const snap = await getDoc(ref);
   return snap.exists() ? (snap.data().colours || []) : [];
 }
+
+// ─── Item number fix: remembered decisions ─────────────────────
+
+/** Remembered "keep as in file" / "fix anyway" decisions: [{ category, from, to, decision }] */
+export async function getItemFixRules() {
+  const snap = await getDoc(doc(db, COLLECTIONS.SETTINGS, 'item_fixes'));
+  return snap.exists() ? (snap.data().rules || []) : [];
+}
+
+/** Save the remembered decisions (only after a successful upload). */
+export async function saveItemFixRules(rules) {
+  await setDoc(doc(db, COLLECTIONS.SETTINGS, 'item_fixes'), { rules: rules || [], updatedAt: serverTimestamp() });
+}

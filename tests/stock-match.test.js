@@ -7,7 +7,7 @@ globalThis.window = globalThis;
 
 import { normItemNo } from './utils.js';
 import { parseStockFile } from './excel-parser.js';
-import { stockKey, mergeStockItems, indexStock, lookupKuntal, latestPerCategory, loadLatestStock, loadStockAsOf, loadDayChanges, changeSinceLast, clearStockCache, dayChangesLabel, setColourQty } from './stock-store.js';
+import { stockKey, mergeStockItems, indexStock, lookupKuntal, latestPerCategory, loadLatestStock, loadStockAsOf, loadDayChanges, changeSinceLast, clearStockCache, dayChangesLabel, setColourQty, fixSavedItems, loadItemFixRules } from './stock-store.js';
 import { parseZMFile } from './excel-parser.js';
 import { resolveStock } from './myntra.js';
 import { analyzeStockChanges, sumSummaries, mergeMismatches } from './stock-analyzer.js';
@@ -285,6 +285,45 @@ eq('no slash ever reaches a file name', /[\\/]/.test(reportFileName('daily', '20
   eq('no choice → the one file that has it', [rows[1].category, rows[1].totalQty], ['saree', 7]);
   eq('not in stock', [rows[2].name, rows[2].stockLevel], ['—', 'sold_out']);
   eq('notes kept', rows[0].notes, 'x');
+}
+
+// ════ 21. Old saved stock: swapped / mixed item numbers fixed when read ════
+{
+  clearStockCache();
+  const listHistory = async () => [{ date: '2026-11-20', lehngaCount: 0, sareeCount: 2 }, { date: '2026-11-21', lehngaCount: 0, sareeCount: 2 }];
+  const files = {
+    // saved before the fix: the word is the code
+    '2026-11-20|saree': [{ ...item('saree', 'VELLY', [['Rani', 5]]), name: '3447' }, { ...item('saree', '3144 SANDHYA', [['Pink', 2]]), name: '3144 SANDHYA' }],
+    // saved after the fix
+    '2026-11-21|saree': [{ ...item('saree', '3447', [['Rani', 4]]), name: 'VELLY' }, { ...item('saree', '3144', [['Pink', 2]]), name: 'SANDHYA' }]
+  };
+  const getStock = async (d, c) => files[`${d}|${c}`] || [];
+  let ruleReads = 0;
+  const getRules = async () => { ruleReads++; return []; };
+  const old = await loadStockAsOf({ asOf: '2026-11-20', listHistory, getStock, getRules });
+  eq('old day reads with numbers', old.saree.items.map(i => i.sku), ['3447', '3144']);
+  eq('…and the word as the name', old.saree.items[0].name, 'VELLY');
+  const day = await loadDayChanges('2026-11-21', { listHistory, getStock, getRules });
+  const a = analyzeStockChanges(day.current, day.previous, { categories: day.categories });
+  eq('no false new arrival or sold out across the change', [a.newArrivals.length, a.soldOutItems.length], [0, 0]);
+  eq('the real sale still shows', a.soldItems.map(i => i.sku), ['3447']);
+  eq('rules read once per page', ruleReads, 1);
+
+  clearStockCache();
+  const keep = async () => [{ category: 'saree', from: 'VELLY', to: '3447', decision: 'keep' }];
+  eq('a remembered keep leaves the old day as saved',
+    (await loadStockAsOf({ asOf: '2026-11-20', listHistory, getStock, getRules: keep })).saree.items.map(i => i.sku), ['VELLY', '3144']);
+
+  clearStockCache();
+  const both = { '2026-11-20|saree': [{ ...item('saree', '3447', [['Rani', 1]]), name: 'VELLY' }, { ...item('saree', 'VELLY', [['Rani', 2]]), name: '3447' }] };
+  const one = await loadStockAsOf({ asOf: '2026-11-20', listHistory, getStock: async (d, c) => both[`${d}|${c}`] || [], getRules });
+  eq('the same product saved both ways is one item', one.saree.items.map(i => `${i.sku}:${i.totalQty}`), ['3447:3']);
+
+  eq('fixSavedItems (Upload Center reads)', fixSavedItems([{ sku: 'VELLY', name: '3447', colors: [{ name: 'Rani', qty: 2 }] }], 'saree', []).map(i => [i.sku, i.name, i.category, i.totalQty]),
+    [['3447', 'VELLY', 'saree', 2]]);
+  clearStockCache();
+  eq('loadItemFixRules reads the rules', await loadItemFixRules(keep), [{ category: 'saree', from: 'VELLY', to: '3447', decision: 'keep' }]);
+  clearStockCache();
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
