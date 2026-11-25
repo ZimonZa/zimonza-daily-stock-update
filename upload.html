@@ -299,7 +299,7 @@ import { readExcelFile, parseStockFile, validateStockFile, getFileSummary } from
 import { analyzeStockChanges, mergeMismatches } from './js/stock-analyzer.js';
 import { replaceStockData, saveDailySummary, getDailySummary, getStockData, saveItemFixRules, getAllUploadDates, saveUploadHistory, getRecentHistory } from './js/firestore-service.js';
 import { latestPerCategory, stockKey, setColourQty, loadItemFixRules, fixSavedItems, clearStockCache } from './js/stock-store.js';
-import { fixItemColumns, effectiveRules, proposeFix, ruleKey } from './js/item-columns.js';
+import { fixItemColumns, effectiveRules, fixWarningCodes } from './js/item-columns.js';
 import { CATEGORIES } from './js/constants.js';
 import { today, formatDate, formatDateDisplay, formatNumber, worstColorLevel, escHtml as esc } from './js/utils.js';
 
@@ -578,12 +578,6 @@ function allFixes() {
 /** The remembered rules once the current ticks are applied. */
 const currentRules = () => effectiveRules(baseRules, allFixes(), ticked);
 
-/** The code a row ends up with under the current ticks (BAL PCS / colour rows). */
-function fixedCode(cat, sku, name, applied) {
-  const p = proposeFix(sku, name);
-  return p && applied.has(ruleKey(cat, sku, p.sku)) ? p : null;
-}
-
 /** Re-derive each file's items, summary and warnings from the raw parse. */
 function refreshFixed() {
   for (const f of allFixes()) if (!ticked.has(f.key)) ticked.set(f.key, f.status === 'fixed');
@@ -591,20 +585,9 @@ function refreshFixed() {
   for (const cat of CATS_ORDER) {
     const st = state[cat];
     if (!st) continue;
-    const tagged = st.raw.map(i => ({ ...i, category: cat }));
-    const applied = new Set(fixItemColumns(tagged, cat, rules).fixes.filter(f => f.status === 'fixed').map(f => f.key));
-    const firstTo = new Map();
-    for (const i of tagged) { const p = fixedCode(cat, i.sku, i.name, applied); if (p && !firstTo.has(i.sku)) firstTo.set(i.sku, p.sku); }
     st.items = fixSavedItems(st.raw, cat, rules);
-    const stats = {
-      ...st.stats,
-      balPcsMismatches: (st.stats.balPcsMismatches || []).map(m => {
-        const p = fixedCode(cat, m.sku, m.name, applied);
-        return p ? { ...m, sku: p.sku, name: p.name } : m;
-      }),
-      colourErrors: (st.stats.colourErrors || []).map(e => ({ ...e, skus: (e.skus || []).map(x => firstTo.get(x) || x) }))
-    };
-    st.summary = getFileSummary(st.items, stats);
+    // Warning rows show the code each row ends up with (exact per word + number)
+    st.summary = getFileSummary(st.items, fixWarningCodes(st.stats, cat, st.raw, rules));
   }
   renderItemCheck();
 }

@@ -145,12 +145,17 @@ export function parseStockFile(rows, category) {
     // Colour spelling check: flag names within edit distance ≤ 2 of a known colour
     for (const { name: colourName } of parsedColors) {
       const key = colourName.toLowerCase().trim();
+      // items: each ITEM NO + ITEM NAME pair, so a fixed code can be shown exactly
+      const pair = { sku, name: String(itemName ?? '').trim() };
       if (colourErrorMap.has(key)) {
-        colourErrorMap.get(key).skus.add(sku);
+        const e = colourErrorMap.get(key);
+        e.skus.add(sku);
+        e.items.set(`${pair.sku}\u241F${pair.name}`, pair);
       } else {
         const match = findColourSuggestion(colourName, getEffectiveColours());
         if (match) {
-          colourErrorMap.set(key, { found: colourName, suggestion: match.suggestion, distance: match.distance, skus: new Set([sku]), category });
+          colourErrorMap.set(key, { found: colourName, suggestion: match.suggestion, distance: match.distance, skus: new Set([sku]),
+            items: new Map([[`${pair.sku}\u241F${pair.name}`, pair]]), category });
         }
       }
     }
@@ -215,7 +220,7 @@ export function parseStockFile(rows, category) {
     });
   }
 
-  const colourErrors = Array.from(colourErrorMap.values()).map(e => ({ ...e, skus: Array.from(e.skus) }));
+  const colourErrors = Array.from(colourErrorMap.values()).map(e => ({ ...e, skus: Array.from(e.skus), items: Array.from(e.items.values()) }));
   const sorted = items.sort((a, b) => String(a.sku).localeCompare(String(b.sku), undefined, { numeric: true }));
   return { items: sorted, validationStats: { totalRows, mismatchRows, colourErrors, balPcsMismatches } };
 }

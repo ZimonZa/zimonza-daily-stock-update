@@ -4,7 +4,7 @@
 // for stock already saved. Patterns below are the real ones from the
 // owner's 2026 files.
 
-import { isCodeLike, proposeFix, ruleKey, fixItemColumns, effectiveRules } from './item-columns.js';
+import { isCodeLike, proposeFix, ruleKey, fixItemColumns, effectiveRules, fixWarningCodes } from './item-columns.js';
 import { parseStockFile } from './excel-parser.js';
 
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
@@ -110,6 +110,34 @@ eq('remembered keep on a clash day, ticked → fix', effectiveRules(keepMaths, k
   [{ category: 'saree', from: 'MATHS-3', to: '1300', decision: 'fix' }]);
 eq('…and that rule really fixes it', fixItemColumns([it('1300', 'ROJA'), it('MATHS-3', '1300')], 'saree',
   effectiveRules(keepMaths, keptClash, new Map([['saree|MATHS-3|1300', true]]))).items.map(i => i.sku), ['1300', '1300']);
+
+// ── Minor 1: two different words sent to one number are a clash, not a merge ──
+const twoWords = fixItemColumns([it('RHEA', '1475'), it('ROJA', '1475')], 'saree');
+eq('two words → one number: both need you', [twoWords.fixes.map(f => f.status), twoWords.items.map(i => i.sku)], [['clash', 'clash'], ['RHEA', 'ROJA']]);
+eq('…each names the other', twoWords.fixes.map(f => f.clashWith), ['ROJA', 'RHEA']);
+const twoSplits = fixItemColumns([it('3144 RED', '3144 RED'), it('3144 BLUE', '3144 BLUE')], 'saree');
+eq('two splits → one number: both need you', twoSplits.fixes.map(f => f.status), ['clash', 'clash']);
+eq('same word written twice is still one product', fixItemColumns([it('RHEA', '1475'), it('RHEA.', '1475')], 'saree').fixes.map(f => f.status), ['fixed', 'fixed']);
+eq('a remembered fix settles one of them', fixItemColumns([it('RHEA', '1475'), it('ROJA', '1475')], 'saree',
+  [{ category: 'saree', from: 'RHEA', to: '1475', decision: 'fix' }]).items.map(i => i.sku), ['1475', 'ROJA']);
+// "UNSTITCHED" spelled out (or misspelt) keeps the unstitched marker
+for (const [no, code] of [['4094 UNSTITCHED', '4094 (UNST)'], ['4094 (UNSTITCHED)', '4094 (UNST)'], ['3144 UNSTICHED', '3144 (UNST)']])
+  eq(`unstitched spelled out: ${no}`, [one(no, 'FLEMINGO').items[0].sku, one(no, 'FLEMINGO').items[0].name], [code, 'FLEMINGO']);
+
+// ── Minor 4: warning rows show the exact number, even when one word carries two products ──
+const rheaRaw = [it('RHEA', '1454'), it('RHEA', '1475')];
+const warned = fixWarningCodes({
+  balPcsMismatches: [{ sku: 'RHEA', name: '1454', category: 'saree', diff: 1 }],
+  colourErrors: [{ found: 'Ranii', skus: ['RHEA'], items: [{ sku: 'RHEA', name: '1454' }, { sku: 'RHEA', name: '1475' }], category: 'saree' }]
+}, 'saree', rheaRaw, []);
+eq('BAL PCS row → its own number', [warned.balPcsMismatches[0].sku, warned.balPcsMismatches[0].name], ['1454', 'RHEA']);
+eq('colour warning → both numbers', warned.colourErrors[0].skus, ['1454', '1475']);
+eq('a kept product keeps its word in warnings', fixWarningCodes({ balPcsMismatches: [{ sku: 'RHEA', name: '1454' }], colourErrors: [] }, 'saree', rheaRaw,
+  [{ category: 'saree', from: 'RHEA', to: '1454', decision: 'keep' }]).balPcsMismatches[0].sku, 'RHEA');
+const parsedWarn = parseStockFile([HEAD,
+  ['RHEA', '1454', 'MAIN GODOWN', '(Ranii * 2 )', 2, 0, 2],
+  ['RHEA', '1475', 'MAIN GODOWN', '(Ranii * 1 )', 1, 0, 1]], 'saree');
+eq('parser: a colour warning lists each word + number pair', (parsedWarn.validationStats.colourErrors[0]?.items || []).map(x => `${x.sku}|${x.name}`), ['RHEA|1454', 'RHEA|1475']);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

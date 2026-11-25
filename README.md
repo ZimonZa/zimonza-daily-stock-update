@@ -476,8 +476,8 @@ Every page (Dashboard, Stock Analysis, Low Stock, ZM Panel, Myntra, Skip Panel, 
 Some rows in the Kuntal files have the name in ITEM NO and the number in ITEM NAME (`VELLY | 3447`), or both in one cell (`3144 SANDHYA`). `js/item-columns.js` puts the number in ITEM NO and the words in ITEM NAME:
 
 - **Switch:** ITEM NO is a word and ITEM NAME is the number → `3447 | VELLY`.
-- **Split:** ITEM NO starts with the number and has words or an unstitched marker after it → `3144 | SANDHYA`, `3229(UNTS)` → `3229 (UNST)` (unstitched stays a separate product).
-- **Clash:** if the number already belongs to a different product in the same file (`1300 | ROJA` vs `MATHS-3 | 1300`), it is not switched unless you tick it.
+- **Split:** ITEM NO starts with the number and has words or an unstitched marker after it → `3144 | SANDHYA`, `3229(UNTS)` / `4094 UNSTITCHED` → `… (UNST)` (unstitched stays a separate product).
+- **Clash:** if the number already belongs to a different product in the same file (`1300 | ROJA` vs `MATHS-3 | 1300`), or two different words point at the same number, it is not switched unless you tick it.
 - One word can carry several products (RHEA → 1454 and 1475); the parser keeps each one apart.
 
 **Upload Center → Check item numbers** (after the files are dropped): every fix is listed and ticked; untick a row to keep it as the file has it. Process says how many fixes it applies. Your choices are remembered in `settings/item_fixes` — only after the upload saves — and apply to later uploads and to old data.

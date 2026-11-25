@@ -12,8 +12,8 @@ import { normItemNo } from './utils.js';
 
 /** 2–6 digits, optional " M" / "M.", optional "(UNST)", optional trailing dot. */
 const CODE = /^\d{2,6}(\s*M\.?)?(\s*\(\s*UNST\s*\))?\.?$/i;
-/** Unstitched marker, bracketed or bare; "UNTS" is a typo for it. */
-const MARK = /\(?\s*\bUN(?:ST|TS)\b\s*\)?/i;
+/** Unstitched marker, bracketed or bare: UNST, UNSTITCHED (or UNSTICHED), and the typo UNTS. */
+const MARK = /\(?\s*\bUN(?:ST(?:ITCHED|ICHED)?|TS)\b\s*\)?/i;
 
 export const isCodeLike = (v) => CODE.test(String(v ?? '').trim());
 
@@ -80,22 +80,61 @@ export function fixItemColumns(items, category, rules = []) {
   const proposals = list.map(i => proposeFix(i.sku, i.name));
   const owners = new Map();   // clean code of an unfixed item → its name
   list.forEach((i, n) => { if (!proposals[n]) owners.set(normItemNo(i.sku).toUpperCase(), i.name); });
+  // Two different words sent to one number ("RHEA | 1475" and "ROJA | 1475")
+  // are a clash too — never merged without the owner's tick.
+  const byTarget = new Map();   // clean target code → names proposed for it
+  proposals.forEach(p => { if (p) { const t = normItemNo(p.sku).toUpperCase(); (byTarget.get(t) || byTarget.set(t, []).get(t)).push(p.name); } });
 
   const fixes = [];
   const out = list.map((i, n) => {
     const p = proposals[n];
     if (!p) return i;
     const key = ruleKey(category, i.sku, p.sku);
-    const owner = owners.get(normItemNo(p.sku).toUpperCase());
-    const clash = owner !== undefined && !sameName(owner, p.name);
+    const target = normItemNo(p.sku).toUpperCase();
+    const owner = owners.get(target);
+    const rival = (byTarget.get(target) || []).find(n => !sameName(n, p.name));
+    const clashWith = owner !== undefined && !sameName(owner, p.name) ? owner : rival;
+    const clash = clashWith !== undefined;
     const decision = decided.get(key);
     const status = decision === 'keep' ? 'kept' : (clash && decision !== 'fix' ? 'clash' : 'fixed');
     const fix = { key, category, from: { sku: i.sku, name: i.name }, to: { sku: p.sku, name: p.name }, kind: p.kind, status };
-    if (clash) fix.clashWith = owner;
+    if (clash) fix.clashWith = clashWith;
     fixes.push(fix);
     return status === 'fixed' ? { ...i, sku: p.sku, name: p.name, fixedFrom: { sku: i.sku, name: i.name } } : i;
   });
   return { items: out, fixes };
+}
+
+/**
+ * Warning rows (BAL PCS mismatches, colour warnings) with the code each row
+ * ends up with — exact even when one word carries two products (RHEA →
+ * 1454 / 1475): a row is matched by its own ITEM NO + ITEM NAME pair.
+ * @param {{ balPcsMismatches?: Array<{sku, name}>, colourErrors?: Array<{skus, items?: Array<{sku, name}>}> }} stats
+ * @param {string} category
+ * @param {Array<{sku, name}>} items  the file's parsed items (before fixing)
+ * @param {Array} rules  the rules in force
+ */
+export function fixWarningCodes(stats, category, items, rules = []) {
+  const applied = new Set(fixItemColumns(items, category, rules).fixes.filter(f => f.status === 'fixed').map(f => f.key));
+  const fixedPair = (sku, name) => {
+    const p = proposeFix(sku, name);
+    return p && applied.has(ruleKey(category, sku, p.sku)) ? p : null;
+  };
+  const firstTo = new Map();   // older warning rows without pairs: the word's first number
+  for (const i of items || []) { const p = fixedPair(i.sku, i.name); if (p && !firstTo.has(i.sku)) firstTo.set(i.sku, p.sku); }
+  return {
+    ...stats,
+    balPcsMismatches: (stats?.balPcsMismatches || []).map(m => {
+      const p = fixedPair(m.sku, m.name);
+      return p ? { ...m, sku: p.sku, name: p.name } : m;
+    }),
+    colourErrors: (stats?.colourErrors || []).map(e => ({
+      ...e,
+      skus: e.items?.length
+        ? [...new Set(e.items.map(x => fixedPair(x.sku, x.name)?.sku || x.sku))]
+        : (e.skus || []).map(x => firstTo.get(x) || x)
+    }))
+  };
 }
 
 /**
