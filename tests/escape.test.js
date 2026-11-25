@@ -15,8 +15,11 @@ ok('escHtml keeps numbers', escHtml(12) === '12');
 // Every page / module that renders stock items
 const files = ['low-stock', 'new-arrivals', 'sold-items', 'restocked', 'sold-out', 'reports', 'skip-panel',
   'zm-panel', 'upload', 'stock-analysis', 'dashboard-js'];
-const FIELD = /\$\{\s*[A-Za-z_]+\.(sku|name|colorName|colourName|category|zmCode|kuntalCode|text|sub)\s*\}/g;
+const FIELD = /\$\{\s*[A-Za-z_][\w.]*\.(sku|name|colorName|colourName|category|zmCode|kuntalCode|text|sub|clashWith|found|suggestion)\s*\}/g;
 const HANDLER = /\bon(click|input|change)="[^"]*\$\{/g;
+// The scanner itself: nested paths (f.from.sku) and warning text count too
+ok('scanner catches a nested field', [...'<td>${f.from.sku} | ${f.to.name}</td>'.matchAll(FIELD)].length === 2);
+ok('scanner catches clash and colour-warning text', [...'<b>${f.clashWith}</b><i>${e.found}</i><u>${e.suggestion}</u>'.matchAll(FIELD)].length === 3);
 for (const f of files) {
   const path = f === 'dashboard-js' ? new URL('./dashboard.js', import.meta.url) : new URL(`./_page-${f}.txt`, import.meta.url);
   if (!existsSync(path)) { ok(`${f}: source found`, false); continue; }
