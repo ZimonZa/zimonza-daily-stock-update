@@ -471,6 +471,19 @@ Every page (Dashboard, Stock Analysis, Low Stock, ZM Panel, Myntra, Skip Panel, 
 - **Re-uploading a date replaces it.** Items that are no longer in the new file are removed from that date.
 - **A Kuntal code in both files** (e.g. 3044) is a clash: the ZM Panel shows *In both files — choose*; pick Lehnga or Saree in the row's edit box (saved as the ZM mapping's `category`). Until chosen, the saree item is used. Myntra shows *Lehnga/Saree not chosen* on those rows.
 
+### Item numbers fixed automatically
+
+Some rows in the Kuntal files have the name in ITEM NO and the number in ITEM NAME (`VELLY | 3447`), or both in one cell (`3144 SANDHYA`). `js/item-columns.js` puts the number in ITEM NO and the words in ITEM NAME:
+
+- **Switch:** ITEM NO is a word and ITEM NAME is the number → `3447 | VELLY`.
+- **Split:** ITEM NO starts with the number and has words or an unstitched marker after it → `3144 | SANDHYA`, `3229(UNTS)` → `3229 (UNST)` (unstitched stays a separate product).
+- **Clash:** if the number already belongs to a different product in the same file (`1300 | ROJA` vs `MATHS-3 | 1300`), it is not switched unless you tick it.
+- One word can carry several products (RHEA → 1454 and 1475); the parser keeps each one apart.
+
+**Upload Center → Check item numbers** (after the files are dropped): every fix is listed and ticked; untick a row to keep it as the file has it. Process says how many fixes it applies. Your choices are remembered in `settings/item_fixes` — only after the upload saves — and apply to later uploads and to old data.
+
+**Old saved stock** is fixed when it is read (no rewrite): a day saved as `VELLY` reads as `3447` on every page, so the first upload after the change shows no false sold-out / new arrival. Exception: days saved before the change hold RHEA, NIHARIKA and AMYRA as one merged item each, so the first upload after the change shows a one-time shift for those three.
+
 ### Dashboard periods
 
 **Today** = latest upload, **Yesterday** = the upload before. **Last 7 / Last 30 Days** show the latest stock plus *totals* of Sold / Restocked / New Arrivals / Sold Out for every upload in the period, added up from each upload's saved summary (one small read per day). Lists and charts below stay on the latest day.
@@ -522,6 +535,7 @@ daily_stock/
     meta/summary        ← { newArrivals, sold, restocked, soldOut, ... }
 
 zm_mapping/{kuntalCode} ← { zmCode, kuntalCode, category? }   ← category only when chosen
+settings/item_fixes     ← { rules: [{ category, from, to, decision: 'keep'|'fix' }] }  ← item-number choices
 website_upload_status/{sku} ← { status, notes, updatedAt }
 skip_products/{sku}     ← { sku, notes, skippedAt }
 history/{YYYY-MM-DD}    ← { lehngaCount, sareeCount, totalSKUs, ... }
@@ -578,7 +592,7 @@ The runner copies `js/` into a sandbox, rewrites the CDN imports to generated st
 
 The parse check uses `vm.SourceTextModule`, not `node --check` — under Node 26 `node --check` exits 0 on files it cannot parse, which had already let a real unbalanced paren through. The runner re-execs itself with `--experimental-vm-modules` so no flag is needed at the call site.
 
-Suites cover the Order Map maths (PIN precedence, the seller's PIN never taken, unfulfillable orders left out, combo parcels under a product filter, risky thresholds, Monday weeks, zones, the Excel sheets), the geo data itself (every state name matches between the PIN directory and the outline; known PINs resolve), destination PIN and payment read from real labels, the re-drop fill-in that never touches a returned parcel, the RTO Kuntal-price export, local file dates, ZM-code normalisation, GST maths, day-first and Excel-serial dates, swatch luminance, PDF sorter ordering and conflict confidence, label field extraction, the barcode fallback, offender keys and re-keying, duplicate classification, the write payload that protects a recorded return, return intake, the inventory return boost, the Orders tab driven end to end through a fake DOM, stock identity (` M` codes, `(UNST)` kept apart, per-category latest upload, legacy history, clash lookup, re-upload removing stale items, change since last upload, dashboard period totals), the sample files (every one parses back through the app's own reader with zero errors), mapping delete, dated PDF export names, charts redrawing on the same canvas, the Upload review editing the right item (lehnga 7002 vs saree "7002 M"), BAL PCS mismatches kept across same-day uploads, merged records keeping both location lists, the Skip Panel following the ZM category, day-first report file names, and a scan of every stock page for stock-file text written into HTML without escaping.
+Suites cover the Order Map maths (PIN precedence, the seller's PIN never taken, unfulfillable orders left out, combo parcels under a product filter, risky thresholds, Monday weeks, zones, the Excel sheets), the geo data itself (every state name matches between the PIN directory and the outline; known PINs resolve), destination PIN and payment read from real labels, the re-drop fill-in that never touches a returned parcel, the RTO Kuntal-price export, local file dates, ZM-code normalisation, GST maths, day-first and Excel-serial dates, swatch luminance, PDF sorter ordering and conflict confidence, label field extraction, the barcode fallback, offender keys and re-keying, duplicate classification, the write payload that protects a recorded return, return intake, the inventory return boost, the Orders tab driven end to end through a fake DOM, stock identity (` M` codes, `(UNST)` kept apart, per-category latest upload, legacy history, clash lookup, re-upload removing stale items, change since last upload, dashboard period totals), the sample files (every one parses back through the app's own reader with zero errors), mapping delete, dated PDF export names, charts redrawing on the same canvas, the Upload review editing the right item (lehnga 7002 vs saree "7002 M"), BAL PCS mismatches kept across same-day uploads, merged records keeping both location lists, the Skip Panel following the ZM category, day-first report file names, a scan of every stock page for stock-file text written into HTML without escaping, and the item-number switch / split rule (every real pattern, clashes, remembered keep / fix, one word carrying several products, old saved days read fixed).
 
 ---
 
