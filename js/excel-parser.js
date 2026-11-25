@@ -5,6 +5,7 @@
 
 import { VALID_LOCATIONS, SAREE_COLS, LEHNGA_COLS, ZM_COLS, CATEGORIES } from './constants.js';
 import { parseColors, worstColorLevel, findColourSuggestion, getEffectiveColours, normColorKey, normItemNo } from './utils.js';
+import { proposeFix } from './item-columns.js';
 
 /**
  * Read an Excel File object and return raw worksheet data as array of arrays
@@ -154,8 +155,12 @@ export function parseStockFile(rows, category) {
       }
     }
 
-    if (!skuMap.has(sku)) {
-      skuMap.set(sku, {
+    // A row the item-number rule would fix ("RHEA | 1475") is grouped by word
+    // AND number: one word can carry several products (RHEA → 1454, 1475).
+    const fix = proposeFix(sku, String(itemName ?? '').trim());
+    const groupKey = fix ? `${sku}\u241F${fix.sku}` : sku;
+    if (!skuMap.has(groupKey)) {
+      skuMap.set(groupKey, {
         sku,
         name: String(itemName || sku).trim(),
         category,
@@ -164,7 +169,7 @@ export function parseStockFile(rows, category) {
       });
     }
 
-    const entry = skuMap.get(sku);
+    const entry = skuMap.get(groupKey);
 
     // Keep first non-empty name found
     if (!entry.name || entry.name === sku) {
@@ -190,7 +195,8 @@ export function parseStockFile(rows, category) {
 
   // Convert to final format
   const items = [];
-  for (const [sku, entry] of skuMap) {
+  for (const entry of skuMap.values()) {
+    const sku = entry.sku;
     const colors = Array.from(entry.colorMap.values());
     const totalQty = colors.reduce((sum, c) => sum + c.qty, 0);
     // Level is per colour: the worst (lowest-qty) colour decides the product's level
