@@ -341,5 +341,21 @@ eq('no slash ever reaches a file name', /[\\/]/.test(reportFileName('daily', '20
   clearStockCache();
 }
 
+// ════ 23. The remembered choices are read alongside the stock, not after it ════
+{
+  clearStockCache();
+  const order = [];
+  const listHistory = async () => [{ date: '2026-11-21', lehngaCount: 1, sareeCount: 1 }];
+  const getStock = async (d, c) => { order.push('stock-start'); await new Promise(r => setTimeout(r, 20)); order.push('stock-end'); return []; };
+  const getRules = async () => { order.push('rules-start'); return []; };
+  await loadStockAsOf({ asOf: '2026-11-21', listHistory, getStock, getRules });
+  eq('rules requested before the stock reads finish', order.indexOf('rules-start') < order.indexOf('stock-end'), true);
+  clearStockCache();
+  order.length = 0;
+  await loadDayChanges('2026-11-21', { listHistory, getStock, getRules });
+  eq('…also for a day\'s changes', order.indexOf('rules-start') < order.indexOf('stock-end'), true);
+  clearStockCache();
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

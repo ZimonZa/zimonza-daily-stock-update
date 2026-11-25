@@ -161,12 +161,14 @@ async function allHistory() {
  * @returns {Promise<{ lehnga: {date, items}, saree: {date, items} }>}
  */
 export async function loadStockAsOf({ asOf = null, before = null, listHistory = allHistory, getStock = getStockData, getRules = getItemFixRules } = {}) {
+  const rulesP = loadItemFixRules(getRules);   // read alongside the stock, not after it
+  rulesP.catch(() => {});                      // a failure surfaces at the await below
   const history = (await historyOnce(listHistory)()).filter(h =>
     (!asOf || h.date <= asOf) && (!before || h.date < before));
   const dates = latestPerCategory(history);
   const read = stockOnce(getStock);
   const [l, s] = await Promise.all(CATS.map(cat => dates[cat] ? read(dates[cat], cat) : Promise.resolve([])));
-  const rules = await loadItemFixRules(getRules);
+  const rules = await rulesP;
   const tag = (list, cat) => fixSavedItems(list, cat, rules);
   return {
     lehnga: { date: dates.lehnga, items: tag(l, CATEGORIES.LEHNGA) },
@@ -182,9 +184,8 @@ export async function loadStockAsOf({ asOf = null, before = null, listHistory = 
  */
 export async function loadDayChanges(date, { listHistory = allHistory, getStock = getStockData, getRules = getItemFixRules } = {}) {
   const read = stockOnce(getStock);
-  const lists = await Promise.all(CATS.map(cat => read(date, cat)));
+  const [lists, rules] = await Promise.all([Promise.all(CATS.map(cat => read(date, cat))), loadItemFixRules(getRules)]);
   const categories = CATS.filter((_, i) => (lists[i] || []).length);
-  const rules = await loadItemFixRules(getRules);
   const current = lists.flatMap((l, i) => fixSavedItems(l, CATS[i], rules));
   const before = await loadStockAsOf({ before: date, listHistory, getStock, getRules });
   const previous = categories.flatMap(cat => before[cat].items);
