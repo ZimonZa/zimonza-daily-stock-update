@@ -176,6 +176,32 @@
     </div>
   </div>
 
+  <!-- Check item numbers: swapped / mixed ITEM NO and ITEM NAME -->
+  <div id="item-check" class="glass-card p-6 space-y-4 hidden">
+    <div class="ic-steps"><span>1 Files ✓</span><span class="is-on">2 Check item numbers</span><span>3 Compare &amp; review</span><span>4 Save</span></div>
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h3 class="text-white font-semibold">Check item numbers</h3>
+        <p id="ic-subtitle" class="text-slate-400 text-sm mt-0.5"></p>
+        <p class="text-slate-500 text-xs mt-1">Ticked rows are saved with the number as the item number and the words as the name. Untick to keep a row as the file has it — remembered for next uploads and old data.</p>
+      </div>
+      <div id="ic-chips" class="flex flex-wrap gap-2"></div>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <button type="button" id="ic-tick-all" class="btn-secondary text-xs py-1.5 px-3">Tick all</button>
+      <button type="button" id="ic-untick-all" class="btn-secondary text-xs py-1.5 px-3">Untick all</button>
+      <input id="ic-search" type="text" placeholder="Search code or name…" class="zm-input w-52">
+    </div>
+    <div class="overflow-x-auto max-h-[28rem] overflow-y-auto rounded-xl border border-white/5">
+      <table class="w-full text-sm">
+        <thead class="sticky top-0 bg-[var(--ink-2,#141414)]"><tr class="text-left text-slate-400 text-xs uppercase tracking-wide">
+          <th class="px-3 py-2 w-8"></th><th class="px-3 py-2">File</th><th class="px-3 py-2">In the file</th><th class="px-3 py-2">Will save as</th><th class="px-3 py-2"></th>
+        </tr></thead>
+        <tbody id="ic-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
   <!-- Process Button + Steps -->
   <div id="process-section" class="glass-card p-6 space-y-5">
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -271,8 +297,9 @@ import { bindSampleLinks } from './js/sample-files.js';
 import notify from './js/notifications.js';
 import { readExcelFile, parseStockFile, validateStockFile, getFileSummary } from './js/excel-parser.js';
 import { analyzeStockChanges, mergeMismatches } from './js/stock-analyzer.js';
-import { replaceStockData, saveDailySummary, getDailySummary, getStockData, getAllUploadDates, saveUploadHistory, getRecentHistory } from './js/firestore-service.js';
-import { latestPerCategory, stockKey, setColourQty } from './js/stock-store.js';
+import { replaceStockData, saveDailySummary, getDailySummary, getStockData, saveItemFixRules, getAllUploadDates, saveUploadHistory, getRecentHistory } from './js/firestore-service.js';
+import { latestPerCategory, stockKey, setColourQty, loadItemFixRules, fixSavedItems, clearStockCache } from './js/stock-store.js';
+import { fixItemColumns, effectiveRules, proposeFix, ruleKey } from './js/item-columns.js';
 import { CATEGORIES } from './js/constants.js';
 import { today, formatDate, formatDateDisplay, formatNumber, worstColorLevel, escHtml as esc } from './js/utils.js';
 
@@ -362,8 +389,9 @@ async function handleFile(file, category, zone, fileId) {
     const validation = validateStockFile(rows, cat);
     if (!validation.valid) { notify.error(validation.error); resetZone(zone); return; }
     const { items, validationStats } = parseStockFile(rows, cat);
-    const summary = getFileSummary(items, validationStats);
-    state[category] = { items, file, summary };
+    state[category] = { raw: items, stats: validationStats, file };
+    refreshFixed();
+    const summary = state[category].summary;
     const mismatchNote = summary.mismatchRows > 0 ? ` · ⚠ ${summary.mismatchRows} mismatches` : '';
     zone.innerHTML = fileSuccessHTML(file.name, `${summary.totalSKUs} SKUs · ${summary.totalPcs} pcs${mismatchNote}`);
     zone.classList.add('has-file');
@@ -517,7 +545,110 @@ function updateProcessBtn() {
   btn.disabled = !ready;
   btn.classList.toggle('opacity-40', !ready);
   btn.classList.toggle('cursor-not-allowed', !ready);
+  const n = allFixes().filter(f => ticked.get(f.key)).length;
+  btn.innerHTML = `<i data-lucide="zap" class="w-4 h-4"></i> ${n ? `Process with ${n} fix${n === 1 ? '' : 'es'} →` : 'Process Stock'}`;
+  if (window.lucide) lucide.createIcons();
 }
+
+// ── Check item numbers ─────────────────────────────────────────
+// Rows with the name in ITEM NO and the number in ITEM NAME ("VELLY | 3447"),
+// or both in one cell ("3144 SANDHYA"), are fixed before anything is
+// compared or saved. Every fix starts ticked; an untick keeps the row as the
+// file has it and is remembered (saved only after a successful upload).
+const ticked = new Map();                 // fix.key → ticked
+const CATS_ORDER = [CATEGORIES.LEHNGA, CATEGORIES.SAREE];
+let baseRules = [];
+try { baseRules = await loadItemFixRules(); } catch (e) { console.error(e); }
+
+/** Each file's fixes with the remembered rules (status fixed / clash / kept). */
+function allFixes() {
+  return CATS_ORDER.flatMap(cat => state[cat]
+    ? fixItemColumns(state[cat].raw.map(i => ({ ...i, category: cat })), cat, baseRules).fixes : []);
+}
+/** The remembered rules once the current ticks are applied. */
+const currentRules = () => effectiveRules(baseRules, allFixes(), ticked);
+
+/** The code a row ends up with under the current ticks (BAL PCS / colour rows). */
+function fixedCode(cat, sku, name, applied) {
+  const p = proposeFix(sku, name);
+  return p && applied.has(ruleKey(cat, sku, p.sku)) ? p : null;
+}
+
+/** Re-derive each file's items, summary and warnings from the raw parse. */
+function refreshFixed() {
+  for (const f of allFixes()) if (!ticked.has(f.key)) ticked.set(f.key, f.status === 'fixed');
+  const rules = currentRules();
+  for (const cat of CATS_ORDER) {
+    const st = state[cat];
+    if (!st) continue;
+    const tagged = st.raw.map(i => ({ ...i, category: cat }));
+    const applied = new Set(fixItemColumns(tagged, cat, rules).fixes.filter(f => f.status === 'fixed').map(f => f.key));
+    const firstTo = new Map();
+    for (const i of tagged) { const p = fixedCode(cat, i.sku, i.name, applied); if (p && !firstTo.has(i.sku)) firstTo.set(i.sku, p.sku); }
+    st.items = fixSavedItems(st.raw, cat, rules);
+    const stats = {
+      ...st.stats,
+      balPcsMismatches: (st.stats.balPcsMismatches || []).map(m => {
+        const p = fixedCode(cat, m.sku, m.name, applied);
+        return p ? { ...m, sku: p.sku, name: p.name } : m;
+      }),
+      colourErrors: (st.stats.colourErrors || []).map(e => ({ ...e, skus: (e.skus || []).map(x => firstTo.get(x) || x) }))
+    };
+    st.summary = getFileSummary(st.items, stats);
+  }
+  renderItemCheck();
+}
+
+function renderItemCheck() {
+  const card = document.getElementById('item-check');
+  const fixes = allFixes();
+  card.classList.toggle('hidden', fixes.length === 0);
+  if (!fixes.length) return;
+  const per = (cat) => fixes.filter(f => f.category === cat).length;
+  document.getElementById('ic-subtitle').textContent =
+    `${fixes.length} item${fixes.length === 1 ? '' : 's'} to fix · Lehnga ${per(CATEGORIES.LEHNGA)} · Saree ${per(CATEGORIES.SAREE)}`;
+  const count = (fn) => fixes.filter(fn).length;
+  document.getElementById('ic-chips').innerHTML = [
+    `<span class="ic-chip ic-sw">Switched ${count(f => f.kind === 'switch')}</span>`,
+    `<span class="ic-chip ic-sp">Split ${count(f => f.kind === 'split')}</span>`,
+    count(f => f.status === 'clash') ? `<span class="ic-chip ic-cl">Needs you ${count(f => f.status === 'clash')}</span>` : '',
+    count(f => f.status === 'kept') ? `<span class="ic-chip ic-kept">Kept ${count(f => f.status === 'kept')}</span>` : ''
+  ].join('');
+  const q = document.getElementById('ic-search').value.trim().toLowerCase();
+  const shown = q ? fixes.filter(f => [f.from.sku, f.from.name, f.to.sku, f.to.name].some(v => String(v).toLowerCase().includes(q))) : fixes;
+  const fileName = (cat) => (cat === CATEGORIES.LEHNGA ? 'Lehnga' : 'Saree');
+  const chip = (f) => f.status === 'clash'
+    ? `<span class="ic-chip ic-cl">${esc(f.to.sku)} is already ${esc(f.clashWith)} in this file — tick to merge</span>`
+    : f.status === 'kept'
+      ? `<span class="ic-chip ic-kept">Kept as in file (remembered)</span>`
+      : `<span class="ic-chip ${f.kind === 'split' ? 'ic-sp' : 'ic-sw'}">${f.kind === 'split' ? 'Split' : 'Switched'}</span>`;
+  document.getElementById('ic-tbody').innerHTML = shown.map(f => {
+    const on = !!ticked.get(f.key);
+    return `<tr class="border-t border-white/5">
+      <td class="px-3 py-2"><input type="checkbox" class="ic-tick accent-emerald-500" data-key="${esc(f.key)}" ${on ? 'checked' : ''} aria-label="Fix ${esc(f.from.sku)}"></td>
+      <td class="px-3 py-2 text-slate-400 text-xs">${fileName(f.category)}</td>
+      <td class="px-3 py-2 font-mono text-xs ${on ? 'ic-old' : 'text-slate-200'}">${esc(f.from.sku)} | ${esc(f.from.name)}</td>
+      <td class="px-3 py-2 font-mono text-xs ${on ? 'text-emerald-300 font-semibold' : 'text-slate-500'}">${esc(f.to.sku)} | ${esc(f.to.name)}</td>
+      <td class="px-3 py-2">${chip(f)}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="5" class="px-3 py-6 text-center text-slate-500 text-xs">No rows match.</td></tr>`;
+}
+
+function onTicksChanged() {
+  refreshFixed();
+  updatePreview();
+  updateErrorPanel();
+  updateProcessBtn();
+}
+document.getElementById('ic-tbody').addEventListener('change', e => {
+  const box = e.target.closest('.ic-tick');
+  if (!box) return;
+  ticked.set(box.dataset.key, box.checked);
+  onTicksChanged();
+});
+document.getElementById('ic-tick-all').addEventListener('click', () => { for (const f of allFixes()) ticked.set(f.key, true); onTicksChanged(); });
+document.getElementById('ic-untick-all').addEventListener('click', () => { for (const f of allFixes()) ticked.set(f.key, false); onTicksChanged(); });
+document.getElementById('ic-search').addEventListener('input', () => renderItemCheck());
 
 window.startProcessing = async function() {
   const btn = document.getElementById('process-btn');
@@ -582,10 +713,11 @@ async function approveAndSave(items, uploadDate) {
     // The day's summary covers every category stored for this date (an
     // earlier same-day upload of the other file included), each compared
     // with its own previous upload.
-    const [dayL, dayS] = await Promise.all([
+    const rulesNow = currentRules();
+    const [dayL, dayS] = (await Promise.all([
       getStockData(uploadDate, CATEGORIES.LEHNGA),
       getStockData(uploadDate, CATEGORIES.SAREE)
-    ]);
+    ])).map((list, i) => fixSavedItems(list, CATS_ORDER[i], rulesNow));
     const dayCats = [dayL.length ? CATEGORIES.LEHNGA : null, dayS.length ? CATEGORIES.SAREE : null].filter(Boolean);
     const dayItems = [...dayL, ...dayS];
     const finalAnalysis = analyzeStockChanges(dayItems, await baselineItems(uploadDate, dayCats), { categories: dayCats });
@@ -612,6 +744,15 @@ async function approveAndSave(items, uploadDate) {
       soldOutCount:   finalAnalysis.summary.soldOutCount
     });
     setStep('step-done','done');
+
+    // Remember the item-number choices (only now — a cancelled or failed
+    // upload changes nothing), then forget cached reads so pages use them.
+    const sig = (rs) => JSON.stringify([...rs].map(r => [r.category, r.from, r.to, r.decision].join('|')).sort());
+    if (sig(rulesNow) !== sig(baseRules)) {
+      try { await saveItemFixRules(rulesNow); baseRules = rulesNow; }
+      catch (e) { console.error(e); notify.warning('Stock saved, but your item-number choices could not be remembered: ' + e.message); }
+    }
+    clearStockCache();
 
     showResult(uploadDate, finalAnalysis, items);
     notify.success('Stock data approved and saved!');
@@ -799,7 +940,9 @@ async function baselineItems(date, categories) {
     .filter(h => h.date < date);
   const last = latestPerCategory(history);
   const lists = await Promise.all(categories.map(cat => last[cat] ? getStockData(last[cat], cat) : Promise.resolve([])));
-  return lists.flat();
+  // Saved days may hold "VELLY | 3447"; read them with the same rule as today's file
+  const rules = currentRules();
+  return categories.flatMap((cat, i) => fixSavedItems(lists[i], cat, rules));
 }
 
 /** Say plainly when one of the two daily files was not added. */

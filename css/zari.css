@@ -1221,3 +1221,14 @@ td.text-right, th.text-right { font-variant-numeric: tabular-nums; }
 .sa-chg-down { color: #F0999C; background: rgba(229,86,91,0.12); }
 .sa-chg-new { color: #93C5FD; background: rgba(59,130,246,0.14); }
 .sa-chg-zero { color: var(--silk-4); }
+
+/* Upload Center — Check item numbers */
+.ic-steps { display: flex; flex-wrap: wrap; gap: 6px; }
+.ic-steps span { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--ink-line); font-size: 11.5px; color: var(--silk-3); }
+.ic-steps .is-on { color: var(--zari); border-color: rgba(217,164,65,0.55); background: rgba(217,164,65,0.10); font-weight: 600; }
+.ic-chip { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.ic-sw { color: #93C5FD; background: rgba(59,130,246,0.14); }
+.ic-sp { color: #D8B4FE; background: rgba(168,85,247,0.14); }
+.ic-cl { color: #F0999C; background: rgba(229,86,91,0.14); }
+.ic-kept { color: #FCD34D; background: rgba(245,158,11,0.14); }
+.ic-old { color: var(--silk-4); text-decoration: line-through; }
