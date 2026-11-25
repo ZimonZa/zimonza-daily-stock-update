@@ -326,5 +326,20 @@ eq('no slash ever reaches a file name', /[\\/]/.test(reportFileName('daily', '20
   clearStockCache();
 }
 
+// ════ 22. Unticking after a fixed day was saved: no false new / sold out ════
+{
+  clearStockCache();
+  const listHistory = async () => [{ date: '2026-11-26', lehngaCount: 0, sareeCount: 1 }, { date: '2026-11-27', lehngaCount: 0, sareeCount: 1 }];
+  const files = {
+    '2026-11-26|saree': [{ ...item('saree', '3447', [['Rani', 5]]), name: 'VELLY', fixedFrom: { sku: 'VELLY', name: '3447' } }],
+    '2026-11-27|saree': [{ ...item('saree', 'VELLY', [['Rani', 5]]), name: '3447' }]
+  };
+  const getRules = async () => [{ category: 'saree', from: 'VELLY', to: '3447', decision: 'keep' }];
+  const day = await loadDayChanges('2026-11-27', { listHistory, getStock: async (d, c) => files[`${d}|${c}`] || [], getRules });
+  const a = analyzeStockChanges(day.current, day.previous, { categories: day.categories });
+  eq('kept VELLY today vs 3447 saved yesterday → unchanged', [a.newArrivals.length, a.soldOutItems.length, a.unchangedItems.length], [0, 0, 1]);
+  clearStockCache();
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

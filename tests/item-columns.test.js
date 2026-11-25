@@ -89,5 +89,27 @@ eq('parser: one word, two products → two items', parsed.map(i => `${i.sku}|${i
 eq('…which the rule turns into 1454 and 1475', fixItemColumns(parsed, 'saree').items.map(i => `${i.sku}|${i.name}|${i.totalQty}`).sort(),
   ['1454|RHEA|3', '1475|RHEA|3', '4041|AVLON|1']);
 
+// ── Review fix 2: a fixed item remembers where it came from, so a later
+// "keep" turns a day already saved as 3447 back into VELLY when read ──
+const fixedOne = one('VELLY', '3447').items[0];
+eq('a fixed item carries fixedFrom', fixedOne.fixedFrom, { sku: 'VELLY', name: '3447' });
+const savedFixed = { ...it('3447', 'VELLY'), fixedFrom: { sku: 'VELLY', name: '3447' } };
+eq('saved fixed day + keep → read back as VELLY', fixItemColumns([savedFixed], 'saree', keepRule).items.map(i => [i.sku, i.name, i.fixedFrom]), [['VELLY', '3447', undefined]]);
+eq('saved fixed day, no keep → stays 3447', fixItemColumns([savedFixed], 'saree').items[0].sku, '3447');
+eq('a keep for another number does not reverse it', fixItemColumns([savedFixed], 'saree', [{ category: 'saree', from: 'VELLY', to: '9999', decision: 'keep' }]).items[0].sku, '3447');
+
+// ── Review fix 3: decisions follow the clash, not the stored rule ──
+// A remembered 'fix' on a day with no clash: untick must keep it as in file
+const fixNoClash = fixItemColumns([it('MATHS-3', '1300')], 'saree', fixRule).fixes;
+eq('remembered fix, no clash today, unticked → keep', effectiveRules(fixRule, fixNoClash, new Map([['saree|MATHS-3|1300', false]])),
+  [{ category: 'saree', from: 'MATHS-3', to: '1300', decision: 'keep' }]);
+// A remembered 'keep' on a day that is a clash: tick must fix it anyway
+const keepMaths = [{ category: 'saree', from: 'MATHS-3', to: '1300', decision: 'keep' }];
+const keptClash = fixItemColumns([it('1300', 'ROJA'), it('MATHS-3', '1300')], 'saree', keepMaths).fixes;
+eq('remembered keep on a clash day, ticked → fix', effectiveRules(keepMaths, keptClash, new Map([['saree|MATHS-3|1300', true]])),
+  [{ category: 'saree', from: 'MATHS-3', to: '1300', decision: 'fix' }]);
+eq('…and that rule really fixes it', fixItemColumns([it('1300', 'ROJA'), it('MATHS-3', '1300')], 'saree',
+  effectiveRules(keepMaths, keptClash, new Map([['saree|MATHS-3|1300', true]]))).items.map(i => i.sku), ['1300', '1300']);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

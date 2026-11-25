@@ -67,12 +67,19 @@ export function proposeFix(sku, name) {
  * @returns {{ items: Array, fixes: Array<{key, category, from, to, kind, status, clashWith?}> }}
  */
 export function fixItemColumns(items, category, rules = []) {
-  const list = (items || []).filter(Boolean);
+  const decided = new Map((rules || []).filter(r => r && r.category === category)
+    .map(r => [ruleKey(category, r.from, r.to), r.decision]));
+  // A day saved after the fix holds "3447" with fixedFrom VELLY; a later
+  // "keep" for VELLY → 3447 turns it back, so old days follow the choice.
+  const list = (items || []).filter(Boolean).map(i => {
+    const f = i.fixedFrom;
+    if (!f || decided.get(ruleKey(category, f.sku, i.sku)) !== 'keep') return i;
+    const { fixedFrom, ...rest } = i;
+    return { ...rest, sku: f.sku, name: f.name };
+  });
   const proposals = list.map(i => proposeFix(i.sku, i.name));
   const owners = new Map();   // clean code of an unfixed item → its name
   list.forEach((i, n) => { if (!proposals[n]) owners.set(normItemNo(i.sku).toUpperCase(), i.name); });
-  const decided = new Map((rules || []).filter(r => r && r.category === category)
-    .map(r => [ruleKey(category, r.from, r.to), r.decision]));
 
   const fixes = [];
   const out = list.map((i, n) => {
@@ -86,15 +93,16 @@ export function fixItemColumns(items, category, rules = []) {
     const fix = { key, category, from: { sku: i.sku, name: i.name }, to: { sku: p.sku, name: p.name }, kind: p.kind, status };
     if (clash) fix.clashWith = owner;
     fixes.push(fix);
-    return status === 'fixed' ? { ...i, sku: p.sku, name: p.name } : i;
+    return status === 'fixed' ? { ...i, sku: p.sku, name: p.name, fixedFrom: { sku: i.sku, name: i.name } } : i;
   });
   return { items: out, fixes };
 }
 
 /**
  * The remembered rules after the owner's ticks. Only differences from the
- * default are stored: an unticked fix → 'keep'; a ticked clash → 'fix';
- * ticking a kept one, or unticking a remembered clash fix, forgets the rule.
+ * default are stored, and the default follows TODAY's clash, not the rule:
+ * - ticked:   clash → 'fix'; no clash → no rule (fixing is the default)
+ * - unticked: no clash → 'keep'; clash → no rule (not fixing is the default)
  * @param {Array} baseRules  rules before this upload
  * @param {Array} fixes      from fixItemColumns (with baseRules applied)
  * @param {Map<string, boolean>} ticked  fix.key → ticked
@@ -105,11 +113,11 @@ export function effectiveRules(baseRules, fixes, ticked) {
     if (!ticked?.has(f.key)) continue;
     const on = !!ticked.get(f.key);
     const rule = (decision) => ({ category: f.category, from: up(f.from.sku), to: up(f.to.sku), decision });
-    if (f.status === 'kept' && on) out.delete(f.key);
-    else if (f.status === 'clash' && on) out.set(f.key, rule('fix'));
-    else if (f.status === 'fixed' && !on) {
-      if (out.get(f.key)?.decision === 'fix') out.delete(f.key);
-      else out.set(f.key, rule('keep'));
+    const clash = f.clashWith !== undefined;
+    if (on && f.status !== 'fixed') {
+      if (clash) out.set(f.key, rule('fix')); else out.delete(f.key);
+    } else if (!on && f.status === 'fixed') {
+      if (clash) out.delete(f.key); else out.set(f.key, rule('keep'));
     }
   }
   return [...out.values()];
